@@ -116,8 +116,9 @@ EPROM sockets are 27C512, and 0x8000-0xBFFF selects one of six pages (two
 from EPROM0's upper 32 KB when RS=1, four from EPROM1 when RS=0). The page
 bits differ from P8E (P8N bit 3 is SMEM, not RA16), so banked code needs a
 per-card page-select routine, but **both cards can hold at least 48 KB**
-in EPROM0 alone, and about 112 KB with a second EPROM in the (usually
-empty) EPROM1 socket. The emulator models both decodes.
+in EPROM0 alone (P8E 48 KB, P8N 64 KB), and 128-176 KB with a second
+EPROM in the (usually empty) EPROM1 socket (P8N 64 + 64 KB; P8E 48 KB +
+128 KB with a 27C010). The emulator models both decodes.
 
 ## Proof of concept: C inside the existing firmware
 
