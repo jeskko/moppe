@@ -25,10 +25,10 @@ Time is counted in 8.064 MHz crystal periods ("xt"). P8E: 1 T = 1 xt plus one wa
 
 | Item | Assumption | Source of uncertainty |
 |---|---|---|
-| Watchdog timeout | 200 ms (`wd_timeout_s`) | not in firmware; see notes/hardware.md |
+| Watchdog timeout | 0.52 s (`wd_timeout_s`), from the P8N manual; LOCAL disabling it is not modelled | P8E not documented |
 | Hook polarity (PA1) | 1 = on cradle (`hook_offhook_level = 0`) | firmware comments disagree |
-| Daisy chain | PIO before SIO | P8E block diagram (PIO IEO → SIO IEI) |
-| FX429 IRQ | edge on SIO A DCD per event | inferred; firmware polls status on any A ext/status |
+| Daisy chain | PIO before SIO | manual + P8E block diagram |
+| FX429 IRQ | edge on SIO A DCD per event (shared with hook change, per manual) | 8254 OUT2 on DCDA not modelled |
 | FX429 modem | byte level only: TX bytes logged as events, RX packets injected with `modem_rx()` | no bit-level FFSK audio |
 | RX audio | not modelled; squelch/RSSI are ADC inputs set by the host | |
 | CTCSS DSP decoder input (0x80xx bit 0), FX465, 8254 CLK2 rewire | not modelled | |
@@ -37,7 +37,7 @@ Time is counted in 8.064 MHz crystal periods ("xt"). P8E: 1 T = 1 xt plus one wa
 | 8254 modes 1 and 5, BCD | not implemented (gates tied high on the board) | |
 | SIO | async only; no sync/SDLC modes, no parity/framing errors | |
 | P8E window at 0x8000 | EPROM0 top 16 KB when OUT2.RS=1, EPROM1 bank when RS=0 (only if an EPROM1 image is loaded; else the multiboard) | read from the P8E schematic, unverified on hardware |
-| P8N RAM banking | only the SMEM NV plane at 0xC000-0xCFFF | P8N schematic not available |
+| P8N memory | SMEM NV plane; RS/RA14/RA15 window per manual; PB0 second NV copy not modelled | |
 | Output-latch polarities (LEDs, backlight) | 1 = on | |
 | CU58AF keypad matrix | follows the firmware's `keytbl_cu58af` | the manual gives no key-to-matrix map |
 

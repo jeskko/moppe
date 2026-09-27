@@ -12,7 +12,7 @@ without burning an EPROM for every change.
 | Emulator | Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. |
 | Tests | 29 scenario tests: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK/MPRS packet CRC. The DTMF/APRS tests fail if the CPU timing model is wrong. |
 | C in firmware | Proof of concept: `make C=1` builds the firmware with the squelch and packet-CRC routines in C (SDCC). All tests pass and the ROM gets 48 bytes smaller. |
-| Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite is not feasible in the current 32 KB ROM; an incremental C/asm hybrid is, and is what I recommend. |
+| Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).

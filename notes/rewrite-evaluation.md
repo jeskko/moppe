@@ -108,10 +108,12 @@ without touching the multiboard, or far more with banked EPROM1 if the
 multiboard's function is moved. Banked code in C is workable (z88dk
 supports it), but it adds real complexity: interrupt code that reads the
 multiboard must switch RS back, and cross-bank calls need trampolines.
-The P8N's memory decoding is different (RA14/RA15 appear to bank RAM
-there) and its schematic isn't available, so a large firmware may be
-P8E-only. The service manual now in `reference/` should settle this;
-see notes/hardware.md.
+The service manual (P8N) shows the **P8N has a banked window too**: both
+EPROM sockets are 27C512, and 0x8000-0xBFFF selects one of six pages (two
+from EPROM0's upper 32 KB when RS=1, four from EPROM1 when RS=0). The page
+bits differ from P8E (P8N bit 3 is SMEM, not RA16), so banked code needs a
+per-card page-select routine, but **both cards can hold at least 48 KB**
+without disturbing the multiboard socket. The emulator models both decodes.
 
 ## Proof of concept: C inside the existing firmware
 
@@ -152,8 +154,9 @@ That is the development loop a hybrid approach needs, and it works today.
    need to change it anyway, preferring modules where C is compact (table
    lookups, parsers, formatting) or where the assembler is unrolled. Keep
    ISRs, PWM loops and bit-bang primitives in assembler.
-3. **If more space is needed**, try the P8E RS window (16 KB, 27C512 already
-   fitted per the parts list) in the emulator first, then on hardware.
+3. **If more space is needed**, use the RS window (EPROM0's upper half; the
+   27C512 is fitted on both cards per the parts lists) in the emulator
+   first, then on hardware.
    Treat banking as a separate project.
 4. **Optionally, move to a maintained toolchain.** Converting the as80
    source to sdas/sjasmplus syntax is mechanical, and "the new build must
@@ -166,5 +169,4 @@ That is the development loop a hybrid approach needs, and it works today.
 
 A full rewrite (option C) only becomes reasonable if the goal is a
 different radio: new architecture, a reduced or re-designed feature set,
-P8E-only. Even then, the emulator and this test suite are the way to
-build it.
+Even then, the emulator and this test suite are the way to build it.
