@@ -63,8 +63,7 @@ Outputs: PB7 power relay off, PB6 EXAL, PB4 /RXON (GPIO).
 | Watchdog on P8E | same as P8N (0.52 s) | P8N only in manual |
 | MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled | real radio |
 | CU58AF keypad row 6: manual says PCF8574 P7 (P6 unused), firmware decodes '+ S R' from P6 | follow firmware | real handset |
-| P8N memory decode for more ROM | none | no P8N schematic |
-| The 16 KB RS window and EPROM1 banking on real P8E hardware | modelled, unverified | a bench test |
+| The RS window and EPROM1 banking on real hardware (P8E from schematic, P8N from manual) | modelled, unverified | a bench test |
 
 ## Settled by the service manual (P8N; reference/RD58DBG_SBG_Huolto-ohje.pdf)
 
