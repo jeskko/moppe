@@ -131,7 +131,7 @@ dumpsyms()
 	printf("\n# Symbols:\n\n");
 
 	for (sym = symbols; sym; sym = sym->next)
-		if (debug>1 || sym->name[0] != '_')
+		if (debug>1 || strncmp(sym->name, "_relative_label_", 16))
 			printf("# %-16s %c 0x%04X %5d  %5d\n",
 				sym->name, sym->type,
 				sym->value, sym->value,

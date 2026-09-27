@@ -2634,6 +2634,14 @@ read_squelcher_value:
 
 !----------------------------------------------------------------------
 
+#ifdef C_MODULES
+#include "c/crt.inc"
+#include "squelch_crc.inc"
+squelch = _squelch
+append_short_packet_crc = _append_short_packet_crc
+append_long_packet_crc = _append_long_packet_crc
+append_secret_packet_crc = _append_secret_packet_crc
+#else
 squelch:
 
 #if 0
@@ -2771,6 +2779,8 @@ squelch:
 	ret nz						! Manually forced open.
 
 	jp audioc_off
+
+#endif /* C_MODULES */
 
 squelch_is_closed:
 	ld a, 0
@@ -9108,6 +9118,7 @@ build_call_packet_buffer:
 	inc h				;\
 	xor [hl]			;
 
+#ifndef C_MODULES
 append_short_packet_crc:
 
 	ld ix, outpacket
@@ -9153,6 +9164,8 @@ append_long_packet_crc:
 	ld [ix + 13], a
 
 	ret
+
+#endif /* C_MODULES */
 
 	! buffer at IX, length B (must be 1 or more).
 	! result to A and C.
@@ -19557,6 +19570,10 @@ gps_valid_seconds      BYTE     ! seconds downcounter from "good" nmea
 fx614_rxcnt           BYTE ! XXX debug only
 
 junk		WORD
+
+#ifdef C_MODULES
+#include "squelch_crc_data.inc"
+#endif
 
 _end:
 

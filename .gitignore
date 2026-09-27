@@ -8,3 +8,9 @@ emu/tests/unit/test_pit
 emu/tests/zex/cpm
 __pycache__/
 emu/tests/.cache/
+firmware/build-c/
+experiments/c-density/sample.asm
+experiments/c-density/sample.lst
+experiments/c-density/sample.rel
+experiments/c-density/sample.sym
+experiments/c-density/sample.s

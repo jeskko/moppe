@@ -107,6 +107,34 @@ class Aprs(RadioTest):
         self.assertIn("02345.67E", fr[0])
 
 
+def fsk_crc_ok(pkt):
+    """Firmware FSK CRC: reflected CCITT, init FFFF, complemented, high
+    byte first after the data (r58.asm L9099-9160)."""
+    data, hi, lo = pkt[:-2], pkt[-2], pkt[-1]
+    v = afsk.crc16_x25(data)
+    return (v >> 8, v & 0xff) == (hi, lo)
+
+
+class Fsk(RadioTest):
+    def test_mprs_packet_after_ptt(self):
+        r = self.boot()
+        r.poke("cfg_report_type", 0)          # Pr:tProto = ProPr (MPRS over FFSK)
+        r.poke("cfg_keyup_mprs", 1)           # after every over
+        r.poke("cfg_mprs_callsign", b"OH3XYZ\xff\xff")
+        self.enter("433500")
+        r.ptt(True)
+        r.run(0.5)
+        r.take_events()
+        r.ptt(False)
+        r.run(1.5)
+        tx = bytes(e[2] for e in r.take_events("MODEM_TX"))
+        self.assertEqual(tx[:5], bytes([0xAA, 0xAA, 0xAA, 0xC4, 0xD7]))
+        pkt = tx[5:]
+        self.assertEqual(len(pkt), 15)
+        self.assertEqual(pkt[0], 0x40)        # MPRS tag
+        self.assertTrue(fsk_crc_ok(pkt), pkt.hex())
+
+
 class Tones(RadioTest):
     def test_1750_burst(self):
         r = self.boot()
