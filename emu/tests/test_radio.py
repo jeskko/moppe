@@ -5,7 +5,7 @@ Run from the repository root:
     make -C firmware && make -C emu && python3 -m unittest discover -s emu/tests -v
 
 Expected values (synth R/N/A, display strings) were derived independently
-from the firmware source (notes/firmware-rf-ui.md), not from emulator runs.
+from the firmware source (notes/reference/firmware-rf-ui.md), not from emulator runs.
 Each test starts from an NV image produced by running the firmware's own
 SAnE defaults procedure, cached in emu/tests/.cache/.
 """

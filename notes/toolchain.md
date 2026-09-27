@@ -30,3 +30,19 @@ Changes needed to reproduce the released binaries on modern Linux:
 Note: `r58p8x3Zi.bin` is **older** (ALi, 17.04.2005) than the ALs source
 (24.09.2018), despite being "3.Zi, recommended production version" on the
 OH3TR page. The changelog in the source lists ALi before ALJ…ALs.
+
+## Later changes (no effect on output binaries)
+
+- Listing symbol table now includes `_`-prefixed symbols (only as80's
+  internal `_relative_label_*` names are hidden), so C symbols are visible.
+
+## C modules (`make C=1`)
+
+`firmware/c/*.c` → SDCC 4.x (`-mz80 --sdcccall 1 --reserve-regs-iy
+--opt-code-size`) → `tools/sdcc2as80.py` → `build-c/<mod>.inc` (code) and
+`<mod>_data.inc` (RAM, included before `_end`), `#include`d by r58.asm under
+`C_MODULES`. `firmware/c/crt.inc` provides `___sdcc_enter_ix`. Converter
+rules: `#imm`→`imm`, `(mem)`→`[mem]`, `d (ix)`→`[ix+d]`, `<(x)`/`>(x)`→
+`LO(x)`/`HI(x)`, implicit-A ALU forms, `n$` labels scoped per function,
+externals `_x` bound to firmware `x`. See notes/rewrite-evaluation.md for
+the register rules C code must follow.
