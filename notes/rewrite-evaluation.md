@@ -97,15 +97,18 @@ The P8E schematic (3C 305838, parts list) suggests the board has room
   48 KB reachable in total.
 - A second socket, EPROM1 (IC16), is a **32-pin 27C010** (128 KB), mapped
   at 0x8000-0xBFFF when RS=0, with **A14/A15/A16 = OUT2 bits 0, 1, 3**:
-  eight 16 KB banks. The community DTMF/CTCSS "multiboard" currently plugs
-  into this socket; the firmware reads it at 0x80xx.
+  eight 16 KB banks. The community DTMF/CTCSS "multiboard" can plug into
+  this socket (the firmware reads it at 0x80xx), but that add-on is **not
+  common**: on most radios the socket is empty and free for program EPROM.
 - The firmware never uses RS/RA14-16; on P8E OUT2 bit 3 is RA16, and the
   firmware's comment that SMEM moved to a separate flip-flop (port 0xB0) on
   P8E agrees with that.
 
-So on P8E a larger firmware is plausible: 16 KB more in the RS window
-without touching the multiboard, or far more with banked EPROM1 if the
-multiboard's function is moved. Banked code in C is workable (z88dk
+So on P8E a larger firmware is plausible: 16 KB more in the RS window,
+and far more with banked EPROM1. Since the multiboard is rare, using the
+second socket for code is a realistic option; a build that needs it
+simply wouldn't support the multiboard's DTMF-decoder/DSP-CTCSS features
+(or could keep them in a separate multiboard-compatible build). Banked code in C is workable (z88dk
 supports it), but it adds real complexity: interrupt code that reads the
 multiboard must switch RS back, and cross-bank calls need trampolines.
 The service manual (P8N) shows the **P8N has a banked window too**: both
@@ -113,7 +116,8 @@ EPROM sockets are 27C512, and 0x8000-0xBFFF selects one of six pages (two
 from EPROM0's upper 32 KB when RS=1, four from EPROM1 when RS=0). The page
 bits differ from P8E (P8N bit 3 is SMEM, not RA16), so banked code needs a
 per-card page-select routine, but **both cards can hold at least 48 KB**
-without disturbing the multiboard socket. The emulator models both decodes.
+in EPROM0 alone, and about 112 KB with a second EPROM in the (usually
+empty) EPROM1 socket. The emulator models both decodes.
 
 ## Proof of concept: C inside the existing firmware
 
@@ -156,7 +160,9 @@ That is the development loop a hybrid approach needs, and it works today.
    ISRs, PWM loops and bit-bang primitives in assembler.
 3. **If more space is needed**, use the RS window (EPROM0's upper half; the
    27C512 is fitted on both cards per the parts lists) in the emulator
-   first, then on hardware.
+   first, then on hardware. Beyond that, the second EPROM socket is
+   normally free (the multiboard is uncommon) and adds 64-128 KB of banked
+   space.
    Treat banking as a separate project.
 4. **Optionally, move to a maintained toolchain.** Converting the as80
    source to sdas/sjasmplus syntax is mechanical, and "the new build must

@@ -21,8 +21,14 @@ Detailed per-area specs are in `notes/reference/`.
 | Range | P8E | P8N |
 |---|---|---|
 | 0x0000-0x7FFF | EPROM0 (27C512 per parts list), firmware 32 KB (confirmed) | EPROM0 27C512 (manual p87-90, p105) |
-| 0x8000-0xBFFF | OUT2.RS=1: EPROM0 top 16 KB; RS=0: EPROM1 socket (27C010, A14/A15/A16 = OUT2 bits 0/1/3), where the community DTMF/CTCSS "multiboard" sits and reads as a status byte at 0x80xx (source: schematic IC5/IC10-12/IC16) | banked window, 6 pages: RS=1 → EPROM0 0x8000 (RA14=0) or 0xC000 (RA14=1) page; RS=0 → EPROM1 (27C512) page RA15:RA14. Multiboard in the EPROM1 socket (manual) |
+| 0x8000-0xBFFF | OUT2.RS=1: EPROM0 top 16 KB; RS=0: EPROM1 socket (27C010, A14/A15/A16 = OUT2 bits 0/1/3), where the community DTMF/CTCSS "multiboard" sits and reads as a status byte at 0x80xx (source: schematic IC5/IC10-12/IC16) | banked window, 6 pages: RS=1 → EPROM0 0x8000 (RA14=0) or 0xC000 (RA14=1) page; RS=0 → EPROM1 (27C512) page RA15:RA14 (manual). The community multiboard, when fitted, goes in the EPROM1 socket |
 | 0xC000-0xFFFF | 16 KB RAM; 0xC000-0xCFFF config battery-backed (inferred: SMEM copy loops are no-ops on P8E) | 16 KB of a 32K×8 RAM; OUT2.SMEM=0 swaps in the battery RAM at 0xC000-0xCFFF, PIO B0 picks one of two 4 KB copies (manual; firmware always uses copy 0) |
+
+The DTMF/CTCSS "multiboard" in the EPROM1 socket is a community add-on and
+**not common** in practice (user, 2026-09-28): on most radios the second
+EPROM socket is free, so it can hold program EPROM when more ROM is needed.
+The firmware only reads 0x80xx for the DTMF decoder and the DSP CTCSS
+decoder, both optional features.
 
 OUT2 (port 0x80) bits: RA14 01, RA15 02, RS 04, SMEM (P8N) / RA16 (P8E) 08,
 CS1 10, CS2 20, CLK 40, DP 80. The firmware keeps RA14/RA15/RS at 0 and bit 3 at 1.
