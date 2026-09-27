@@ -1,0 +1,12 @@
+
+	This space intentionally left almost blank.
+
+	Situation:
+		Present Day.
+		New cpu to play with.
+
+	Proceed as follows:
+
+		Change the cpu-name in Makefile.
+		Create newcpu.y. See previous ones, i8048.y for example.
+

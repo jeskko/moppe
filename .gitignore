@@ -1,1 +1,4 @@
 /reference
+build/
+tools/as80/as80
+*.o
