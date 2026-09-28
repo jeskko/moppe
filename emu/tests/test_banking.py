@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
-from r58emu import Radio, P8E, P8N  # noqa: E402
+from r58emu import Radio, P8E, P8N, CU53AN, CU58AF  # noqa: E402
 
 RA14, RA15, RS, BIT3 = 0x01, 0x02, 0x04, 0x08
 OUT2 = 0x80
@@ -161,6 +161,53 @@ class BankedFirmware(unittest.TestCase):
 
     def test_bank_call_p8n(self):
         self.check_bank_call(P8N)
+
+
+BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
+
+
+@unittest.skipUnless(os.path.exists(os.path.join(BANKTEST, "r58-banktest.bin")),
+                     "run `make -C firmware banktest`")
+class BenchTestRom(unittest.TestCase):
+    """The ROM window bench test for real boards (make banktest): what it
+    shows when the window works, and when it maps the wrong thing."""
+
+    def boot(self, card, cu=CU53AN, image=None):
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        rom = os.path.join(BANKTEST, "r58-banktest.bin")
+        if image is not None:
+            rom = os.path.join(tempfile.mkdtemp(), "rom.bin")
+            with open(rom, "wb") as f:
+                f.write(image)
+        r = Radio(rom, os.path.join(BANKTEST, "r58.map"), card=card, cu=cu,
+                  nv=make_sane_nv(card, cu))
+        r.run(4.0)
+        self.assertEqual([e for e in r.events if e[1] == "WDRESET"], [])
+        return r
+
+    def image(self):
+        return open(os.path.join(BANKTEST, "r58-banktest.bin"), "rb").read()
+
+    def test_pass(self):
+        for card in (P8E, P8N):
+            for cu in (CU53AN, CU58AF):
+                r = self.boot(card, cu)
+                # (on the CU53AN's 7-segment digits S and 5 look the same)
+                self.assertIn(r.display()[1].strip().upper(), ("B1  PASS", "B1  PA55"), (card, cu))
+
+    def test_wrong_page_shows_address_and_value(self):
+        # as if RS|RA14 picked chip 0x8000 (0x00 there) instead of 0xC000
+        img = self.image()
+        img = img[:0xC000] + img[0x8000:0xC000]
+        r = self.boot(P8E, image=img)
+        self.assertEqual(r.display()[1], "b1 8010 00")
+
+    def test_routine_result_shown(self):
+        img = bytearray(self.image())
+        img[0xC001] = 0x42                  # ld a, #0x42 / ret
+        r = self.boot(P8N, image=bytes(img))
+        self.assertEqual(r.display()[1], "b1 CA11 42")
 
 
 if __name__ == "__main__":

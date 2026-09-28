@@ -3424,6 +3424,10 @@ main:
 
 	call ctcss_dec_startstop
 
+#ifdef BANK_TEST
+	call bank_test
+#endif
+
 mainloop:
 	call redrawcheck
 	call battcheck
@@ -12727,6 +12731,91 @@ set_bank:
 	pop hl
 	ret
 
+#ifdef BANK_TEST
+;----------------------------------------------------------------------
+;
+;  Bench test of the ROM window on a real board (make banktest, 64 KB
+;  EPROM image from tools/banktest.py).  Bank 1 must show EPROM0 chip
+;  0xC000-0xFFFF: a routine at 0x8000 that returns 0xA5, then from
+;  0x8010 the pattern LO(a) ^ HI(a) ^ 0x5A for window address a.  The
+;  result stays on the lower row:
+;	"b1  PASS  "	window reads and code runs
+;	"b1 aaaa vv"	first wrong byte: window address, value read
+;	"b1 CA11 vv"	pattern fine, but the routine returned vv
+;
+bank_test:
+	ld a, #1
+	call set_bank
+	ld hl, #0x8010
+1:
+	out (WD), a
+	ld a, l
+	xor h
+	xor #0x5A
+	cp (hl)
+	ld a, (hl)
+	jr nz, 3f
+	inc hl
+	ld a, h
+	cp #0xC0
+	jr nz, 1b
+	xor a
+	call set_bank
+	ld e, #1
+	ld hl, #0x8000
+	call ___sdcc_bcall_ehl	; the routine in bank 1
+	ld hl, #bank_test_pass
+	cp #0xA5
+	jr z, 4f
+	ld hl, #0xCA11
+3:
+	push af			; value read / returned
+	push hl			; where
+	xor a
+	call set_bank
+	ld hl, #bank_test_pass
+	ld de, #bank_test_msg
+	ld bc, #3
+	ldir
+	pop hl
+	ld a, h
+	call bank_test_hex
+	ld a, l
+	call bank_test_hex
+	ld a, #' '
+	ld (de), a
+	inc de
+	pop af
+	call bank_test_hex
+	ld hl, #bank_test_msg
+4:
+	ld (adj_feedback), hl
+	ld hl, #sir
+	set DPYSIR, (hl)
+	ret
+
+bank_test_hex:		; A as two hex digits to (DE)+
+	push af
+	rrca
+	rrca
+	rrca
+	rrca
+	call 1f
+	pop af
+1:
+	and #0x0F
+	add a, #'0'
+	cp #'9' + 1
+	jr c, 2f
+	add a, #'A' - '9' - 1
+2:
+	ld (de), a
+	inc de
+	ret
+
+bank_test_pass:	.ascii "b1  PASS  "
+#endif
+
 	; OUT2 = bus state | D.  An interrupt between the two writes uses the
 	; new bits already, which is harmless: we run from fixed ROM.
 out2_set_bank:
@@ -20372,6 +20461,9 @@ out2_bank:	BYTE	; its OUT2 bits (O2_BANK)
 out2_last:	BYTE	; last handset bus state written to OUT2
 ctcss_dec_src:	WORD	; CTCSS DSP decoder sample address
 ctcss_idle_sample: BYTE	; stays 0: "no signal" while banked
+#ifdef BANK_TEST
+bank_test_msg:	BUF(10)
+#endif
 
 #ifdef C_MODULES
 C_BSS_SIZE = 64

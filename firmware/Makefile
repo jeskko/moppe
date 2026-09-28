@@ -3,6 +3,8 @@
 #                   listing next to it
 #   make C=1      - build-c/r58.bin with some routines replaced by the C
 #                   modules c/*.c (SDCC), linked as normal objects
+#   make banktest - build-banktest/r58-banktest.bin: 64 KB EPROM image that
+#                   checks the banked ROM window at boot (bank_test in r58.s)
 #   make verify   - the released v3_Z ALs binary, byte-for-byte, twice:
 #                   build-release/ (r58.asm converted by as80tosdas.py, built
 #                   with this toolchain) and build-as80/ (r58.asm, as80).
@@ -74,7 +76,13 @@ build-as80/r58.bin: r58.asm $(AS80)
 	@mkdir -p build-as80
 	$(AS80) $(DEFS) -d -o $@ r58.asm > build-as80/r58.lst
 
-clean:
-	rm -rf build build-c build-as80 build-release
+# ROM window bench test for a real board: 64 KB image for a 27C512
+banktest: build-banktest/r58-banktest.bin
+build-banktest/r58-banktest.bin: $(SRC) asm.h $(TOOLS)/banktest.py
+	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" C=
+	python3 $(TOOLS)/banktest.py build-banktest/r58.bin $@
 
-.PHONY: all verify release as80 clean
+clean:
+	rm -rf build build-c build-as80 build-release build-banktest
+
+.PHONY: all verify release as80 banktest clean

@@ -150,6 +150,19 @@ decided otherwise):
   (manual). Verified in the emulator model only; **confirm on a real board
   early** (a tiny test ROM that checksums the window and shows the result
   on the display).
+- **Bench test ROM — built 2026-09-28, waiting for a real board:**
+  `make -C firmware banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
+  image for a 27C512 in the EPROM0 socket (EPROM1 socket as usual). It is
+  the normal firmware plus `bank_test` at boot: select bank 1, compare every
+  window byte 0x8010-0xBFFF with LO(a) ^ HI(a) ^ 0x5A, call the routine at
+  0x8000 through `___sdcc_bcall_ehl` (must return 0xA5). The lower row then
+  shows `b1  PASS  ` (on a CU53AN the S look like 5), or `b1 aaaa vv` = first
+  wrong window address and the byte read, or `b1 CA11 vv` = the routine
+  returned vv. File 0x8000-0xBFFF is 0x00, so a mapping of the P8N-only
+  page reads `b1 8010 00`; an empty/absent chip area reads `vv` = FF. The
+  emulator shows PASS on P8E/P8N with both handsets
+  (`test_banking.BenchTestRom`). Needed from the user: which card (P8E /H
+  or P8N) and the result on the display.
 - P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
   it. Don't depend on it, or make it P8N-only.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused
