@@ -95,6 +95,8 @@ decided otherwise):
 - SAnE does not reset CFG_DYN records (`reset_menurec` L17684), so the
   squelch level stays 0 after SAnE although its REC default is 127.
 - cSEC entry drops the last typed digit ("150" stores 15, shown as 150 ms).
+- Lower colon flickered off in ~10 % of frames while transmitting in the
+  menu (clear-then-set in each redraw). **Fixed 2026-09-28.**
 - CFG_EXE (type 10) is defined but no record uses it.
 - CFGSnd sent the last NV byte twice instead of the checksum
   (`all_config_send` computed it in A, `putchar` sends C), so CFGGEt
@@ -334,8 +336,32 @@ first, port, differential test against stock, size check, commit.
   24.7 / 8.1 ms (release 25.1 / 8.3). Lesson: the differential tests only
   cover what their scenarios drive; the CU58AF variant had run only boot
   and frequency entry.
-- **Next module:** display composition (`draw_*`, `redraw`); covered by the
-  display assertions throughout the suite and the differential tests. Porting code that is in bank 1 needs C in a bank (SDCC
+- **Done: display composition** (2026-09-28), `c/display.c`:
+  `draw_upper_row`, `draw_lower_row` and what only they use (call timer,
+  locator, call notice, feedback/remote text, scan mask, digit buffer,
+  memory info). The assembler threads a display cursor through DE (CU53AN:
+  a ROM table of segment-bit positions; CU58AF: a RAM character buffer);
+  C keeps it in `dpy_cursor`, and `DPY_SHIM`s in r58.s load DE, call the
+  primitive and store DE back (`dpy_freq` builds AHL for `draw_long` from
+  a pointer). Stay asm: the primitives (`dpydig`, `dpyval*`, `draw_long`),
+  the icon/LED setters (single `set`/`res`, some used by interrupts),
+  `redraw` (sets DPYSIR atomically; C's `sir |= 2` need not be atomic),
+  the feedback text stubs, `set_dpx_ind_from_rx_tx_freq` (flag result).
+  731 bytes of C for ~570 of asm. New safety net: `SCN_DISPLAY_STATES`
+  (memory marks, call notices, call timer, locator, remote display,
+  repeater mode; both handsets).
+- **Lower-colon flicker fixed** (63c77c5): v3_Z cleared the colon at the
+  start of each redraw and the menu drawer set it again, so while
+  transmitting in the menu ~10 % of frames lacked it; the C port's timing
+  landed a differential checkpoint on one. Now cleared only when the menu
+  row is not next (asm and C). `test_menu_power.MenuColon`.
+- Size so far (`C=1`): fixed ROM ends at ~0x4437, about 15 KB free.
+- **Next module:** frequency/band/synth maths. It is 24-bit arithmetic in
+  AHL throughout; per the plan, keep `mul248`/`div248`/`bin_bcd` and the
+  AHL helpers as C-callable asm (C's 32-bit maths is 2-4x larger), which
+  needs shims like `dpy_freq`. After that the remaining candidates
+  (scanner, FSK, APRS, repeater, CW, menu) are mostly in bank 1, so C in a
+  bank (SDCC `--codeseg` + `__banked`) has to come first. Porting code that is in bank 1 needs C in a bank (SDCC
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
 
 ### Future: EPROM1
