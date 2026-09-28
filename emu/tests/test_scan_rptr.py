@@ -391,6 +391,28 @@ class Repeater(RadioTest):
         self.assertGreaterEqual(len(gaps), 1)
         self.assertAlmostEqual(gaps[0], GAP_S, delta=0.03, msg="inter-letter gap")
 
+    def test_ctcss_stays_on_after_id(self):
+        """CTCSS output WHEN = transmitter (1): the tone stays on through
+        the greeting ID and after it while the repeater is open.
+        send_cw_epilog stops CTCSS only when send_cw_prolog turned it on
+        (CUSTOM mode); v3_Z set that flag from whatever H held (`xor h`),
+        so the tone went off after every CW message (fixed 2026-09-28)."""
+        r = self.boot()
+        r.poke("cfg_ctcss_output_when", 1)
+        r.poke("cfg_ctcss_tx_hz", 10)
+        self.enter_repeater_idle(r)
+        r.poke("repeater_cfg_id_greet1", cw_str("E"))
+        r.poke("repeater_cfg_id_greet2", cw_str(""))
+        r.poke("repeater_cfg_id_greet3", cw_str(""))
+        key_access(r, "1750", hold=0.35)
+        r.run(0.1)
+        self.assertTrue(r.transmitting())
+        self.assertEqual(r.peek("ctcss_is_on"), 10)
+        r.run(1.0)
+        self.assertEqual(repeater_state_name(r), "repeater_open")
+        self.assertTrue(r.transmitting())
+        self.assertEqual(r.peek("ctcss_is_on"), 10)
+
     def test_access_by_dtmf_star(self):
         r = self.boot()
         self.enter_repeater_idle(r)   # access method still default "tonES"

@@ -153,6 +153,12 @@ decided otherwise):
   packet stored across the end of the ring was sent with the
   `gps_history` bytes that follow it. **Fixed 2026-09-28** (obvious bug:
   `inc l`, in asm and C); `test_fsk.test_relay_across_ring_end`.
+- CW messages cut CTCSS: `send_cw_prolog` began with `xor h` (meant
+  `ld h, #0`), so `ctcss_custom_flag` got the caller's H (0xD0 after
+  `repeater_txon`) and `send_cw_epilog` called `ctcss_off` after every
+  message: with CTCSS output WHEN = transmitter the repeater went on
+  transmitting without its tone after the greeting ID. **Fixed
+  2026-09-28** (obvious bug); `test_scan_rptr.test_ctcss_stays_on_after_id`.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
   southern latitude is sent as northern. Kept as is (asm and C): the
   radios are used in Finland only, so the southern case never mattered

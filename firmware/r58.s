@@ -19820,7 +19820,9 @@ cw_calc_blip:              ; C-reg has 10 Hz units 00...2550 (cSEC in fact)
 
 send_cw_prolog:
 
-	xor h                     ; maybe do ctcss during blips
+	ld h, #0                  ; maybe do ctcss during blips (v3_Z had
+				  ; "xor h": the flag got the caller's H, and
+				  ; the epilog cut CTCSS after every message)
 	ld a, (cfg_ctcss_output_when)
 	cp #4
 	jr nz, 1f                 ; not CUSTOM
