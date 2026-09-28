@@ -3718,7 +3718,7 @@ gps_check:
 	push hl
 	ld a, c                    ; check for obvious junk, shorter than N chars.
 	cp #10
-	call nc, gps_process_sentence
+	call nc, far_gps_process_sentence
 	pop hl
 3:
 	ld c, #0
@@ -3750,7 +3750,7 @@ gps_check_aisin_seiki:         ; DE points to first new gps data byte
 	ld a, (de)
 	inc e                      ; stay in page buffer
 	cp #0x0D
-	call z, gps_process_aisin_seiki
+	call z, far_gps_process_aisin_seiki
 
 	ld a, (gps_hist_idx)
 	cp e
@@ -3761,691 +3761,11 @@ gps_check_aisin_seiki:         ; DE points to first new gps data byte
 
 	ret
 
-gps_process_aisin_seiki:
-
-	ld a, e
-	sub #44                     ; wind back to start of possible CACA-block
-	ld l, a
-	ld h, d                    ; HL and DE both in the gps_history page
-
-	ld a, #0xCA
-	cp (hl)
-	ret nz
-	inc l
-	cp (hl)
-	ret nz
-	inc l                      ; HL into start of payload, 40 bytes
-
-	push de
-
-	ld b, #40                   ; 40 bytes between CACA and cksum
-	ld c, #0xCA + 0xCA          ; cksum includes these two
-	ld de, #gps_sentence        ; copy message into here, easier access later
-1:
-	ld a, (hl)
-	inc l
-	ld (de), a
-	inc de
-	add a, c
-	ld c, a
-	djnz 1b
-
-	ld a, (hl)                   ; cksum is a complement
-	add a, c
-	call z, gps_process_aisin_seiki_CACA
-
-	pop de
-
-	ret
-
-gps_process_aisin_seiki_CACA:        ; message in gps_sentence[]
-
-	; [ 0] 1 validity
-	;      0 decoded sats 0
-	;      1 decoded sats 1
-	;      2 decoded sats 2
-	;      3 2D fix
-	;      4 3D fix
-	;    0x10 certain change happened, mask
-
-	ld a, (gps_sentence + 0)
-
-	and #~0x10   ; remove 'changed' mask
-	cp #3
-	ret c       ; less than 2D fix
-	cp #5
-	ret nc      ; more than 3D fix ??? that is antenna trouble.
-
-	; Good. Any kind of fix is good enough for us.
-
-
-	; [ 1] 4 latitude           1/256"    MSByte first
-	; [ 5] 4 longitude          1/256"    MSByte first
-
-	ld iy, #gps_sentence + 1
-	ld ix, #cfg_gps_latitude
-	call aisin_seiki_parse_latlon
-
-	ld iy, #gps_sentence + 5
-	ld ix, #cfg_gps_longitude
-	call aisin_seiki_parse_latlon
-
-
-	; From now on, IY is gps_sentence[]  - TAKE NOTE !
-
-
-	ld iy, #gps_sentence
-
-
-	; [ 9] 2 height             0.5m       very inaccurate anyway
-	; [11] 1 error ellipse 1    2m
-	; [12] 1 error ellipse 2    2m
-
-	; [13] 2 heading            360deg/1024    values 0...3FF
-
-	ld h, (iy + 13)
-	ld l, (iy + 14)
-
-	push hl               ;  +1      *=45 /=128 converts to degrees
-	add hl, hl            ; 2
-	add hl, hl            ; 4
-	push hl               ;  +4
-	add hl, hl            ; 8
-	push hl               ;  +8
-	add hl, hl            ; 16
-	add hl, hl            ; 32
-
-	pop bc
-	add hl, bc
-	pop bc
-	add hl, bc
-	pop bc
-	add hl, bc            ; 45 times in HL
-
-	rl l                  ; LSbit into CY
-	ld l, h               ; 8 MSbits in L
-	ld h, #0               ; H will contain only 1 MSbit
-	rl h                  ; all bits properly in HL now
-
-	ld (gps_course), hl   ; integer degrees in range 0...359
-
-	; [15] 1 heading error      90deg/256
-
-	; [16] 2 ground speed       1/4 m/s    end 16384 m/s = 31847 knots
-
-	ld h, (iy + 16)
-	ld l, (iy + 17)
-
-	push hl                 ; we will make another conversion shortly
-
-	xor a                      ; AHL has speed in 0.25 meter / second
-	push hl                    ;  -1
-	add hl, hl
-	adc a, a          ; 2 times
-	add hl, hl
-	adc a, a          ; 4 times
-	add hl, hl
-	adc a, a          ; 8 times
-	add hl, hl
-	adc a, a          ; 16 times
-	add hl, hl
-	adc a, a          ; 32 times      cannot overflow - CY clear
-	pop bc
-	sbc hl, bc
-	sbc a, #0                      ; 31 times in AHL
-	add hl, hl                 ; shift left
-	rla                        ; AHL shifted once
-	add hl, hl                 ; shift left again
-	rla                        ; AHL shifted twice
-	ld l, h
-	ld h, a                    ; divided by 64
-	ld (gps_knots), hl         ; speed in knots = x * 31 / 64
-
-	pop hl                        ; another conversion ... sigh.
-
-	call quarter_ms_to_kmh
-	ld (gps_speed), a          ; speed in km/h
-
-	; [18] 1 ground speed error 1/4 m/s
-	; [19] 1 dummy
-	; [20] 1 dummy
-	; [21] 1 dummy
-
-	; [22] 6 date & time        1s  YYMMDDHHMMSS in packed bcd
-
-	ld hl, #gps_sentence + 22
-
-	ld de, #gps_date
-	ld b, #3
-1:
-	call aisin_seiki_datetime_unpack ; year is % 100
-	djnz 1b
-
-	ld de, #gps_utc
-	ld b, #3
-1:
-	call aisin_seiki_datetime_unpack
-	djnz 1b
-
-	; too bad it was not date then utc in ram. cannot
-	; flip them because their address is fixed by remote cfg conventions.
-
-	; [28] 1 HDOP               0.2
-	; [29] 1 VDOP               0.2
-	; [30] 1 satellite count
-	; [31] 8 satellite used info
-
-	ld hl, #gps_sentence + 31 + 4        ; 1st ... 4th is a PRN bitmap or ...
-	ld de, #gps_status
-	ld b, #4
-1:
-	call aisin_seiki_satstat_unpack     ; 5th ... 8th byte more interesting
-	djnz 1b
-
-	; [39] 1 dummy
-
-	jp gps_information_has_been_updated ; finished.
-
-
-;------------
-
-	; These two routines are exactly the same.
-
-aisin_seiki_datetime_unpack:            ; packed bcd to two unpacked 0 ... 9
-aisin_seiki_satstat_unpack:             ; two nybbles into two hex digits 0 ... F
-
-	ld a, (hl)
-	rrca
-	rrca
-	rrca
-	rrca
-	call 1f              ; tens
-
-	ld a, (hl)
-	inc hl
-1:
-	and #0x0F
-	ld (de), a           ; ones
-	inc de
-
-	ret
-
-;---------------------------------------------
-
-; length in C, kept, Z = good.
-
-gps_checksum:
-
-	ld hl, #gps_sentence ; $ is not saved in the buffer
-	ld b, c             ; keep c, downcount b
-	ld e, #0             ; checksum seed
-1:
-	ld a, (hl)
-	inc hl
-	cp #'*'
-	jr z, 1f
-	xor e
-	ld e, a
-	djnz 1b
-2:
-	or #1                ; NZ
-	ret                 ; too short.
-1:
-	ld a, b
-	cp #2
-	jr c, 2b            ; too short.
-	ld a, (hl)
-	inc hl
-	call hexchr_to_bin
-	jr c, 2b            ; illegal character in checksum
-	rla
-	rla
-	rla
-	rla
-	and #0xF0
-	ld b, a
-	ld a, (hl)
-	inc hl
-	call hexchr_to_bin
-	jr c, 2b
-	or b
-	cp e	            ; checksum mismatch ? NZ if so
-	ret
-
-
-;
-;  only A and some flags change here. NC = good.
-;
-hexchr_to_bin:
-	sub #'0'          ; 3 ranges: 0-9, A-F, a-f
-	ret c            ; below 0
-	cp #10
-	ccf
-	ret nc           ; 0-9
-	sub #'A' - '0'
-	ret c            ; below A
-	cp #6
-	jr c, 1f         ; A-F
-	sub #'a' - 'A'
-	ret c            ; below a
-	cp #6
-	jr c, 1f         ; a-f
-	scf              ; above f
-	ret
-1:
-	add a, #10           ; 0xA...0xF. carry will be clear
-	ret
-
-symbol_nibble_to_primary_symbol:
-	.db 'p' ;  0   rover (puppy dog)
-	.db '>' ;  1   car
-	.db 'v' ;  2   van
-	.db 's' ;  3   ship (power boat)
-	.db '-' ;  4   house
-	.db '+' ;  5   red cross
-	.db 'r' ;  6   antenna
-	.db 'c' ;  7   orienteering marker
-	.db '0' ;  8   (0)
-	.db '1' ;  9   (1)
-	.db '2' ;  A   (2)
-	.db '3' ;  B   (3)
-	.db '4' ;  C   (4)
-	.db '5' ;  D   (5)
-	.db '6' ;  E   (6)
-	          ;  F indirect symbol:   take symbol from SSID
-
-ssid_nibble_to_primary_symbol:
-	.db '/' ;   0 Dot (indirect from MPRS symbol 15 and SSID 0)
-	.db 'a' ;   1 ambulance
-	.db 'U' ;   2 bus
-	.db 'f' ;   3 fire truck
-	.db 'b' ;   4 bicycle
-	.db 'Y' ;   5 yacht
-	.db 'X' ;   6 helicopter
-	.db 0x27 ;   7 small aircraft
-	.db 's' ;   8 ship (power boat)
-	.db '>' ;   9 car
-	.db '<' ;  10 motorcycle
-	.db 'O' ;  11 balloon
-	.db 'j' ;  12 jeep
-	.db 'R' ;  13 recreational vehicle
-	.db 'k' ;  14 truck
-	.db 'v' ;  15 van
-
-str_gprmc: .asciz "GPRMC,"
-
-; length in c-reg
-
-gps_process_sentence:
-
-	ld hl, #gps_sentence
-	ld de, #str_gprmc
-	ld b, c              ; keep c, downcount b
-1:
-	ld a, (de)
-	or a
-	jr z, 2f             ; matched pattern to end
-	cp (hl)
-	ret nz               ; mismatch, not GPRMC
-	inc hl
-	inc de
-	djnz 1b
-	ret                  ; huh ?
-2:
-	call gps_checksum
-	ret nz               ; corrupt
-	jr gps_process_gprmc
-
-; length in c-reg  ============================
-
-gps_process_gprmc:
-
-	; GPRMC,212909.00,A,4915.607,N,12310.537,W,000.0,360.0,111198,020.3,E*68
-	; HHMMSS might have .NN decimal seconds.
-
-	ld hl, #gps_sentence
-
-	inc hl
-	inc hl
-	inc hl
-	inc hl
-	inc hl
-	inc hl    ; skip tag and first comma "GPRMC,"
-
-	; 225446     Time of fix 22:54:46 UTC ------------------------------------
-
-	ld de, #gps_utc
-	ld b, #6
-1:
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (de), a
-	inc de
-	djnz 1b
-
-	ld a, #EOS
-	ld (de), a
-	inc de
-	ld (de), a
-
-1:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f          ; comma after utc, end of field.
-	cp #'.'
-	jr z, 1b          ; decimal point (any number of them accepted)
-	sub #'0'
-	ret c            ; less than digit
-	cp #10
-	ret nc             ; over 9
-	jr 1b                     ; otherwise keep looking for comma.
-1:
-
-
-	; A          Navigation receiver warning A = OK, V = warning -------------
-
-	ld a, (hl)
-	inc hl
-	cp #'A'
-	ret nz            ; not A = OK, Navigation receiver warning
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	ret nz            ; missing comma after A/V status
-
-	; 4916.45,N  Latitude 49 deg. 16.45 min North ----------------------------
-
-	ld ix, #cfg_gps_latitude
-
-	ld bc, #0
-	ld de, #0
-1:
-	ld a, (hl)
-	inc hl
-	cp #'.'
-	jr z, 1f
-	sub #'0'
-	ret c            ; other than decimal point or numbers
-	ld (ix+0), b
-	ld b, c
-	ld c, d
-	ld d, e
-	ld e, a
-	jr 1b
-1:
-	ld (ix+1), b
-	ld (ix+2), c
-	ld (ix+3), d
-	ld (ix+4), e
-
-	; decimal minutes
-
-	ld de, #0
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	sub #'0'
-	ret c            ; other than numbers before the ending comma
-	ld d, a                   ; 0.1 minutes
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	sub #'0'
-	ret c            ; other than numbers before the ending comma
-	ld e, a                   ; 0.xx minutes ready (rest is ignored)
-
-2:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f          ; no more decimals
-	sub #'0'
-	ret c            ; other than numbers before the ending comma
-	jr 2b
-1:
-	ld (ix+5), d
-	ld (ix+6), e
-
-	ld a, (hl)
-	inc hl
-	ld (ix+7), a               ; N/S character
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	ret nz            ; comma after North/South
-
-	; 12311.12,W Longitude 123 deg. 11.12 min West ---------------------------
-
-	ld ix, #cfg_gps_longitude
-
-	ld bc, #0
-	ld de, #0
-1:
-	ld a, (hl)
-	inc hl
-	cp #'.'
-	jr z, 1f
-	sub #'0'
-	ret c            ; other than decimal point or numbers
-	ld (ix+0), b
-	ld b, c
-	ld c, d
-	ld d, e
-	ld e, a
-	jr 1b
-1:
-	ld (ix+1), b
-	ld (ix+2), c
-	ld (ix+3), d
-	ld (ix+4), e
-
-	; decimal minutes
-
-	ld de, #0
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	sub #'0'
-	ret c            ; other than numbers before the ending comma
-	ld d, a                   ; 0.1 minutes
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	sub #'0'
-	ret c            ; other than numbers before the ending comma
-	ld e, a                   ; 0.01 minutes
-
-2:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f          ; no more decimals
-	sub #'0'
-	ret c            ; other than comma or numbers
-	jr 2b
-1:
-	ld (ix+5), d
-	ld (ix+6), e
-
-	ld a, (hl)
-	inc hl
-	ld (ix+7), a               ; E/W character
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	ret nz            ; comma after East/West
-
-	; 000.5      Speed over ground, Knots ------------------------------------
-
-	ld ix, #0               ; 65 kiloknots and overflow is NOT checked XXX
-1:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	cp #'.'
-	jr z, 2f
-	sub #'0'
-	ret c
-	add ix, ix
-	push ix
-	pop de
-	add ix, ix
-	add ix, ix
-	add ix, de     ; *= 10
-	ld d, #0
-	ld e, a
-	add ix, de     ; += ones
-	jr 1b
-2:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	cp #'5'
-	jr c, 2f
-		inc ix                ; round up
-	2:
-		ld a, (hl)
-		inc hl
-		cp #','
-		jr z, 1f
-		sub #'0'
-		ret c
-		jr 2b
-1:
-	ld (gps_knots), ix         ; speed in knots
-
-	push hl                ; save pointer
-
-	push ix                ; copy ix ...
-	pop hl                 ; ... to hl
-	call knots_to_kmh
-	ld (gps_speed), a      ; speed in km/h - limited to 255 km/h
-
-	pop hl                 ; restore pointer
-
-	; 054.7      Course Made Good, True --------------------------------------
-
-	ld ix, #0
-1:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	cp #'.'
-	jr z, 2f
-	sub #'0'
-	ret c
-	add ix, ix
-	push ix
-	pop de
-	add ix, ix
-	add ix, ix
-	add ix, de     ; *= 10
-	ld d, #0
-	ld e, a
-	add ix, de     ; += ones
-	jr 1b
-2:
-	ld a, (hl)
-	inc hl
-	cp #','
-	jr z, 1f
-	cp #'5'
-	jr c, 2f
-		inc ix                ; round up
-	2:
-		ld a, (hl)
-		inc hl
-		cp #','
-		jr z, 1f
-		sub #'0'
-		ret c
-		jr 2b
-1:
-	ld (gps_course), ix
-
-	; 191194     Date of fix  19 November 1994 -------------------------------
-
-	ld ix, #gps_date         ; yymmdd
-
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (ix+4), a
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (ix+5), a
-
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (ix+2), a
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (ix+3), a
-
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (ix+0), a
-	ld a, (hl)
-	inc hl
-	sub #'0'
-	ret c            ; not '0'...'9'
-	ld (ix+1), a
-
-	ld a, #EOS
-	ld (ix+6), a
-	ld (ix+7), a
-
-	ld a, (hl)
-	inc hl
-	cp #','
-	ret nz            ; missing comma after date
-
-	; 020.3,E    Magnetic variation 20.3 deg East ----------------------------
-
-	; XXX don't care about those. ------------------------------
-
-gps_information_has_been_updated:
-
-	call gps_own_locator  ; turn lat/lon into maidenhead grid square
-
-	ld a, #5
-	ld (gps_valid_seconds), a
-
-	ld a, (menu_active)
-	or a
-	jp nz, redraw          ; redraw if in menu - in case GPSxxx display
-
-	ret
-
-;======================================================================
-
-; execute [script_req] if it is nonzero.
+; GPS sentence processing lives in bank 1 (search "BANK 1").
+far_gps_process_aisin_seiki:	call bank1_call
+	.dw gps_process_aisin_seiki
+far_gps_process_sentence:	call bank1_call
+	.dw gps_process_sentence
 
 script_check:
 
@@ -6502,7 +5822,7 @@ packet_for_whom:
 	cp #0xD
 	jp z, handle_display_packets
 	cp #0x4
-	jp z, handle_mprs_packets
+	jp z, far_handle_mprs_packets
 	cp #0x5
 	jr z, handle_relay_packets
 
@@ -6933,7 +6253,7 @@ send_mprs_report_packet_1:
 
 	ld a, (cfg_report_type)
 	or a
-	jp nz, send_aprs_report_packet
+	jp nz, far_send_aprs_report_packet
 
 	ld a, #0x40
 	ld (outpacket + 0), a        ; "MPRS #0" ...
@@ -7041,2392 +6361,11 @@ mute_fsk_at_mprs_end_maybe:
 	                              ; no need to diddle with squelch open delay
 
 
-handle_mprs_packets:               ; 4x-packets
-	inc l
-	ld a, (hl)                      ; XXX minor digit ignored for now
-	inc l
-
-	ld ix, #mprs_packed_packet
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+0), a     ; callsign
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+1), a
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+2), a
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+3), a
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+4), a
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+5), a
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+6), a     ; lat
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+7), a
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+8), a
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+9), a      ; lon
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+10), a
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (ix+11), a
-
-	call mute_fsk_at_mprs_end_maybe
-
-	ld ix, #mprs_packed_packet
-	ld de, #remote_display_buffer
-	call packet_callsign_unpack
-
-	ld a, #EOS
-	ld (remote_display_buffer + 6), a     ; 6 characters are valid in packet
-	ld (remote_display_buffer + 7), a
-	ld (remote_display_buffer + 8), a
-	ld (remote_display_buffer + 9), a     ; 10 will be displayed from buffer
-	ld (remote_display_buffer + 10), a    ; barrier
-
-	ld hl, #remote_display_buffer - 1     ; step over nonblanks to add (-NN and) EOS
-1:
-	inc hl
-	ld a, (hl)
-	cp #EOS
-	jr z, 1f                        ; already ends in EOS
-	cp #' '
-	jr nz, 1b                       ; more valid chars
-
-	ld (hl), #EOS                    ; only call now, HL left over end
-1:
-
-	ld a, (mprs_packed_packet + 4)
-	and #0xF0                              ; SSID ?
-	jr z, 1f                              ; no -NN if SSID was 0
-		ld (hl), #'-'
-		inc hl
-
-		rra
-		rra
-		rra
-		rra
-		and #0xF
-		cp #10
-		jr c, 2f
-			ld (hl), #'1'                  ; always 1x if over 9
-			inc hl
-			sub #10                        ; ones
-	2:
-		add a, #'0'
-		ld (hl), a                        ; 6 + "-15" always fits buffer[10]
-		inc hl
-
-		ld (hl), #EOS
-1:
-
-	ld ix, #mprs_packed_packet + 6      ; lat/lon/symbol ?
-	ld a, (ix)
-	and #0x80
-	jr nz, 1f                          ; skip if reserved data
-		ld iy, #locator_display_buffer
-		call packed_latlon_to_locator
-
-		ld a, #EOS
-		ld (locator_display_buffer + 6), a
-		ld (locator_display_buffer + 7), a
-
-		ld a, (cfg_mbus_mprs)
-		or a
-		call nz, mbus_mprs_call_latlon     ; blurt it out MBUS too
-
-		ld a, (cfg_gps_upload)
-		or a
-		call nz, gps_mprs_call_latlon     ; blurt it out into GPS
-
-		ld a, (cfg_remote_dpy_secs)
-		ld (locator_dpyed), a
-
-		call mprs_qrb
-1:
-	ld a, (cfg_remote_dpy_secs)
-	ld (display_buffer_time), a
-	or a
-	call nz, redraw
-
-	ret
-
-packed_latlon_to_locator:
-
-	ld a, (ix+0)             ; lat degrees ================================
-	and #0x7F                 ; mask off reserved bit
-	ld c, #'J' - 1
-1:
-	inc c
-	sub #10                   ; 10 degrees per letter
-	jr nc, 1b
-	add a, #10 + '0'             ; has has degrees % 10, into ascii direct
-	ld (iy+1), c
-	ld (iy+3), a
-
-	ld a, #50
-	cp (ix+2)                ; one halfminute from decimal minutes maybe
-	ld a, (ix+1)             ; lat minutes
-	rl a                     ; turn to total halfminutes
-	and #0x7F                 ; mask off remaining symbol bit
-	ld c, #'A' - 1
-1:
-	inc c
-	sub #5                    ; 5 minutes per halfminutes or letter
-	jr nc, 1b
-	add a, #5                    ; minor digit in the making
-	ld (iy+5), c             ; minor letter ok.
-	ld c, a
-	sla c                    ; minor letter, now missing lsbit
-	ld a, (ix+2)
-	cp #50
-	jr c, 1f
-	sub #50                   ; delete half a minute
-1:                           ; even/odd quarter ok
-	cp #25
-	jr c, 1f                 ; skip if even quarter
-	inc c                    ; lsbit ok
-1:
-	ld a, c
-	add a, #'0'
-	ld (iy+7), a             ; minor digit ok.
-
-	ld a, (ix+2)             ; Correction for South ?
-	and #0x80
-	jr z, 1f                 ; no, skip
-	ld a, #'I'
-	sub (iy+1)
-	add a, #'J'
-	ld (iy+1), a             ; 'I' - chr + 'J'
-	ld a, #'9'
-	sub (iy+3)
-	add a, #'0'
-	ld (iy+3), a             ; '9' - chr + '0'
-	ld a, #'L'
-	sub (iy+5)
-	add a, #'M'
-	ld (iy+5), a             ; 'L' - chr + 'M'
-	ld a, #'9'
-	sub (iy+7)
-	add a, #'0'
-	ld (iy+7), a             ; '9' - chr + '0'
-1:
-
-	ld a, (ix+3)             ; lon degrees ===============================
-	ld c, #'J' - 1
-1:
-	inc c
-	sub #20                   ; 20 degrees per letter
-	jr nc, 1b
-	add a, #20                   ; has has degrees % 20
-	srl a                    ; has has degrees % 10
-	push af                  ; remember carry -----------------------
-	add a, #'0'                  ; into ascii
-	ld (iy+0), c             ; major letter ok.
-	ld (iy+2), a             ; major digit ok.
-
-	ld a, (ix+4)             ; lon minutes
-	and #0x3F                 ; mask off symbol bits
-	ld c, a
-	pop af                   ; even/odd degree from above
-	ld a, c
-	jr nc, 1f
-	add a, #60                   ; 24 small squares in 2 degrees
-1:
-	ld c, #'A' - 1
-1:
-	inc c
-	sub #5                    ; 5 minutes per letter
-	jr nc, 1b
-	add a, #5                    ; A has minutes modulo 5
-	ld (iy+4), c             ; minor letter ok.
-	ld c, a
-	ld a, #50
-	cp (ix+5)                ; lon hundredths of minutes
-	rl c                     ; add lsbit.
-	ld a, c
-	add a, #'0'
-	ld (iy+6), a             ; minor digit ok.
-
-	sla a
-	ld a, (ix+5)             ; Correction for West ?
-	and #0x80
-	jr z, 1f                 ; no, skip
-	ld a, #'I'
-	sub (iy+0)
-	add a, #'J'
-	ld (iy+0), a             ; 'I' - chr + 'J'
-	ld a, #'9'
-	sub (iy+2)
-	add a, #'0'
-	ld (iy+2), a             ; '9' - chr + '0'
-	ld a, #'L'
-	sub (iy+4)
-	add a, #'M'
-	ld (iy+4), a             ; 'L' - chr + 'M'
-	ld a, #'9'
-	sub (iy+6)
-	add a, #'0'
-	ld (iy+6), a             ; '9' - chr + '0'
-1:
-
-	ret
-
-
-gps_own_locator:
-
-	ld ix, #gps_latlon_tmp    ; temporarily into binary
-
-	ld iy, #cfg_gps_latitude
-	ld e, #2
-	ASSERT_EQ(cfg_gps_longitude, cfg_gps_latitude + 8)
-2:
-	ld a, (iy)
-	inc iy
-	or a
-	jr z, 1f
-	ld a, #100
-1:
-	ld d, a
-	ld b, #3       ; deg(rest of) and min and decimal min
-1:
-	ld a, (iy+0)  ; tens
-	add a, a         ; 2
-	ld c, a
-	add a, a         ; 4
-	add a, a         ; 8
-	add a, c         ; 10
-	add a, (iy+1)    ; ones
-	add a, d         ; one loysy 1xx in longitude
-	ld d, #0
-	inc iy
-	inc iy
-	ld (ix), a
-	inc ix
-	djnz 1b
-
-	ld a, (iy+0)
-	inc iy
-	cp #'N'
-	jr z, 1f
-	cp #'W'
-	jr nz, 1f
-	dec ix
-	ld a, (ix)
-	or #0x80
-	ld (ix), a
-	inc ix
-1:
-	dec e
-	jr nz, 2b    ; longitude
-
-	ld ix, #gps_latlon_tmp
-	ld iy, #cfg_gps_locator        ; final location of locator string
-
-	jp packed_latlon_to_locator
-
-
-;----------------------------------------------------------------------
-; input: A degrees, B minutes and C hundredths of minutes without signs.
-; output: centiminutes in AHL
-
-degmin_to_centiminutes:
-
-	ld l, a            ; degrees from A-reg ------------------------
-	ld h, #0            ; 180 max, minutes will fit HL
-	add hl, hl         ; 2 times
-	add hl, hl         ; 4 times
-	push hl
-	add hl, hl         ; 8 times
-	add hl, hl         ; 16 times
-	add hl, hl         ; 32 times
-	add hl, hl         ; 64 times, carry clear
-	pop de
-	sbc hl, de         ; - 4 times, HL has degrees as minutes
-
-	ld e, b            ; minutes from B-reg ------------------------
-	ld d, #0
-	add hl, de         ; HL has integer minutes
-	xor a            ; extend to AHL.
-
-	add hl, hl
-	adc a, a  ; 2 times
-	add hl, hl
-	adc a, a  ; 4 times
-	push af
-	push hl
-	add hl, hl
-	adc a, a  ; 8 times
-	add hl, hl
-	adc a, a  ; 16 times
-	add hl, hl
-	adc a, a  ; 32 times
-	push af
-	push hl
-	add hl, hl
-	adc a, a  ; 64 times
-
-	pop de
-	add hl, de
-	pop de
-	adc a, d              ; + 32 times
-
-	pop de
-	add hl, de
-	pop de
-	adc a, d              ; + 4 times, HL has integer minutes as centiminutes
-
-	ld b, #0            ; fractional minutes from C-reg -------------
-	add hl, bc
-	adc a, #0  ; AHL has full centiminutes
-
-	ret
-
-; input: A degrees, B minutes and C hundredths of minutes and sign-bit
-; result: AHL centiminutes north from south pole (0...1'080'000)
-
-degmin_to_centiminutes_from_south_pole:
-	push bc                 ; remember hemisphere
-	res 7, a                ; mask sign- etc bits off
-	res 7, b
-	res 6, b
-	res 7, c
-	call degmin_to_centiminutes  ; ABC -> AHL
-	pop bc
-	bit 7, c                ; south ?
-	call nz, negate_ahl     ; 90 - x (else 90 + x)
-
-	ld de, #(90 * 60 * 100) % 65536
-	add hl, de
-	adc    a, #(90 * 60 * 100) / 65536
-	ret                     ; AHL has result
-
-; input: A degrees, B minutes and C hundredths of minutes and sign-bit
-; result: AHL signed centiminutes from greenwich (+/- 0...1'080'000)
-
-degmin_to_centiminutes_from_meridian:
-	push bc                 ; remember hemisphere
-	res 7, a                ; mask sign- etc bits off
-	res 7, b
-	res 6, b
-	res 7, c
-	call degmin_to_centiminutes  ; ABC -> AHL
-	pop bc
-	bit 7, c                ; west ?
-
-	call nz, negate_ahl     ; make signed, - for west.
-
-	ret                     ; AHL has result
-
-
-mul_ahl_1852:           ; 2048 - 128 - 64 - 4
-
-	add hl, hl
-	adc a, a   ;    2 times
-	add hl, hl
-	adc a, a   ;    4 times
-	push af
-	push hl
-	add hl, hl
-	adc a, a   ;    8 times
-	add hl, hl
-	adc a, a   ;   16 times
-	add hl, hl
-	adc a, a   ;   32 times
-	add hl, hl
-	adc a, a   ;   64 times
-	push af
-	push hl
-	add hl, hl
-	adc a, a   ;  128 times
-	push af
-	push hl
-	add hl, hl
-	adc a, a   ;  256 times
-	add hl, hl
-	adc a, a   ;  512 times
-	add hl, hl
-	adc a, a   ; 1024 times
-	add hl, hl
-	adc a, a   ; 2048 times
-	pop de
-	pop bc
-	and a
-	sbc hl, de
-	sbc a, b   ; - 128 times
-	pop de
-	pop bc
-	sbc hl, de
-	sbc a, b   ; - 64 times
-	pop de
-	pop bc
-	sbc hl, de
-	sbc a, b   ; - 4 times = 1852 times.
-
-	ret
-
-
-centiminutes_to_1852_meters:
-
-	ld c, #100
-	call div248         ; HL has full minutes, A has hundredths of minutes
-
-	push hl             ; remember full minutes for a while
-
-	ld l, a             ; decimal minutes
-	xor a
-	ld h, a
-	call mul_ahl_1852
-
-	ld c, #100
-	call div248         ; HL has last few meters from decimal mins.
-
-	pop bc              ; get full minutes now
-	push hl             ; save last few meters
-
-	ld l, c
-	ld h, b
-	xor a
-	call mul_ahl_1852
-
-	pop de
-	add hl, de          ; add the last 1.8 kilometers
-	adc a, #0
-
-	ret
-
-
-; AHL centiminutes to AHL meters (DE is multiplier: meters / minute)
-
-centiminutes_to_meters:
-
-	ld c, #100
-	call div248         ; HL has full minutes, A has hundredths of minutes
-
-	push hl             ; remember full minutes for a while
-	ld hl, #0            ; start to accumulate
-
-	ld b, a             ; decimal minutes ?
-	inc b
-	dec b
-	jr z, 2f            ; happens to be none.
-1:
-	add hl, de
-	adc a, #0
-	djnz 1b             ; continue adding 0.01 * minute     max 100 loops
-
-	ld c, #100
-	call div248         ; HL has last 1.8 kilometers from decimal mins.
-2:
-	xor a               ; AHL has.
-
-	pop bc              ; get full minutes now
-	push bc
-	inc c               ; full minutes % 256 ?
-	dec c
-	jr z, 2f            ; happens to be none.
-	ld b, c
-1:
-	add hl, de          ; meters per minute
-	adc a, #0
-	djnz 1b             ; continue adding 1 * minute     max 256 loops
-2:
-	ld c, d
-	ld d, e
-	ld e, #0             ; now upper byte of full minute
-
-	pop bc              ; full minutes / 256 ?
-	inc b
-	dec b
-	jr z, 2f
-1:
-	add hl, de
-	adc a, c
-	djnz 1b             ; continue adding 256 * minute  max 256 loops
-2:
-	ret
-
-
-; align AHL centiminutes between -180 and +180 degrees. what a mess.
-
-delta_longitude_fixup:
-
-	; < -180 ? add 180 two times
-	; > +180 ? sub 180 two times
-
-	ld de, #(180 * 60 * 100) % 65536
-	ld b,  #(180 * 60 * 100) / 65536
-
-	bit 7, a
-	jr nz, 2f       ; go if difference is negative, maybe add 360 once.
-
-	and a
-	sbc hl, de
-	sbc a, b
-	jr c, 1f            ; was less than +180, undo
-	sbc hl, de          ; again to get -= 360
-	sbc a, b
-	ret
-1:
-	add hl, de
-	adc a, b
-	ret
-2:
-	add hl, de
-	adc a, b
-	jr c, 1f             ; was more positive than -180, undo
-	add hl, de           ; again to get += 360
-	adc a, b
-	ret
-1:
-	and a
-	sbc hl, de
-	sbc a, b
-	ret
-
-mprs_qrb_dir_char:
-	bit 2, a
-	jr nz, 1f      ; E/W direction.
-
-	bit 0, a       ; N/S ?
-	ld a, #'N'
-	ret nz
-	ld a, #'S'
-	ret
-1:
-	bit 1, a       ; E/W ?
-	ld a, #'E'
-	ret nz
-	ld a, #'W'
-	ret
-
-
-; flat-model
-; XXX near poles, use cone-model
-
-mprs_qrb:
-
-	ld iy, #cfg_gps_latitude            ; my latitude
-	ld ix, #my_coord_tmp_6bytes + 0
-	call mprs_degmin_pack
-
-	ld iy, #cfg_gps_longitude           ; my longitude
-	ld ix, #my_coord_tmp_6bytes + 3
-	call mprs_degmin_pack
-
-	xor a
-	ld (mprs_qrb_dir_bits), a          ; direction.
-
-	; latitude calculations
-
-	ld ix, #mprs_packed_packet + 6      ; his/hers latitude
-	ld a, (ix+0)
-	ld b, (ix+1)
-	ld c, (ix+2)
-	call degmin_to_centiminutes_from_south_pole
-	push af
-	push hl                            ; remember his latitude
-
-	ld ix, #my_coord_tmp_6bytes + 0     ; my latitude
-	ld a, (ix+0)
-	ld b, (ix+1)
-	ld c, (ix+2)
-	call degmin_to_centiminutes_from_south_pole
-
-	pop de               ; now sub his latitude
-	and a
-	sbc hl, de
-	pop de
-	sbc a, d              ; AHL has signed latitude difference in centiminutes
-	jr nc, 1f
-
-	call negate_ahl
-
-	ld iy, #mprs_qrb_dir_bits
-	set 0, (iy)         ; he/she is north from me
-1:
-
-	; AHL has abs(latitude centiminutes), turn into distance
-
-	call centiminutes_to_1852_meters
-
-	push af
-	push hl            ; remember northwise difference in meters
-
-
-
-	; longitude calculations
-
-	ld ix, #mprs_packed_packet + 9      ; his/hers longitude
-	ld a, (ix+0)
-	ld b, (ix+1)
-	ld c, (ix+2)
-	call degmin_to_centiminutes_from_meridian
-
-	push af
-	push hl                            ; remember his longitude
-
-	ld ix, #my_coord_tmp_6bytes + 3     ; my longitude
-	ld a, (ix+0)
-	ld b, (ix+1)
-	ld c, (ix+2)
-	call degmin_to_centiminutes_from_meridian
-
-	pop de                  ; now sub his longitude
-	and a
-	sbc hl, de
-	pop de
-	sbc a, d          ; AHL has signed longitude difference in centiminutes
-
-	call delta_longitude_fixup
-
-	bit 7, a
-	jr z, 1f
-
-	call negate_ahl
-
-	ld iy, #mprs_qrb_dir_bits
-	set 1, (iy)         ; he/she is east from me
-1:
-
-	; AHL has abs(longitude delta), turn into distance
-
-	ld ix, #my_coord_tmp_6bytes + 0     ; my latitude
-	ld d, #0
-	ld e, (ix+0)
-	sla e
-	ld ix, #minutes_to_meters_wrt_latitude_degree
-	add ix, de
-	ld e, (ix+0)
-	ld d, (ix+1)
-	call centiminutes_to_meters
-
-
-	pop de
-	pop bc              ; BDE has nortwise meters
-	ld c, a             ; CHL has eastwise meters
-
-	; which of them is longer ?
-
-	ld ix, #my_coord_tmp_6bytes + 0
-	ld (ix+0), e
-	ld (ix+1), d
-	ld (ix+2), b        ; northwise in ix
-
-	ld iy, #my_coord_tmp_6bytes + 3
-	ld (iy+0), l
-	ld (iy+1), h
-	ld (iy+2), c        ; eastwise in iy
-
-	and a
-	sbc hl, de
-	sbc a, b
-	jr c, 1f             ; major axis is N/S in ix, BDE
-
-	ld ix, #my_coord_tmp_6bytes + 3
-	ld iy, #my_coord_tmp_6bytes + 0  ; now major axis is in ix
-
-	ld hl, #mprs_qrb_dir_bits
-	set 2, (hl)          ; remember the direction major axis is E/W
-1:
-
-	; simple distance approximation
-	; distance = major + minor * 83 / 256
-	; less than %5 error except 7% at 45 degrees directions
-
-	ld e, (iy+0)
-	ld d, (iy+1)
-	ld l, (iy+2)
-	ld h, #0
-	push de
-	pop iy               ; minor axis in HLIY
-
-	push hl              ; remember 1 times
-	push iy
-
-	add iy, iy
-	adc hl, hl    ;  2 times
-	add iy, iy
-	adc hl, hl    ;  4 times
-	add iy, iy
-	adc hl, hl    ;  8 times
-	add iy, iy
-	adc hl, hl    ; 16 times
-	push hl              ; remember 16 times
-	push iy
-	add iy, iy
-	adc hl, hl    ; 32 times
-	add iy, iy
-	adc hl, hl    ; 64 times
-	pop de               ; get 16 times
-	pop bc
-	add iy, de
-	adc hl, bc    ; + 16 times
-	pop de
-	pop bc               ; get one times
-	add iy, de
-	adc hl, bc    ; + 1 times
-	add iy, de
-	adc hl, bc    ; + 1 times
-	add iy, de
-	adc hl, bc    ; + 1 times, totals 83 times
-
-	push iy
-	pop de               ; in HLDE
-	ld e, d
-	ld d, l
-	ld c, h              ; divided by 256, in CDE
-
-	ld l, (ix+0)
-	ld h, (ix+1)
-	ld a, (ix+2)
-	add hl, de
-	adc a, c                ; distance meters complete in AHL.
-
-	ld (ix+0), l
-	ld (ix+1), h
-	ld (ix+2), a         ; save for a while
-
-	; determine scale 
-
-	and a
-
-	ld de, #1000
-	sbc hl, de
-	sbc a, #0
-	ld l, (ix+0)
-	ld h, (ix+1)
-	ld a, (ix+2)
-	ld b, #0                  ; assume scale 1, zero trailing "0"
-	jr c, mprs_qrb_present   ; already < 1000, skip stuff at 1f
-
-	ld de, #10000
-	sbc hl, de
-	sbc a, #0
-	ld l, (ix+0)
-	ld h, (ix+1)
-	ld a, (ix+2)
-	inc b              ; trailing "0"
-	ld c, #10           ; divider to get the significant part
-	jr c, 1f
-
-	ld de, #100000 % 65536
-	sbc hl, de
-	sbc    a, #100000 / 65536
-	ld l, (ix+0)
-	ld h, (ix+1)
-	ld a, (ix+2)
-	inc b              ; trailing "00"
-	ld c, #100          ; divider is 100
-	jr c, 1f
-
-	ld de, #1000000 % 65536
-	sbc hl, de
-	sbc    a, #1000000 / 65536
-	ld l, (ix+0)
-	ld h, (ix+1)
-	ld a, (ix+2)
-	inc b               ; trailing "000"
-
-	ret nc     ; "too far"
-
-	; AHL / 100 / 10 some extra dancing.
-
-	ld c, #100
-	call div248
-	xor a             ; extend back for another div
-
-	ld c, #10            ; again to get the total /= 1000
-
-	; fall thru
-1:
-	; scale down by C, keep B valid.
-
-	call div248         ; AHL / C => HL
-
-	; fall thru
-
-mprs_qrb_present:
-
-	; scaled to less than 1000
-	;
-	; HL has 0...999 and
-	; B has number of trailing zeroes vs meters.
-
-	ld iy, #distance_bearing
-
-	ld c, #'.'      ; decimal point
-	inc b          ; preincrement to use djnz
-
-	djnz 1f
-	ld (iy), c     ; .999  kilometers
-	inc iy
-1:
-	ld a, #-1
-	ld de, #100     ; /= 100
-	and a          ; for sbc hl
-1:
-	inc a
-	sbc hl, de
-	jr nc, 1b      ;                                   max 9 loops
-	add hl, de     ; correct remainder
-
-	ld (iy), a     ; first digit
-	inc iy
-
-	djnz 1f
-	ld (iy), c     ; 9.99
-	inc iy
-1:
-	ld a, l        ; remaining 0...99 fits A
-	ld e, #-1
-1:
-	inc e
-	sub #10         ; /= 10
-	jr nc, 1b      ;                                   max 9 loops
-	add a, #10         ; and the remainder for third significant (ha!) place.
-
-	ld (iy), e     ; second digit
-	inc iy
-
-	djnz 1f
-	ld (iy), c     ; 99.9
-	inc iy
-1:
-	ld (iy), a     ; third (last) digit
-	inc iy
-
-	dec b
-	jr z, 1f       ; 3 trailing zeroes
-	ld c, #0        ; 4 trailing zeroes, no decimal point but a "0"
-1:
-	ld (iy), c     ; 999. or 9990
-	inc iy
-
-	ld a, #' '
-	ld (iy), a     ; blank separator for "xxxx d" format
-	inc iy
-
-	; direction character as the sixth in buffer
-
-	ld a, (mprs_qrb_dir_bits)
-	call mprs_qrb_dir_char
-
-	ld (iy+0), a
-	ld a, #EOS
-	ld (iy+1), a
-
-	ret            ; Whew.
-
-;----------------------------------------------------------------------
-
-minutes_to_meters_wrt_latitude_degree:
-	.dw 1852 ;  0
-	.dw 1852 ;  1
-	.dw 1851 ;  2
-	.dw 1849 ;  3
-	.dw 1847 ;  4
-	.dw 1845 ;  5
-	.dw 1842 ;  6
-	.dw 1838 ;  7
-	.dw 1834 ;  8
-	.dw 1829 ;  9
-	.dw 1824 ; 10
-	.dw 1818 ; 11
-	.dw 1812 ; 12
-	.dw 1805 ; 13
-	.dw 1797 ; 14
-	.dw 1789 ; 15
-	.dw 1780 ; 16
-	.dw 1771 ; 17
-	.dw 1761 ; 18
-	.dw 1751 ; 19
-	.dw 1740 ; 20
-	.dw 1729 ; 21
-	.dw 1717 ; 22
-	.dw 1705 ; 23
-	.dw 1692 ; 24
-	.dw 1678 ; 25
-	.dw 1665 ; 26
-	.dw 1650 ; 27
-	.dw 1635 ; 28
-	.dw 1620 ; 29
-	.dw 1604 ; 30
-	.dw 1587 ; 31
-	.dw 1571 ; 32
-	.dw 1553 ; 33
-	.dw 1535 ; 34
-	.dw 1517 ; 35
-	.dw 1498 ; 36
-	.dw 1479 ; 37
-	.dw 1459 ; 38
-	.dw 1439 ; 39
-	.dw 1419 ; 40
-	.dw 1398 ; 41
-	.dw 1376 ; 42
-	.dw 1354 ; 43
-	.dw 1332 ; 44
-	.dw 1310 ; 45
-	.dw 1287 ; 46
-	.dw 1263 ; 47
-	.dw 1239 ; 48
-	.dw 1215 ; 49
-	.dw 1190 ; 50
-	.dw 1166 ; 51
-	.dw 1140 ; 52
-	.dw 1115 ; 53
-	.dw 1089 ; 54
-	.dw 1062 ; 55
-	.dw 1036 ; 56
-	.dw 1009 ; 57
-	.dw  981 ; 58
-	.dw  954 ; 59
-	.dw  926 ; 60
-	.dw  898 ; 61
-	.dw  869 ; 62
-	.dw  841 ; 63
-	.dw  812 ; 64
-	.dw  783 ; 65
-	.dw  753 ; 66
-	.dw  724 ; 67
-	.dw  694 ; 68
-	.dw  664 ; 69
-	.dw  633 ; 70
-	.dw  603 ; 71
-	.dw  572 ; 72
-	.dw  541 ; 73
-	.dw  510 ; 74
-	.dw  479 ; 75
-	.dw  448 ; 76
-	.dw  417 ; 77
-	.dw  385 ; 78
-	.dw  353 ; 79
-	.dw  322 ; 80
-	.dw  290 ; 81
-	.dw  258 ; 82
-	.dw  226 ; 83
-	.dw  194 ; 84
-	.dw  161 ; 85
-	.dw  129 ; 86
-	.dw   97 ; 87
-	.dw   65 ; 88
-	.dw   32 ; 89
-
-
-;----------------------------------------------------------------------
-
-
-; OH5NXO-1>APRS:!6103.52N/02806.18E>
-
-mbus_mprs_call_latlon:
-
-	ld a, (cfg_mbus_mprs)      ; how exactly ?
-	cp #4
-	jr z, mbus_mprs_out_logger  ; different from the others below
-
-
-	ld de, #mbus_mprs_buffer     ; format message like !6103.52N/02806.18E>
-
-
-	ld a, #'!'
-	ld (de), a
-	inc de
-
-	ld ix, #mprs_packed_packet + 6
-	call mprs_lat_format
-	ld a, (ix+2)
-	and #0x80
-	ld a, #'N'
-	jr z, 1f
-	ld a, #'S'
-1:
-	ld (de), a
-	inc de
-
-	ld a, #'/'                   ; Primary symbol table
-	ld (de), a
-	inc de
-
-	ld ix, #mprs_packed_packet + 9
-	call mprs_lon_format
-	ld a, (ix+2)
-	and #0x80
-	ld a, #'E'
-	jr z, 1f
-	ld a, #'W'
-1:
-	ld (de), a
-	inc de
-
-	ld a, (mprs_packed_packet + 6 + 1)
-	and #0xC0
-	srl a
-	srl a
-	srl a
-	srl a
-	ld b, a
-	ld a, (mprs_packed_packet + 9 + 1)
-	and #0xC0
-	rlca
-	rlca
-	or b                                   ; symbol nibble complete
-	ld hl, #symbol_nibble_to_primary_symbol
-	cp #15
-	jr nz, 1f
-	ld a, (mprs_packed_packet + 4)         ; symbol=15, indirect symbol from SSID
-	srl a
-	srl a
-	srl a
-	srl a
-	ld hl, #ssid_nibble_to_primary_symbol
-1:
-	ld b, #0
-	ld c, a
-	add hl, bc
-	ld a, (hl)
-	ld (de), a
-	inc de
-
-	ld a, #EOS
-	ld (de), a               ; !6103.52N/02806.18E>  complete
-
-	ld a, (cfg_mbus_mprs)      ; how exactly ?
-
-	dec a                            ; if 1
-	jp z, mbus_mprs_out_emu_tnc
-	dec a                            ; if 2
-	jp z, mbus_mprs_out_emu_kiss_tnc
-	dec a                            ; if 3
-	jp z, mbus_mprs_out_3rd_party
-
-	ret ; ???
-
-; 120000 6103.52N 02806.18E KP41BB 0 128 OH5NXO-15 <CRLF>
-;  utc    lat       lon     loc  sym rssi call
-
-mbus_mprs_out_logger:
-
-	ld de, #mbus_mprs_buffer     ; format message " 6103.52N 02806.18E "
-
-
-	ld a, #' '
-	ld (de), a
-	inc de
-
-	ld ix, #mprs_packed_packet + 6
-	call mprs_lat_format
-	ld a, (ix+2)
-	and #0x80
-	ld a, #'N'
-	jr z, 1f
-	ld a, #'S'
-1:
-	ld (de), a
-	inc de
-
-	ld a, #' '
-	ld (de), a
-	inc de
-
-	ld ix, #mprs_packed_packet + 9
-	call mprs_lon_format
-	ld a, (ix+2)
-	and #0x80
-	ld a, #'E'
-	jr z, 1f
-	ld a, #'W'
-1:
-	ld (de), a
-	inc de
-
-	ld a, #' '
-	ld (de), a
-	inc de
-
-	ld a, #EOS
-	ld (de), a               ; " 6103.52N 02806.18E "  complete
-
-	ld ix, #gps_utc
-	call mbus_mprs_out_string_ascify
-
-	ld ix, #mbus_mprs_buffer         ; message formatted above
-	call mbus_mprs_out_string
-
-	ld ix, #locator_display_buffer
-	call mbus_mprs_out_string
-
-	ld c, #' '
-	call putchar
-
-	ld a, (mprs_packed_packet + 6 + 1)
-	and #0xC0
-	rrca
-	rrca
-	rrca
-	rrca      ; 0x0C
-	ld b, a
-	ld a, (mprs_packed_packet + 9 + 1)
-	and #0xC0
-	rlca
-	rlca      ; 0x03
-	or b                    ; symbol nibble complete
-	call putchar_hex_nybble ; print just as a hex digit
-
-	ld c, #' '
-	call putchar                    ; so far fixed width fields
-
-	ld a, (packet_rssi)
-	call putchar_hex_byte
-
-	ld c, #' '
-	call putchar                    ; so far fixed width fields
-
-	ld ix, #remote_display_buffer    ; OH5NXO-15
-	call mbus_mprs_out_string
-
-	ld c, #0x0D
-	call putchar
-	ld c, #0x0A
-	call putchar                    ; CRLF
-
-	ret
-
-putchar_hex_byte:
-
-	ld b, a
-	rra
-	rra
-	rra
-	rra
-	call putchar_hex_nybble
-
-	ld a, b
-
-putchar_hex_nybble:
-
-	and #0xF
-	cp #10
-	jr c, 1f
-	add a, #'A' - 10 - '0'
-1:
-	add a, #'0'
-	ld c, a
-	jp putchar
-
-
-mprs_fake_dst_0:	.ascii "APRS"
-.db EOS, EOS, EOS, EOS
-mprs_fake_dst_1:	.ascii "RELAY"
-.db      EOS, EOS, EOS
-mprs_fake_dst_2:	.ascii "WIDE"
-.db EOS, EOS, EOS, EOS
-
-mprs_fake_dst_mprs:	.ascii "MPRS"
-.db EOS, EOS, EOS, EOS
-
-mbus_mprs_out_string:
-1:
-	ld a, (ix)
-	cp #EOS
-	ret z
-	inc ix
-	ld c, a
-	call putchar
-	jr 1b
-
-mbus_mprs_out_string_ascify:
-1:
-	ld a, (ix)
-	cp #EOS
-	ret z
-	cp #0x10         ; 0...9, 0xA...0xF
-	jr nc, 2f       ; nope.
-	cp #10           ; 
-	jr c, 3f        ; 0...9
-	add a, #'A' - 10 - '0'
-3:
-	add a, #'0'         ; '0' ... '9' or 'A' ... 'F'
-2:
-	inc ix
-	ld c, a
-	call putchar
-	jr 1b
-
-mbus_mprs_out_emu_tnc:          ; OH5NXO-15>APRS,RELAY,WIDE:!nnn/nnn>
-
-	ld ix, #remote_display_buffer    ; OH5NXO-15
-	call mbus_mprs_out_string
-
-	ld ix, #mprs_fake_dst_0
-	ld c, #'>'                       ; >APRS
-	call putchar
-	call mbus_mprs_out_string
-
-	ld ix, #mprs_fake_dst_1
-	ld a, (ix)
-	cp #EOS
-	jr z, 1f
-		ld c, #','                   ; ,digi
-		call putchar
-		call mbus_mprs_out_string
-1:
-	ld ix, #mprs_fake_dst_2
-	ld a, (ix)
-	cp #EOS
-	jr z, 1f
-		ld c, #','                   ; ,digi
-		call putchar
-		call mbus_mprs_out_string
-1:
-
-	ld c, #':'                       ; >APRS,RELAY,WIDE:
-	call putchar
-
-	ld ix, #mbus_mprs_buffer         ; preformatted APRS message !nnn/nnn>
-	call mbus_mprs_out_string
-
-	ld c, #0x0D
-	call putchar
-	ld c, #0x0A
-	call putchar                    ; CRLF
-
-	ret
-
-mbus_mprs_out_3rd_party:
-
-	ld c, #'}'
-	call putchar                    ; third party format
-
-	ld ix, #remote_display_buffer    ; OH5NXO-15
-	call mbus_mprs_out_string
-
-	ld c, #'>'                       ; >APRS
-	call putchar
-	ld ix, #mprs_fake_dst_0
-	call mbus_mprs_out_string
-
-	ld c, #','                   ; ,digi
-	call putchar
-	ld ix, #mprs_fake_dst_mprs
-	call mbus_mprs_out_string
-
-	ld c, #'*'
-	call putchar
-	ld c, #':'                       ; }OH5NXO-15>APRS,MPRS*:
-	call putchar
-
-	ld ix, #mbus_mprs_buffer         ; preformatted APRS message !nnn/nnn>
-	call mbus_mprs_out_string
-
-	ld c, #0x0D
-	call putchar           ; CR only, CONVERS send
-
-	ret
-
-;
-;  KISS
-;
-;  FEND 0300(0xc0), FESC 0333(0xdb), TFEND 0334(0xdc), TFESC 0335(0xdd)
-;
-;  first byte after FEND is 0xW0 = data from tnc port W.
-;  rest is ax25 packet without crc or flags:
-;
-;  addresses                      control pid  info    
-;                                   03     F0  !nnn/nnn>
-;  destination[7] source[7] digis[n*7]  n=0-8
-;  chars <<= 1
-;  dest SSID    011ssid0
-;  src  SSID    011ssidL
-;  digi-SSID    H11ssidL   H has-been-repeated, L last-of-addresses
-;
-
-putchar_slipped:
-	cp #192
-	jr z, 1f
-	cp #219
-	jr z, 2f
-
-	ld c, a
-	jp putchar
-1:
-	ld c, #219
-	call putchar
-	ld c, #220
-	jp putchar
-2:
-	ld c, #219
-	call putchar
-	ld c, #221
-	jp putchar
-
-mbus_mprs_out_address_kiss:
-
-	ld b, #6         ; 6 characters (and ssid) always
-1:
-	ld c, #' '       ; assume at end of call
-	ld a, (ix)
-	cp #EOS
-	jr z, 2f
-	cp #'-'
-	jr z, 2f
-	ld c, a
-	inc ix           ; do not step over end of call
-2:
-	ld a, c
-	sla a          ; characters shifted up
-	call putchar_slipped
-	djnz 1b
-
-	ld c, #0         ; assume no ssid
-	ld a, (ix+0)
-	cp #'-'
-	jr nz, 1f       ; no ssid was there
-	ld a, (ix+1)
-	sub #'0'
-	ld c, a         ; assume -x singledigit ssid
-	ld a, (ix+2)
-	cp #EOS
-	jr z, 1f        ; not -1x
-	sub #'0' - 10
-	ld c, a
-1:
-	ld a, c
-	sla a           ; SSID shifted up
-	and #0x1E        ; gigo safety
-	or #0x60         ; SSID reserved bits
-	or d            ; Last-bit maybe
-	call putchar_slipped
-
-	ret
-
-
-mbus_mprs_out_emu_kiss_tnc:
-
-	ld c, #192
-	call putchar                ; flush junk
-
-	ld c, #0x00                  ; data from tnc 0
-	call putchar
-
-	ld ix, #mprs_fake_dst_0          ; APRS - destination
-	ld d, #0                         ; not last
-	call mbus_mprs_out_address_kiss
-
-	ld ix, #remote_display_buffer    ; OH5NXO-15 - source
-	ld d, #1                         ; also last one
-	call mbus_mprs_out_address_kiss
-
-
-	ld c, #0x03                  ; control
-	call putchar
-	ld c, #0xF0                  ; PID
-	call putchar
-
-	ld ix, #mbus_mprs_buffer     ; preformatted APRS message !nnn/nnn>
-	call mbus_mprs_out_string   ; ... it will not contain FEND or FESC, ever
-
-	ld c, #192
-	call putchar                ; end slip
-
-	ret
-
-
-
-mprs_lon_format:
-	ld a, (ix+0)                  ; no reserved bit in lon degrees (0...180)
-	ld c, a
-	sub #100
-	jr c, 1f
-	ld c, a
-	ld a, #'1'
-	jr 2f
-1:
-	ld a, #'0'
-2:
-	ld (de), a
-	inc de
-	ld a, c
-	jr 1f                         ; rest is same with lat and lon
-
-	; JUMP THRU
-
-mprs_lat_format:                  ; lat is 0..90, one less digit
-
-	ld a, (ix+0)
-	and #0x7F                      ; mask off reserved bit
-1:
-	call dekavalue_format
-
-	ld a, (ix+1)
-	and #0x3F                      ; mask off symbol bits
-	call dekavalue_format
-
-	ld a, #'.'
-	ld (de), a
-	inc de
-
-	ld a, (ix+2)
-	and #0x7F                      ; mask of hemisphere bit
-	call dekavalue_format
-
-	ret
-
-dekavalue_format:
-
-	ld c, #'0' - 1
-1:
-	inc c
-	sub #10
-	jr nc, 1b
-	add a, #10 + '0'             ; undo last subtract and ascify also
-	push af
-
-	ld a, c
-	ld (de), a
-	inc de
-
-	pop af
-	ld (de), a
-	inc de
-
-	ret
-
-;----------------------------------------------------------------------
-
-;; Garmin GPS12, MAP168, GPSII+, GPSIII, GPSIII+, EMap(updated Software),
-;; Etrex Venture, Legend, and Vista(with updated software),
-;; Garmin 45, StreetPilot III(with 2.11 and above software),
-;; and the GPS 12xl are known to be capable of this function.
-;
-; $GPWPL,6103.52,N,02806.18,E,OH5NXO-15*XX <CRLF>
-; $PMGNWPL,6103.52,N,02806.18,E,altitude,F/M,call,,icon,*XX <CRLF>
-
-1:   .ascii "GPWPL,"             ; last char must be , it is also copyed.
-2:   .ascii "PMGNWPL,"
-
-gps_mprs_call_latlon:
-
-	; upload at 4800 bauds takes less time than mprs packet in 1200 bauds.
-	; buffer will be free.
-
-	ld de, #mbus_mprs_buffer      ; careful with the buffer size !
-
-	ld hl, #1b                    ; more common sentence
-	ld a, (cfg_gps_upload)
-	cp #2
-	jr nz, 1f
-	ld hl, #2b                    ; Magellan enhanced
-
-1:
-	ld a, (hl)
-	inc hl
-	ld (de), a
-	inc de
-	cp #','
-	jr nz, 1b                        ; $FOO,
-
-	ld ix, #mprs_packed_packet + 6
-	call mprs_lat_format
-
-	ld a, #','
-	ld (de), a
-	inc de    ; $FOO,lat.lat,
-
-	ld a, (ix+2)
-	and #0x80
-	ld a, #'N'
-	jr z, 1f
-	ld a, #'S'
-1:
-	ld (de), a
-	inc de
-
-	ld a, #','
-	ld (de), a
-	inc de    ; $FOO,lat.lat,N,
-
-	ld ix, #mprs_packed_packet + 9
-	call mprs_lon_format
-
-	ld a, #','
-	ld (de), a
-	inc de
-
-	ld a, (ix+2)
-	and #0x80
-	ld a, #'E'
-	jr z, 1f
-	ld a, #'W'
-1:
-	ld (de), a
-	inc de
-
-	ld a, #','
-	ld (de), a
-	inc de   ; $FOO,lat.lat,N,lon.lon,E,
-
-	ld a, (cfg_gps_upload)
-	cp #2
-	jr nz, 1f
-	ld a, #','
-	ld (de), a
-	inc de   ; dummy altitude and altitude ...
-	ld a, #','
-	ld (de), a
-	inc de   ; ... unit for Magellan
-1:
-
-	ld hl, #remote_display_buffer    ; OH5NXO-15
-	push de                         ; remember start of waypoint name.
-1:
-	ld a, (hl)
-	inc hl
-	ld (de), a                      ; EOS is also stored, DE left over it.
-	cp #EOS
-	jr z, 1f
-	inc de                          ; good character added, next.
-	jr 1b
-1:
-	pop hl                          ; squeeze waypoint name
-	call gps_waypoint_tidy
-
-	ld a, #'*'
-	ld (de), a
-	inc de   ; Magellan extras are left out.
-
-	ld hl, #mbus_mprs_buffer         ; NMEA checksum between $ and *
-	ld c, #0
-1:
-	ld a, (hl)
-	inc hl
-	cp #'*'
-	jr z, 1f
-	xor c
-	ld c, a
-	jr 1b
-1:
-	ld a, c
-	rra
-	rra
-	rra
-	rra
-	and #0xF
-	cp #10
-	jr c, 1f
-	add a, #'A' - 10 - '0'
-1:
-	add a, #'0'
-	ld (de), a
-	inc de
-	ld a, c
-	and #0x0F
-	cp #10
-	jr c, 1f
-	add a, #'A' - 10 - '0'
-1:
-	add a, #'0'
-	ld (de), a
-	inc de
-
-	ld a, #0x0D
-	ld (de), a
-	inc de       ; CR
-	ld a, #0x0A
-	ld (de), a
-	inc de       ; LF
-	ld a, #0x00
-	ld (de), a
-	inc de       ; NUL
-
-	; buffer holds "GPWPL,6103.52,N,02806.18,E,OH5NXO-15*XX\r\n\0"
-
-	ld hl, #mbus_mprs_buffer         ; message formatted above
-	ld (gps_upload_ptr), hl
-
-	ld a, #'$'
-	out (SIO+ADATA), a              ; start !
-
-	ret
-
-; input: HL points to string ending with EOS, DE points to the EOS.
-; output: DE points just past waypoint name
-
-gps_waypoint_tidy:
-	ret
-
-;------------------------------------------------------------------------
-
-ascify:
-	cp #16
-	ret nc        ; not hex digit
-	cp #10
-	jr nc, 1f
-	add a, #'0'       ; 0x0 into '0'
-	ret
-1:
-	add a, #'A' - 10  ; 0xA into 'A'
-	ret
-
-pack_aprs_report_digi_maybe:
-	or a
-	ret z                           ; None
-
-	ld hl, #cfg_ax25_digi_other     ; maybe this ?
-	cp #AX25_DIGI_OTHER_IDX
-	jr nc, pack_aprs_report_packet_call
-
-	ld hl, #tab_ax25_digi + 1  ; others are verbatim in menu
-	push de
-	add a, a          ; 2x
-	add a, a          ; 4x
-	add a, a          ; 8x   junk in setup, junk into packet
-	ld d, #0
-	ld e, a
-	add hl, de     ; index into selected string
-	pop de
-
-	; FALL THRU
-
-pack_aprs_report_packet_call:
-
-	ld b, #6         ; 6 characters (plus ssid) always
-2:
-	ld c, #' '       ; assume at end of call, blank padded
-	ld a, (hl)
-	cp #EOS
-	jr z, 1f
-	cp #'-'
-	jr z, 1f
-	inc hl          ; do not step over end of call
-	call ascify
-	ld c, a
-	cp #'a'          ; lowercase ?
-	jr c, 1f        ; nope.
-	res 5, c        ; make upper case
-1:
-	ld a, c
-	sla a           ; characters are shifted up
-	ld (de), a
-	inc de
-	djnz 2b         ; do all 6 characters.
-
-	; then SSID
-
-	ld c, #0         ; assume no ssid
-	ld a, (hl)
-	cp #'-'
-	jr nz, 2f       ; no -ssid was there
-	inc hl
-	ld a, (hl)      ; -x
-	sub #'0'         ; turn to binary
-	jr nc, 1f
-	add a, #'0'         ; oops, was already binary
-1:
-	ld c, a         ; assume -x singledigit ssid
-	cp #1
-	jr nz, 2f       ; not -1(x)
-	inc hl
-	ld a, (hl)
-	cp #EOS
-	jr z, 2f        ; not -1x
-	sub #'0'
-	jr nc, 1f
-	add a, #'0'         ; morerepetitition
-1:
-	add a, #10          ; must be 10...15
-	ld c, a
-2:
-	ld a, c
-	jr 9f           ; save a few bytes
-
-	; jumpover
-
-pack_aprs_report_packet_mycall:
-
-	ld hl, #cfg_mprs_callsign        ; OH5NXO - source
-	ld b, #6                         ; 6 characters (plus ssid) always
-2:
-	ld c, #' '       ; assume at end of call
-	ld a, (hl)
-	cp #EOS
-	jr z, 1f
-	inc hl           ; do not step over end of call
-	call ascify
-	ld c, a
-1:
-	ld a, c
-	sla a          ; characters shifted up
-	ld (de), a
-	inc de
-	djnz 2b
-
-	ld a, (cfg_mprs_ssid)
-9:
-	rla             ; SSID shifted up
-	and #0x1E        ; gigo safety - also clear C bit
-	or #0x60         ; SSID reserved bits are set
-	ld (de), a      ; Last-bit (0x01) clear
-	inc de          ; DE points one past SSID
-
-	ret
-
-
-
-encode_aprs_report_packet_normal:          ; store into DE
-
-	ld hl, #mprs_fake_dst_0                 ; APRS - destination
-	call pack_aprs_report_packet_call
-
-	call pack_aprs_report_packet_mycall    ; MYCALL - source
-
-	ld a, (cfg_ax25_digi0)                 ; digipeat paths, if any
-	call pack_aprs_report_digi_maybe
-	ld a, (cfg_ax25_digi1)
-	call pack_aprs_report_digi_maybe
-	ld a, (cfg_ax25_digi2)
-	call pack_aprs_report_digi_maybe
-	ld a, (cfg_ax25_digi3)
-	call pack_aprs_report_digi_maybe
-
-	ex de, hl           ; use HL to insert stuff, for a while
-
-	dec hl              ; back over SSID of last address
-	set 0, (hl)         ; insert LAST-bit in last address
-	inc hl
-
-	; control and PID
-
-	ld (hl), #0x03                ; control
-	inc hl
-	ld (hl), #0xF0                ; PID
-	inc hl
-
-	; aprs message in data part
-
-	ld (hl), #'!'               ; data is like !6103.52N/02806.18E>  
-	inc hl
-
-	ld ix, #cfg_gps_latitude
-	ld a, (ix+1)
-	add a, #'0'
-	ld (hl), a
-	inc hl    ; 6
-	ld a, (ix+2)
-	add a, #'0'
-	ld (hl), a
-	inc hl    ; 1
-	ld a, (ix+3)
-	add a, #'0'
-	ld (hl), a
-	inc hl    ; 0
-	ld a, (ix+4)
-	add a, #'0'
-	ld (hl), a
-	inc hl    ; 3
-	                       ld (hl), #'.'
-	                       inc hl  ; .
-	ld a, (ix+5)
-	add a, #'0'
-	ld (hl), a
-	inc hl    ; 5
-	ld a, (ix+6)
-	add a, #'0'
-	ld (hl), a
-	inc hl    ; 2
-
-	ld a, (ix+7)
-	cp #'S'
-	jr z, 1f
-	ld a, #'N'              ; anything but 'S' means North
-1:
-	ld (hl), a
-	inc hl     ; N
-
-	ld (hl), #'/'
-	inc hl                         ; / Primary symbol table
-
-	ld ix, #cfg_gps_longitude
-	ld a, (ix+0)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 0
-	ld a, (ix+1)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 2
-	ld a, (ix+2)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 8
-	ld a, (ix+3)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 0
-	ld a, (ix+4)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 6
-	                       ld (hl), #'.'
-	                       inc hl ; .
-	ld a, (ix+5)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 1
-	ld a, (ix+6)
-	add a, #'0'
-	ld (hl), a
-	inc hl   ; 8
-
-	ld a, (ix+7)
-	cp #'W'
-	jr z, 1f
-	ld a, #'E'              ; anything but 'W' means East
-1:
-	ld (hl), a
-	inc hl     ; E
-
-	; swap "insert pointer" to DE for the rest of this
-
-	ex de, hl
-
-	; the station symbol
-
-	ld a, (cfg_mprs_symbol)
-	ld hl, #symbol_nibble_to_primary_symbol
-	cp #15
-	jr nz, 1f
-	ld a, (cfg_mprs_ssid)         ; symbol=15, indirect symbol from SSID
-	ld hl, #ssid_nibble_to_primary_symbol
-1:
-	ld c, a
-	ld b, #0
-	add hl, bc
-	ldi                   ; [DE++] = [HL++], BC--
-
-	; course/speed - only if moving at speed over 1 knots
-
-	ld hl, (gps_knots)
-	ld bc, #-2
-	add hl, bc
-	jr nc, 1f               ; speed less than 2 knots, no CSE/SPD
-
-	call gps_course_1_to_360_degrees
-	call HL_to_3_ascii_at_DE
-
-	ld a, #'/'
-	ld (de), a
-	inc de
-
-	ld hl, (gps_knots)
-	call HL_to_3_ascii_at_DE
-1:
-	; finished message.
-
-	ex de, hl               ; HL has "one past last byte"
-	ret                     ; endptr of packet in HL
-
-gps_course_1_to_360_degrees:
-
-	ld hl, (gps_course)
-	ld a, l
-	or h
-	ret nz               ; not 0 degrees course, ok
-	ld hl, #360           ; 0 degrees goes as 360 degrees.
-	ret
-
-; HL to ascii digits in [DE], [DE+1] and [DE+2]
-; DE += 3
-; A, BC and HL trashed
-
-9:	.ascii "999"
-
-HL_to_3_ascii_at_DE:
-
-	ld bc, #-1000      ; paranoid, clamp at 999
-	add hl, bc
-	jr nc, 1f         ; go if less than 1000
-
-	ld hl, #9b
-	ldi
-	ldi
-	ldi
-	ret               ; 999
-1:
-	sbc hl, bc        ; undo it. NC condition nicely
-
-	; it fits in 3 characters, so do it
-
-	ld bc, #-100       ; possibly more than 8 bits in HL
-	ld a, #'0' - 1
-1:
-	inc a
-	add hl, bc
-	jr c, 1b
-	sbc hl, bc        ; NC condition nicely
-
-	ld (de), a        ; hundreds
-	inc de
-
-	ld a, l           ; now 8 bits is enough
-
-	ld c, #10
-	ld b, #'0' - 1
-1:
-	inc b
-	sub c
-	jr nc, 1b
-	add a, c
-	add a, #'0'           ; leftover to ascii too
-
-	ex de, hl
-
-	ld (hl), b        ; tens
-	inc hl
-
-	ld (hl), a        ; ones
-	inc hl
-
-	ex de, hl
-	ret               ; and done
-
-mic_e_binary_dmh:
-	ld a, (hl)     ; tens       these are 0x00 ... 0x09 always
-	add a, a          ; 2 times
-	add a, a          ; 4 times
-	add a, (hl)       ; 5 times
-	add a, a          ; 10 times
-	inc hl
-	add a, (hl)       ; plus ones
-	inc hl
-	cp #100
-	ret c
-	ld a, #99       ; hmpft
-	ret
-
-mic_e_DC_tab: .ascii " *4>HR"
-.db 0x5C
-.ascii "fpz"
-mic_e_DC_tab_size = . - mic_e_DC_tab
-ASSERT_EQ(mic_e_DC_tab_size, 10)
-
-encode_aprs_report_packet_mic_e:        ; into DE
-
-	; first fish for the message/N/+100/W bits
-
-	ld a, (cfg_mic_e_message)
-	cp #8           ; Was this a custom message (messages 8-14) ?
-	ld h, #'P'      ; Assume will be standard message, chars for 1-bits from 'P'
-	jr c, 1f       ; yes, index 0 ... 7, OffDuty ... -HELP-
-	ld h, #'A'      ; Custom message uses characters from 'A'
-1:
-	ld l, #3        ; custom characters, if any, only in 3 first slots
-	and #7          ; mask out custom indicator, bit 0x08
-	xor #7          ; complement the bits - at index 0 is OffDuty = Std 111
-	rrca
-	rrca
-	rrca           ; leftjustify them into bits 765 - picked out from left
-	ld c, a        ; keep them in C
-
-	ld a, (cfg_gps_latitude + 7)
-	cp #'S'
-	jr z, 1f       ; South. skip
-	set 4, c       ; Northern latitude - bit 1 in 4th byte
-1:
-	ld a, (cfg_gps_longitude + 7)
-	cp #'W'
-	jr nz, 1f      ; Not West. skip
-	set 2, c       ; Western longitude - bit 1 in 6th byte
-1:
-	ld a, (cfg_gps_longitude + 0)
-	or a           ; 1xx ?
-	jr nz, 2f      ; Longitude >= 100 degrees - "+100 bit" is always set
-	ld a, (cfg_gps_longitude + 1)
-	or a           ; 00x ?
-	jr nz, 1f      ; Longitude 010..099 degrees, skip
-2:
-	set 3, c       ; 100 or more, or less than 10 degrees, "lon +100"
-1:
-
-	; DESTINATION ADDRESS
-	; XXX position uncertainty
-
-	ld ix, #cfg_gps_latitude + 1     ; latitude [0] is always 0
-	ld b, #6
-2:
-	ld a, h        ; assume 1-bit
-	rl c           ; next message/n/l/w bit into carry
-	jr c, 1f
-	ld a, #'0'      ; zerobit. character is one of 0123456789
-1:
-	add a, (ix)       ; latitude digit (0x00...0x09)
-	inc ix
-	sla a          ; leftshifted characters in ax.25 addresses
-	ld (de), a
-	inc de
-	dec l          ; just did slot 3 ?
-	jr nz, 1f
-	ld h, #'P'      ; then later 1-bits will use PQRST... always
-1:
-	djnz 2b        ; all six characters of destaddr
-
-	; destination address ssid (distribution/routing thing)
-
-	ld a, (cfg_mic_e_dest_ssid)
-	rla
-	and #0x1E       ; CrrSSID0 - C mbz
-	or #0x60        ; and rr mbo
-	ld (de), a     ; SSID slot
-	inc de
-
-	; SOURCE ADDRESS
-
-	call pack_aprs_report_packet_mycall
-
-	; use HL for cursor, for a while
-
-	ex de, hl
-
-	dec hl
-	set 0, (hl)           ; insert LAST-bit in last address (no digis here)
-	inc hl
-
-	; CONTROL AND PID
-
-	ld (hl), #0x03        ; UI packet
-	inc hl
-	ld (hl), #0xF0        ; No level 3 protocol
-	inc hl
-
-	; INFORMATION FIELD
-
-	; first slot of information field
-
-	ld (hl), #0x60  ; MIC-E valid GPS data XXX 'GPS data is old' unsupported
-	inc hl
-
-	; HL needed for arithmetic, back to DE as  "cursor"
-
-	ex de, hl
-
-	; lon degrees
-
-	ld hl, #cfg_gps_longitude + 0
-	ld b, (hl)               ; lon hundreds of degrees
-	inc hl
-	call mic_e_binary_dmh    ; and tens and ones
-	dec b
-	jr nz, 1f      ; was not 1 (1xx degrees)
-	add a, #100        ; longitude degrees total 0...179
-1:
-	cp #10
-	jr nc, 1f
-	add a, #190        ; if 0-9, add 190, get 190-199
-	jr 2f
-1:
-	cp #100
-	jr c, 2f
-	cp #110
-	jr nc, 2f
-	add a, #80         ; if 100-109, add 80, get 180-189
-2:
-	cp #100
-	jr c, 1f
-	sub #100        ; get % 100
-1:
-	add a, #28
-	ld (de), a
-	inc de
-
-	; lon minutes
-
-	call mic_e_binary_dmh
-	cp #10
-	jr nc, 1f
-	add a, #60         ; 0-9 goes as 60-69
-1:
-	add a, #28
-	ld (de), a
-	inc de
-
-	; lon hundredths of minute
-
-	call mic_e_binary_dmh
-	add a, #28
-	ld (de), a
-	inc de
-
-	; encoded speed, hundreds and tens of knots
-
-	ld hl, (gps_knots)
-	ld bc, #100
-	xor a           ; clear carry
-
-	ld a, #'l'       ; 0-99 knots - 'l' (ell) ... 'u'
-	sbc hl, bc
-	jr c, 1f
-
-	ld a, #'v'       ; 100-199 knots - 'v' ... DEL
-	sbc hl, bc
-	jr c, 1f
-
-	ld a, #'0'       ; 200-299 knots - '0' ... '9'
-	sbc hl, bc
-	jr c, 1f
-
-	ld a, #':'       ; 300 knots - ':'
-	ld hl, #-100     ; tsk - clamp at 300 knots.
-1:
-	add hl, bc      ; fixup to 0...99 range
-	ld b, a
-	ld a, l
-	dec b           ; fixup one-inc-too-many
-1:
-	inc b
-	sub #10
-	jr nc, 1b       ; divide by 10
-	add a, #10          ; fixup remainder
-	ld c, a         ; remember it.
-
-	ld a, b
-	ld (de), a      ; SP+28
-	inc de
-
-	; encoded speed, ones of knots, plus ...
-	; ... encoded course, hundreds of degrees
-
-	ld b, #0
-	ld hl, #mic_e_DC_tab
-	add hl, bc           ; recall knots % 10
-	ld b, (hl)           ; encoded speed % 10
-
-	ld hl, (gps_knots)
-	ld a, l
-	or h
-	jr z, 1f             ; zero knots implies course 0.
-	call gps_course_1_to_360_degrees ; to HL
-1:
-	ld a, b              ; encoded speed % 10 from above
-	ld bc, #-100          ; divide by 100
-	dec a                ; fixup one-inc-too-many
-1:
-	inc a
-	add hl, bc
-	jr c, 1b             ; inverted carry from add -100
-	sbc hl, bc           ; fixup remainder
-
-	ld (de), a           ; DC+28
-	inc de
-
-	; encoded course, tens and ones of degrees
-
-	ld a, l              ; course % 100 from above
-	add a, #28
-	ld (de), a           ; SE+28
-	inc de
-
-	; symbol and symbol table (XXX symtab always /)
-
-	ld hl, #symbol_nibble_to_primary_symbol
-	ld a, (cfg_mprs_symbol)
-	cp #15
-	jr c, 1f                             ; codes 0-14 select symbols
-	ld hl, #ssid_nibble_to_primary_symbol
-	ld a, (cfg_mprs_ssid)                ; code 15, redirect from SSID
-	and #0x0F
-1:
-	ld c, a
-	ld b, #0
-	add hl, bc
-	ld a, (hl)
-
-	ld (de), a           ; symbol
-	inc de
-
-	ld a, #'/'
-	ld (de), a           ; and symtab.
-	inc de
-
-	; MIC-E PACKET FINISHED
-
-	ex de, hl            ; packet in aprs_packet_out, 'endptr' in HL
-
-	ret
-
-
-encode_aprs_report_packet:
-	ld a, (cfg_report_type)
-	cp #2
-	jp z, encode_aprs_report_packet_mic_e ; MIC-E format
-
-	jp encode_aprs_report_packet_normal   ; else normal ascii format
-
-send_aprs_report_packet:
-
-	ld de, #aprs_packet_out
-
-	call encode_aprs_report_packet
-
-	ld de, #aprs_packet_out
-	and a
-	sbc hl, de
-	ld b, l
-	push bc                ; remember length
-
-	ld ix, #aprs_packet_out
-
-	call calc_ax25_crc     ; ix and b
-	cpl
-	ld (ix + 0), a         ; notice the MSByte/LSByte difference
-	ld a, c
-	cpl
-	ld (ix + 1), a
-
-
-	; bitstuffing. XXX do this on the fly in emit() xxx no time for that
-
-	ld ix, #aprs_bits_out   ; buffer for stuffed data
-	ld d, #0x80             ; spool bits here, catch every 8th rr
-
-	; preamble, first some filler ...
-
-	ld a, (cfg_ax25_padbits)
-	ld b, a
-	or a
-	jr nz, 1f
-	ld b, #36            ; default to 36 bits = 30 milliseconds
-1:
-	srl d                  ; zerobit
-	call c, stuffed_8bits
-	djnz 1b
-
-	; ... (unstuffed) starting flag ...
-
-	ld e, #0x7E
-	ld b, #8
-1:
-	srl e
-	rr d
-	call c, stuffed_8bits
-	djnz 1b
-
-	; ... the frame content (stuffed) ...
-
-	pop bc
-	ld c, b                    ; bytecount to C
-	inc c
-	inc c                      ; crc added two bytes to length
-	xor a                      ; count onebits here XXX cumbersome 
-	ld hl, #aprs_packet_out
-2:
-	ld e, (hl)
-	inc hl
-	ld b, #8
-1:
-	srl e
-	call stuff_ax25_bit
-	djnz 1b                   ; another bit in byte
-	dec c
-	jr nz, 2b                 ; another byte in data
-
-	; ... ending flag ...
-
-	ld e, #0x7E
-	ld b, #8
-1:
-	srl e
-	rr d
-	call c, stuffed_8bits
-	djnz 1b
-
-	; ... then flush residue (always 1 to 8 zerobits) ...
-1:
-	srl d
-	jr nc, 1b
-	call stuffed_8bits
-
-	; ... finally the terminator marker for emit(). xxx ought to do bit-level.
-
-	ld (ix), #0x7F
-
-	ld hl, #aprs_bits_out
-
-	jp emit_ax25_packet
-
-
-stuff_ax25_bit:
-	jr nc, 1f              ; zerobits are simple.
-	rr d                   ; shift in the one
-	call c, stuffed_8bits  ; flush if needed.
-	inc a                  ; one more onebit.
-	cp #5                   ; need stuffing zero ?
-	ret c                  ; if less than 5 ones, no.
-1:
-	xor a                ; no onebits now.
-	srl d                  ; add zerobit.
-	ret nc                 ; done if no need to flush.
-
-	; fall thru, if flushing
-
-stuffed_8bits:
-
-	ld (ix), d
-	inc ix
-	ld d, #0x80             ; rewind counting pattern
-	ret
-
-;----------------------------------------------------------------------
-	;--------------------------------------------------
+; MPRS/APRS/MIC-E packets and locator maths lives in bank 1 (search "BANK 1").
+far_handle_mprs_packets:	call bank1_call
+	.dw handle_mprs_packets
+far_send_aprs_report_packet:	call bank1_call
+	.dw send_aprs_report_packet
 
 map_special_ptrs:
 	ld a, h
@@ -19814,6 +16753,3085 @@ do_reboot:
 	di
 	jp .                  ; watchdog restart.
 
+
+
+;----- GPS sentence processing (was fixed ROM) -----
+
+gps_process_aisin_seiki:
+
+	ld a, e
+	sub #44                     ; wind back to start of possible CACA-block
+	ld l, a
+	ld h, d                    ; HL and DE both in the gps_history page
+
+	ld a, #0xCA
+	cp (hl)
+	ret nz
+	inc l
+	cp (hl)
+	ret nz
+	inc l                      ; HL into start of payload, 40 bytes
+
+	push de
+
+	ld b, #40                   ; 40 bytes between CACA and cksum
+	ld c, #0xCA + 0xCA          ; cksum includes these two
+	ld de, #gps_sentence        ; copy message into here, easier access later
+1:
+	ld a, (hl)
+	inc l
+	ld (de), a
+	inc de
+	add a, c
+	ld c, a
+	djnz 1b
+
+	ld a, (hl)                   ; cksum is a complement
+	add a, c
+	call z, gps_process_aisin_seiki_CACA
+
+	pop de
+
+	ret
+
+gps_process_aisin_seiki_CACA:        ; message in gps_sentence[]
+
+	; [ 0] 1 validity
+	;      0 decoded sats 0
+	;      1 decoded sats 1
+	;      2 decoded sats 2
+	;      3 2D fix
+	;      4 3D fix
+	;    0x10 certain change happened, mask
+
+	ld a, (gps_sentence + 0)
+
+	and #~0x10   ; remove 'changed' mask
+	cp #3
+	ret c       ; less than 2D fix
+	cp #5
+	ret nc      ; more than 3D fix ??? that is antenna trouble.
+
+	; Good. Any kind of fix is good enough for us.
+
+
+	; [ 1] 4 latitude           1/256"    MSByte first
+	; [ 5] 4 longitude          1/256"    MSByte first
+
+	ld iy, #gps_sentence + 1
+	ld ix, #cfg_gps_latitude
+	call aisin_seiki_parse_latlon
+
+	ld iy, #gps_sentence + 5
+	ld ix, #cfg_gps_longitude
+	call aisin_seiki_parse_latlon
+
+
+	; From now on, IY is gps_sentence[]  - TAKE NOTE !
+
+
+	ld iy, #gps_sentence
+
+
+	; [ 9] 2 height             0.5m       very inaccurate anyway
+	; [11] 1 error ellipse 1    2m
+	; [12] 1 error ellipse 2    2m
+
+	; [13] 2 heading            360deg/1024    values 0...3FF
+
+	ld h, (iy + 13)
+	ld l, (iy + 14)
+
+	push hl               ;  +1      *=45 /=128 converts to degrees
+	add hl, hl            ; 2
+	add hl, hl            ; 4
+	push hl               ;  +4
+	add hl, hl            ; 8
+	push hl               ;  +8
+	add hl, hl            ; 16
+	add hl, hl            ; 32
+
+	pop bc
+	add hl, bc
+	pop bc
+	add hl, bc
+	pop bc
+	add hl, bc            ; 45 times in HL
+
+	rl l                  ; LSbit into CY
+	ld l, h               ; 8 MSbits in L
+	ld h, #0               ; H will contain only 1 MSbit
+	rl h                  ; all bits properly in HL now
+
+	ld (gps_course), hl   ; integer degrees in range 0...359
+
+	; [15] 1 heading error      90deg/256
+
+	; [16] 2 ground speed       1/4 m/s    end 16384 m/s = 31847 knots
+
+	ld h, (iy + 16)
+	ld l, (iy + 17)
+
+	push hl                 ; we will make another conversion shortly
+
+	xor a                      ; AHL has speed in 0.25 meter / second
+	push hl                    ;  -1
+	add hl, hl
+	adc a, a          ; 2 times
+	add hl, hl
+	adc a, a          ; 4 times
+	add hl, hl
+	adc a, a          ; 8 times
+	add hl, hl
+	adc a, a          ; 16 times
+	add hl, hl
+	adc a, a          ; 32 times      cannot overflow - CY clear
+	pop bc
+	sbc hl, bc
+	sbc a, #0                      ; 31 times in AHL
+	add hl, hl                 ; shift left
+	rla                        ; AHL shifted once
+	add hl, hl                 ; shift left again
+	rla                        ; AHL shifted twice
+	ld l, h
+	ld h, a                    ; divided by 64
+	ld (gps_knots), hl         ; speed in knots = x * 31 / 64
+
+	pop hl                        ; another conversion ... sigh.
+
+	call quarter_ms_to_kmh
+	ld (gps_speed), a          ; speed in km/h
+
+	; [18] 1 ground speed error 1/4 m/s
+	; [19] 1 dummy
+	; [20] 1 dummy
+	; [21] 1 dummy
+
+	; [22] 6 date & time        1s  YYMMDDHHMMSS in packed bcd
+
+	ld hl, #gps_sentence + 22
+
+	ld de, #gps_date
+	ld b, #3
+1:
+	call aisin_seiki_datetime_unpack ; year is % 100
+	djnz 1b
+
+	ld de, #gps_utc
+	ld b, #3
+1:
+	call aisin_seiki_datetime_unpack
+	djnz 1b
+
+	; too bad it was not date then utc in ram. cannot
+	; flip them because their address is fixed by remote cfg conventions.
+
+	; [28] 1 HDOP               0.2
+	; [29] 1 VDOP               0.2
+	; [30] 1 satellite count
+	; [31] 8 satellite used info
+
+	ld hl, #gps_sentence + 31 + 4        ; 1st ... 4th is a PRN bitmap or ...
+	ld de, #gps_status
+	ld b, #4
+1:
+	call aisin_seiki_satstat_unpack     ; 5th ... 8th byte more interesting
+	djnz 1b
+
+	; [39] 1 dummy
+
+	jp gps_information_has_been_updated ; finished.
+
+
+;------------
+
+	; These two routines are exactly the same.
+
+aisin_seiki_datetime_unpack:            ; packed bcd to two unpacked 0 ... 9
+aisin_seiki_satstat_unpack:             ; two nybbles into two hex digits 0 ... F
+
+	ld a, (hl)
+	rrca
+	rrca
+	rrca
+	rrca
+	call 1f              ; tens
+
+	ld a, (hl)
+	inc hl
+1:
+	and #0x0F
+	ld (de), a           ; ones
+	inc de
+
+	ret
+
+;---------------------------------------------
+
+; length in C, kept, Z = good.
+
+gps_checksum:
+
+	ld hl, #gps_sentence ; $ is not saved in the buffer
+	ld b, c             ; keep c, downcount b
+	ld e, #0             ; checksum seed
+1:
+	ld a, (hl)
+	inc hl
+	cp #'*'
+	jr z, 1f
+	xor e
+	ld e, a
+	djnz 1b
+2:
+	or #1                ; NZ
+	ret                 ; too short.
+1:
+	ld a, b
+	cp #2
+	jr c, 2b            ; too short.
+	ld a, (hl)
+	inc hl
+	call hexchr_to_bin
+	jr c, 2b            ; illegal character in checksum
+	rla
+	rla
+	rla
+	rla
+	and #0xF0
+	ld b, a
+	ld a, (hl)
+	inc hl
+	call hexchr_to_bin
+	jr c, 2b
+	or b
+	cp e	            ; checksum mismatch ? NZ if so
+	ret
+
+
+;
+;  only A and some flags change here. NC = good.
+;
+hexchr_to_bin:
+	sub #'0'          ; 3 ranges: 0-9, A-F, a-f
+	ret c            ; below 0
+	cp #10
+	ccf
+	ret nc           ; 0-9
+	sub #'A' - '0'
+	ret c            ; below A
+	cp #6
+	jr c, 1f         ; A-F
+	sub #'a' - 'A'
+	ret c            ; below a
+	cp #6
+	jr c, 1f         ; a-f
+	scf              ; above f
+	ret
+1:
+	add a, #10           ; 0xA...0xF. carry will be clear
+	ret
+
+symbol_nibble_to_primary_symbol:
+	.db 'p' ;  0   rover (puppy dog)
+	.db '>' ;  1   car
+	.db 'v' ;  2   van
+	.db 's' ;  3   ship (power boat)
+	.db '-' ;  4   house
+	.db '+' ;  5   red cross
+	.db 'r' ;  6   antenna
+	.db 'c' ;  7   orienteering marker
+	.db '0' ;  8   (0)
+	.db '1' ;  9   (1)
+	.db '2' ;  A   (2)
+	.db '3' ;  B   (3)
+	.db '4' ;  C   (4)
+	.db '5' ;  D   (5)
+	.db '6' ;  E   (6)
+	          ;  F indirect symbol:   take symbol from SSID
+
+ssid_nibble_to_primary_symbol:
+	.db '/' ;   0 Dot (indirect from MPRS symbol 15 and SSID 0)
+	.db 'a' ;   1 ambulance
+	.db 'U' ;   2 bus
+	.db 'f' ;   3 fire truck
+	.db 'b' ;   4 bicycle
+	.db 'Y' ;   5 yacht
+	.db 'X' ;   6 helicopter
+	.db 0x27 ;   7 small aircraft
+	.db 's' ;   8 ship (power boat)
+	.db '>' ;   9 car
+	.db '<' ;  10 motorcycle
+	.db 'O' ;  11 balloon
+	.db 'j' ;  12 jeep
+	.db 'R' ;  13 recreational vehicle
+	.db 'k' ;  14 truck
+	.db 'v' ;  15 van
+
+str_gprmc: .asciz "GPRMC,"
+
+; length in c-reg
+
+gps_process_sentence:
+
+	ld hl, #gps_sentence
+	ld de, #str_gprmc
+	ld b, c              ; keep c, downcount b
+1:
+	ld a, (de)
+	or a
+	jr z, 2f             ; matched pattern to end
+	cp (hl)
+	ret nz               ; mismatch, not GPRMC
+	inc hl
+	inc de
+	djnz 1b
+	ret                  ; huh ?
+2:
+	call gps_checksum
+	ret nz               ; corrupt
+	jr gps_process_gprmc
+
+; length in c-reg  ============================
+
+gps_process_gprmc:
+
+	; GPRMC,212909.00,A,4915.607,N,12310.537,W,000.0,360.0,111198,020.3,E*68
+	; HHMMSS might have .NN decimal seconds.
+
+	ld hl, #gps_sentence
+
+	inc hl
+	inc hl
+	inc hl
+	inc hl
+	inc hl
+	inc hl    ; skip tag and first comma "GPRMC,"
+
+	; 225446     Time of fix 22:54:46 UTC ------------------------------------
+
+	ld de, #gps_utc
+	ld b, #6
+1:
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (de), a
+	inc de
+	djnz 1b
+
+	ld a, #EOS
+	ld (de), a
+	inc de
+	ld (de), a
+
+1:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f          ; comma after utc, end of field.
+	cp #'.'
+	jr z, 1b          ; decimal point (any number of them accepted)
+	sub #'0'
+	ret c            ; less than digit
+	cp #10
+	ret nc             ; over 9
+	jr 1b                     ; otherwise keep looking for comma.
+1:
+
+
+	; A          Navigation receiver warning A = OK, V = warning -------------
+
+	ld a, (hl)
+	inc hl
+	cp #'A'
+	ret nz            ; not A = OK, Navigation receiver warning
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	ret nz            ; missing comma after A/V status
+
+	; 4916.45,N  Latitude 49 deg. 16.45 min North ----------------------------
+
+	ld ix, #cfg_gps_latitude
+
+	ld bc, #0
+	ld de, #0
+1:
+	ld a, (hl)
+	inc hl
+	cp #'.'
+	jr z, 1f
+	sub #'0'
+	ret c            ; other than decimal point or numbers
+	ld (ix+0), b
+	ld b, c
+	ld c, d
+	ld d, e
+	ld e, a
+	jr 1b
+1:
+	ld (ix+1), b
+	ld (ix+2), c
+	ld (ix+3), d
+	ld (ix+4), e
+
+	; decimal minutes
+
+	ld de, #0
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	sub #'0'
+	ret c            ; other than numbers before the ending comma
+	ld d, a                   ; 0.1 minutes
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	sub #'0'
+	ret c            ; other than numbers before the ending comma
+	ld e, a                   ; 0.xx minutes ready (rest is ignored)
+
+2:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f          ; no more decimals
+	sub #'0'
+	ret c            ; other than numbers before the ending comma
+	jr 2b
+1:
+	ld (ix+5), d
+	ld (ix+6), e
+
+	ld a, (hl)
+	inc hl
+	ld (ix+7), a               ; N/S character
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	ret nz            ; comma after North/South
+
+	; 12311.12,W Longitude 123 deg. 11.12 min West ---------------------------
+
+	ld ix, #cfg_gps_longitude
+
+	ld bc, #0
+	ld de, #0
+1:
+	ld a, (hl)
+	inc hl
+	cp #'.'
+	jr z, 1f
+	sub #'0'
+	ret c            ; other than decimal point or numbers
+	ld (ix+0), b
+	ld b, c
+	ld c, d
+	ld d, e
+	ld e, a
+	jr 1b
+1:
+	ld (ix+1), b
+	ld (ix+2), c
+	ld (ix+3), d
+	ld (ix+4), e
+
+	; decimal minutes
+
+	ld de, #0
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	sub #'0'
+	ret c            ; other than numbers before the ending comma
+	ld d, a                   ; 0.1 minutes
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	sub #'0'
+	ret c            ; other than numbers before the ending comma
+	ld e, a                   ; 0.01 minutes
+
+2:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f          ; no more decimals
+	sub #'0'
+	ret c            ; other than comma or numbers
+	jr 2b
+1:
+	ld (ix+5), d
+	ld (ix+6), e
+
+	ld a, (hl)
+	inc hl
+	ld (ix+7), a               ; E/W character
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	ret nz            ; comma after East/West
+
+	; 000.5      Speed over ground, Knots ------------------------------------
+
+	ld ix, #0               ; 65 kiloknots and overflow is NOT checked XXX
+1:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	cp #'.'
+	jr z, 2f
+	sub #'0'
+	ret c
+	add ix, ix
+	push ix
+	pop de
+	add ix, ix
+	add ix, ix
+	add ix, de     ; *= 10
+	ld d, #0
+	ld e, a
+	add ix, de     ; += ones
+	jr 1b
+2:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	cp #'5'
+	jr c, 2f
+		inc ix                ; round up
+	2:
+		ld a, (hl)
+		inc hl
+		cp #','
+		jr z, 1f
+		sub #'0'
+		ret c
+		jr 2b
+1:
+	ld (gps_knots), ix         ; speed in knots
+
+	push hl                ; save pointer
+
+	push ix                ; copy ix ...
+	pop hl                 ; ... to hl
+	call knots_to_kmh
+	ld (gps_speed), a      ; speed in km/h - limited to 255 km/h
+
+	pop hl                 ; restore pointer
+
+	; 054.7      Course Made Good, True --------------------------------------
+
+	ld ix, #0
+1:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	cp #'.'
+	jr z, 2f
+	sub #'0'
+	ret c
+	add ix, ix
+	push ix
+	pop de
+	add ix, ix
+	add ix, ix
+	add ix, de     ; *= 10
+	ld d, #0
+	ld e, a
+	add ix, de     ; += ones
+	jr 1b
+2:
+	ld a, (hl)
+	inc hl
+	cp #','
+	jr z, 1f
+	cp #'5'
+	jr c, 2f
+		inc ix                ; round up
+	2:
+		ld a, (hl)
+		inc hl
+		cp #','
+		jr z, 1f
+		sub #'0'
+		ret c
+		jr 2b
+1:
+	ld (gps_course), ix
+
+	; 191194     Date of fix  19 November 1994 -------------------------------
+
+	ld ix, #gps_date         ; yymmdd
+
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (ix+4), a
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (ix+5), a
+
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (ix+2), a
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (ix+3), a
+
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (ix+0), a
+	ld a, (hl)
+	inc hl
+	sub #'0'
+	ret c            ; not '0'...'9'
+	ld (ix+1), a
+
+	ld a, #EOS
+	ld (ix+6), a
+	ld (ix+7), a
+
+	ld a, (hl)
+	inc hl
+	cp #','
+	ret nz            ; missing comma after date
+
+	; 020.3,E    Magnetic variation 20.3 deg East ----------------------------
+
+	; XXX don't care about those. ------------------------------
+
+gps_information_has_been_updated:
+
+	call gps_own_locator  ; turn lat/lon into maidenhead grid square
+
+	ld a, #5
+	ld (gps_valid_seconds), a
+
+	ld a, (menu_active)
+	or a
+	jp nz, redraw          ; redraw if in menu - in case GPSxxx display
+
+	ret
+
+;======================================================================
+
+; execute [script_req] if it is nonzero.
+
+
+;----- MPRS/APRS/MIC-E packets and locator maths (was fixed ROM) -----
+
+handle_mprs_packets:               ; 4x-packets
+	inc l
+	ld a, (hl)                      ; XXX minor digit ignored for now
+	inc l
+
+	ld ix, #mprs_packed_packet
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+0), a     ; callsign
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+1), a
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+2), a
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+3), a
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+4), a
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+5), a
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+6), a     ; lat
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+7), a
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+8), a
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+9), a      ; lon
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+10), a
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (ix+11), a
+
+	call mute_fsk_at_mprs_end_maybe
+
+	ld ix, #mprs_packed_packet
+	ld de, #remote_display_buffer
+	call packet_callsign_unpack
+
+	ld a, #EOS
+	ld (remote_display_buffer + 6), a     ; 6 characters are valid in packet
+	ld (remote_display_buffer + 7), a
+	ld (remote_display_buffer + 8), a
+	ld (remote_display_buffer + 9), a     ; 10 will be displayed from buffer
+	ld (remote_display_buffer + 10), a    ; barrier
+
+	ld hl, #remote_display_buffer - 1     ; step over nonblanks to add (-NN and) EOS
+1:
+	inc hl
+	ld a, (hl)
+	cp #EOS
+	jr z, 1f                        ; already ends in EOS
+	cp #' '
+	jr nz, 1b                       ; more valid chars
+
+	ld (hl), #EOS                    ; only call now, HL left over end
+1:
+
+	ld a, (mprs_packed_packet + 4)
+	and #0xF0                              ; SSID ?
+	jr z, 1f                              ; no -NN if SSID was 0
+		ld (hl), #'-'
+		inc hl
+
+		rra
+		rra
+		rra
+		rra
+		and #0xF
+		cp #10
+		jr c, 2f
+			ld (hl), #'1'                  ; always 1x if over 9
+			inc hl
+			sub #10                        ; ones
+	2:
+		add a, #'0'
+		ld (hl), a                        ; 6 + "-15" always fits buffer[10]
+		inc hl
+
+		ld (hl), #EOS
+1:
+
+	ld ix, #mprs_packed_packet + 6      ; lat/lon/symbol ?
+	ld a, (ix)
+	and #0x80
+	jr nz, 1f                          ; skip if reserved data
+		ld iy, #locator_display_buffer
+		call packed_latlon_to_locator
+
+		ld a, #EOS
+		ld (locator_display_buffer + 6), a
+		ld (locator_display_buffer + 7), a
+
+		ld a, (cfg_mbus_mprs)
+		or a
+		call nz, mbus_mprs_call_latlon     ; blurt it out MBUS too
+
+		ld a, (cfg_gps_upload)
+		or a
+		call nz, gps_mprs_call_latlon     ; blurt it out into GPS
+
+		ld a, (cfg_remote_dpy_secs)
+		ld (locator_dpyed), a
+
+		call mprs_qrb
+1:
+	ld a, (cfg_remote_dpy_secs)
+	ld (display_buffer_time), a
+	or a
+	call nz, redraw
+
+	ret
+
+packed_latlon_to_locator:
+
+	ld a, (ix+0)             ; lat degrees ================================
+	and #0x7F                 ; mask off reserved bit
+	ld c, #'J' - 1
+1:
+	inc c
+	sub #10                   ; 10 degrees per letter
+	jr nc, 1b
+	add a, #10 + '0'             ; has has degrees % 10, into ascii direct
+	ld (iy+1), c
+	ld (iy+3), a
+
+	ld a, #50
+	cp (ix+2)                ; one halfminute from decimal minutes maybe
+	ld a, (ix+1)             ; lat minutes
+	rl a                     ; turn to total halfminutes
+	and #0x7F                 ; mask off remaining symbol bit
+	ld c, #'A' - 1
+1:
+	inc c
+	sub #5                    ; 5 minutes per halfminutes or letter
+	jr nc, 1b
+	add a, #5                    ; minor digit in the making
+	ld (iy+5), c             ; minor letter ok.
+	ld c, a
+	sla c                    ; minor letter, now missing lsbit
+	ld a, (ix+2)
+	cp #50
+	jr c, 1f
+	sub #50                   ; delete half a minute
+1:                           ; even/odd quarter ok
+	cp #25
+	jr c, 1f                 ; skip if even quarter
+	inc c                    ; lsbit ok
+1:
+	ld a, c
+	add a, #'0'
+	ld (iy+7), a             ; minor digit ok.
+
+	ld a, (ix+2)             ; Correction for South ?
+	and #0x80
+	jr z, 1f                 ; no, skip
+	ld a, #'I'
+	sub (iy+1)
+	add a, #'J'
+	ld (iy+1), a             ; 'I' - chr + 'J'
+	ld a, #'9'
+	sub (iy+3)
+	add a, #'0'
+	ld (iy+3), a             ; '9' - chr + '0'
+	ld a, #'L'
+	sub (iy+5)
+	add a, #'M'
+	ld (iy+5), a             ; 'L' - chr + 'M'
+	ld a, #'9'
+	sub (iy+7)
+	add a, #'0'
+	ld (iy+7), a             ; '9' - chr + '0'
+1:
+
+	ld a, (ix+3)             ; lon degrees ===============================
+	ld c, #'J' - 1
+1:
+	inc c
+	sub #20                   ; 20 degrees per letter
+	jr nc, 1b
+	add a, #20                   ; has has degrees % 20
+	srl a                    ; has has degrees % 10
+	push af                  ; remember carry -----------------------
+	add a, #'0'                  ; into ascii
+	ld (iy+0), c             ; major letter ok.
+	ld (iy+2), a             ; major digit ok.
+
+	ld a, (ix+4)             ; lon minutes
+	and #0x3F                 ; mask off symbol bits
+	ld c, a
+	pop af                   ; even/odd degree from above
+	ld a, c
+	jr nc, 1f
+	add a, #60                   ; 24 small squares in 2 degrees
+1:
+	ld c, #'A' - 1
+1:
+	inc c
+	sub #5                    ; 5 minutes per letter
+	jr nc, 1b
+	add a, #5                    ; A has minutes modulo 5
+	ld (iy+4), c             ; minor letter ok.
+	ld c, a
+	ld a, #50
+	cp (ix+5)                ; lon hundredths of minutes
+	rl c                     ; add lsbit.
+	ld a, c
+	add a, #'0'
+	ld (iy+6), a             ; minor digit ok.
+
+	sla a
+	ld a, (ix+5)             ; Correction for West ?
+	and #0x80
+	jr z, 1f                 ; no, skip
+	ld a, #'I'
+	sub (iy+0)
+	add a, #'J'
+	ld (iy+0), a             ; 'I' - chr + 'J'
+	ld a, #'9'
+	sub (iy+2)
+	add a, #'0'
+	ld (iy+2), a             ; '9' - chr + '0'
+	ld a, #'L'
+	sub (iy+4)
+	add a, #'M'
+	ld (iy+4), a             ; 'L' - chr + 'M'
+	ld a, #'9'
+	sub (iy+6)
+	add a, #'0'
+	ld (iy+6), a             ; '9' - chr + '0'
+1:
+
+	ret
+
+
+gps_own_locator:
+
+	ld ix, #gps_latlon_tmp    ; temporarily into binary
+
+	ld iy, #cfg_gps_latitude
+	ld e, #2
+	ASSERT_EQ(cfg_gps_longitude, cfg_gps_latitude + 8)
+2:
+	ld a, (iy)
+	inc iy
+	or a
+	jr z, 1f
+	ld a, #100
+1:
+	ld d, a
+	ld b, #3       ; deg(rest of) and min and decimal min
+1:
+	ld a, (iy+0)  ; tens
+	add a, a         ; 2
+	ld c, a
+	add a, a         ; 4
+	add a, a         ; 8
+	add a, c         ; 10
+	add a, (iy+1)    ; ones
+	add a, d         ; one loysy 1xx in longitude
+	ld d, #0
+	inc iy
+	inc iy
+	ld (ix), a
+	inc ix
+	djnz 1b
+
+	ld a, (iy+0)
+	inc iy
+	cp #'N'
+	jr z, 1f
+	cp #'W'
+	jr nz, 1f
+	dec ix
+	ld a, (ix)
+	or #0x80
+	ld (ix), a
+	inc ix
+1:
+	dec e
+	jr nz, 2b    ; longitude
+
+	ld ix, #gps_latlon_tmp
+	ld iy, #cfg_gps_locator        ; final location of locator string
+
+	jp packed_latlon_to_locator
+
+
+;----------------------------------------------------------------------
+; input: A degrees, B minutes and C hundredths of minutes without signs.
+; output: centiminutes in AHL
+
+degmin_to_centiminutes:
+
+	ld l, a            ; degrees from A-reg ------------------------
+	ld h, #0            ; 180 max, minutes will fit HL
+	add hl, hl         ; 2 times
+	add hl, hl         ; 4 times
+	push hl
+	add hl, hl         ; 8 times
+	add hl, hl         ; 16 times
+	add hl, hl         ; 32 times
+	add hl, hl         ; 64 times, carry clear
+	pop de
+	sbc hl, de         ; - 4 times, HL has degrees as minutes
+
+	ld e, b            ; minutes from B-reg ------------------------
+	ld d, #0
+	add hl, de         ; HL has integer minutes
+	xor a            ; extend to AHL.
+
+	add hl, hl
+	adc a, a  ; 2 times
+	add hl, hl
+	adc a, a  ; 4 times
+	push af
+	push hl
+	add hl, hl
+	adc a, a  ; 8 times
+	add hl, hl
+	adc a, a  ; 16 times
+	add hl, hl
+	adc a, a  ; 32 times
+	push af
+	push hl
+	add hl, hl
+	adc a, a  ; 64 times
+
+	pop de
+	add hl, de
+	pop de
+	adc a, d              ; + 32 times
+
+	pop de
+	add hl, de
+	pop de
+	adc a, d              ; + 4 times, HL has integer minutes as centiminutes
+
+	ld b, #0            ; fractional minutes from C-reg -------------
+	add hl, bc
+	adc a, #0  ; AHL has full centiminutes
+
+	ret
+
+; input: A degrees, B minutes and C hundredths of minutes and sign-bit
+; result: AHL centiminutes north from south pole (0...1'080'000)
+
+degmin_to_centiminutes_from_south_pole:
+	push bc                 ; remember hemisphere
+	res 7, a                ; mask sign- etc bits off
+	res 7, b
+	res 6, b
+	res 7, c
+	call degmin_to_centiminutes  ; ABC -> AHL
+	pop bc
+	bit 7, c                ; south ?
+	call nz, negate_ahl     ; 90 - x (else 90 + x)
+
+	ld de, #(90 * 60 * 100) % 65536
+	add hl, de
+	adc    a, #(90 * 60 * 100) / 65536
+	ret                     ; AHL has result
+
+; input: A degrees, B minutes and C hundredths of minutes and sign-bit
+; result: AHL signed centiminutes from greenwich (+/- 0...1'080'000)
+
+degmin_to_centiminutes_from_meridian:
+	push bc                 ; remember hemisphere
+	res 7, a                ; mask sign- etc bits off
+	res 7, b
+	res 6, b
+	res 7, c
+	call degmin_to_centiminutes  ; ABC -> AHL
+	pop bc
+	bit 7, c                ; west ?
+
+	call nz, negate_ahl     ; make signed, - for west.
+
+	ret                     ; AHL has result
+
+
+mul_ahl_1852:           ; 2048 - 128 - 64 - 4
+
+	add hl, hl
+	adc a, a   ;    2 times
+	add hl, hl
+	adc a, a   ;    4 times
+	push af
+	push hl
+	add hl, hl
+	adc a, a   ;    8 times
+	add hl, hl
+	adc a, a   ;   16 times
+	add hl, hl
+	adc a, a   ;   32 times
+	add hl, hl
+	adc a, a   ;   64 times
+	push af
+	push hl
+	add hl, hl
+	adc a, a   ;  128 times
+	push af
+	push hl
+	add hl, hl
+	adc a, a   ;  256 times
+	add hl, hl
+	adc a, a   ;  512 times
+	add hl, hl
+	adc a, a   ; 1024 times
+	add hl, hl
+	adc a, a   ; 2048 times
+	pop de
+	pop bc
+	and a
+	sbc hl, de
+	sbc a, b   ; - 128 times
+	pop de
+	pop bc
+	sbc hl, de
+	sbc a, b   ; - 64 times
+	pop de
+	pop bc
+	sbc hl, de
+	sbc a, b   ; - 4 times = 1852 times.
+
+	ret
+
+
+centiminutes_to_1852_meters:
+
+	ld c, #100
+	call div248         ; HL has full minutes, A has hundredths of minutes
+
+	push hl             ; remember full minutes for a while
+
+	ld l, a             ; decimal minutes
+	xor a
+	ld h, a
+	call mul_ahl_1852
+
+	ld c, #100
+	call div248         ; HL has last few meters from decimal mins.
+
+	pop bc              ; get full minutes now
+	push hl             ; save last few meters
+
+	ld l, c
+	ld h, b
+	xor a
+	call mul_ahl_1852
+
+	pop de
+	add hl, de          ; add the last 1.8 kilometers
+	adc a, #0
+
+	ret
+
+
+; AHL centiminutes to AHL meters (DE is multiplier: meters / minute)
+
+centiminutes_to_meters:
+
+	ld c, #100
+	call div248         ; HL has full minutes, A has hundredths of minutes
+
+	push hl             ; remember full minutes for a while
+	ld hl, #0            ; start to accumulate
+
+	ld b, a             ; decimal minutes ?
+	inc b
+	dec b
+	jr z, 2f            ; happens to be none.
+1:
+	add hl, de
+	adc a, #0
+	djnz 1b             ; continue adding 0.01 * minute     max 100 loops
+
+	ld c, #100
+	call div248         ; HL has last 1.8 kilometers from decimal mins.
+2:
+	xor a               ; AHL has.
+
+	pop bc              ; get full minutes now
+	push bc
+	inc c               ; full minutes % 256 ?
+	dec c
+	jr z, 2f            ; happens to be none.
+	ld b, c
+1:
+	add hl, de          ; meters per minute
+	adc a, #0
+	djnz 1b             ; continue adding 1 * minute     max 256 loops
+2:
+	ld c, d
+	ld d, e
+	ld e, #0             ; now upper byte of full minute
+
+	pop bc              ; full minutes / 256 ?
+	inc b
+	dec b
+	jr z, 2f
+1:
+	add hl, de
+	adc a, c
+	djnz 1b             ; continue adding 256 * minute  max 256 loops
+2:
+	ret
+
+
+; align AHL centiminutes between -180 and +180 degrees. what a mess.
+
+delta_longitude_fixup:
+
+	; < -180 ? add 180 two times
+	; > +180 ? sub 180 two times
+
+	ld de, #(180 * 60 * 100) % 65536
+	ld b,  #(180 * 60 * 100) / 65536
+
+	bit 7, a
+	jr nz, 2f       ; go if difference is negative, maybe add 360 once.
+
+	and a
+	sbc hl, de
+	sbc a, b
+	jr c, 1f            ; was less than +180, undo
+	sbc hl, de          ; again to get -= 360
+	sbc a, b
+	ret
+1:
+	add hl, de
+	adc a, b
+	ret
+2:
+	add hl, de
+	adc a, b
+	jr c, 1f             ; was more positive than -180, undo
+	add hl, de           ; again to get += 360
+	adc a, b
+	ret
+1:
+	and a
+	sbc hl, de
+	sbc a, b
+	ret
+
+mprs_qrb_dir_char:
+	bit 2, a
+	jr nz, 1f      ; E/W direction.
+
+	bit 0, a       ; N/S ?
+	ld a, #'N'
+	ret nz
+	ld a, #'S'
+	ret
+1:
+	bit 1, a       ; E/W ?
+	ld a, #'E'
+	ret nz
+	ld a, #'W'
+	ret
+
+
+; flat-model
+; XXX near poles, use cone-model
+
+mprs_qrb:
+
+	ld iy, #cfg_gps_latitude            ; my latitude
+	ld ix, #my_coord_tmp_6bytes + 0
+	call mprs_degmin_pack
+
+	ld iy, #cfg_gps_longitude           ; my longitude
+	ld ix, #my_coord_tmp_6bytes + 3
+	call mprs_degmin_pack
+
+	xor a
+	ld (mprs_qrb_dir_bits), a          ; direction.
+
+	; latitude calculations
+
+	ld ix, #mprs_packed_packet + 6      ; his/hers latitude
+	ld a, (ix+0)
+	ld b, (ix+1)
+	ld c, (ix+2)
+	call degmin_to_centiminutes_from_south_pole
+	push af
+	push hl                            ; remember his latitude
+
+	ld ix, #my_coord_tmp_6bytes + 0     ; my latitude
+	ld a, (ix+0)
+	ld b, (ix+1)
+	ld c, (ix+2)
+	call degmin_to_centiminutes_from_south_pole
+
+	pop de               ; now sub his latitude
+	and a
+	sbc hl, de
+	pop de
+	sbc a, d              ; AHL has signed latitude difference in centiminutes
+	jr nc, 1f
+
+	call negate_ahl
+
+	ld iy, #mprs_qrb_dir_bits
+	set 0, (iy)         ; he/she is north from me
+1:
+
+	; AHL has abs(latitude centiminutes), turn into distance
+
+	call centiminutes_to_1852_meters
+
+	push af
+	push hl            ; remember northwise difference in meters
+
+
+
+	; longitude calculations
+
+	ld ix, #mprs_packed_packet + 9      ; his/hers longitude
+	ld a, (ix+0)
+	ld b, (ix+1)
+	ld c, (ix+2)
+	call degmin_to_centiminutes_from_meridian
+
+	push af
+	push hl                            ; remember his longitude
+
+	ld ix, #my_coord_tmp_6bytes + 3     ; my longitude
+	ld a, (ix+0)
+	ld b, (ix+1)
+	ld c, (ix+2)
+	call degmin_to_centiminutes_from_meridian
+
+	pop de                  ; now sub his longitude
+	and a
+	sbc hl, de
+	pop de
+	sbc a, d          ; AHL has signed longitude difference in centiminutes
+
+	call delta_longitude_fixup
+
+	bit 7, a
+	jr z, 1f
+
+	call negate_ahl
+
+	ld iy, #mprs_qrb_dir_bits
+	set 1, (iy)         ; he/she is east from me
+1:
+
+	; AHL has abs(longitude delta), turn into distance
+
+	ld ix, #my_coord_tmp_6bytes + 0     ; my latitude
+	ld d, #0
+	ld e, (ix+0)
+	sla e
+	ld ix, #minutes_to_meters_wrt_latitude_degree
+	add ix, de
+	ld e, (ix+0)
+	ld d, (ix+1)
+	call centiminutes_to_meters
+
+
+	pop de
+	pop bc              ; BDE has nortwise meters
+	ld c, a             ; CHL has eastwise meters
+
+	; which of them is longer ?
+
+	ld ix, #my_coord_tmp_6bytes + 0
+	ld (ix+0), e
+	ld (ix+1), d
+	ld (ix+2), b        ; northwise in ix
+
+	ld iy, #my_coord_tmp_6bytes + 3
+	ld (iy+0), l
+	ld (iy+1), h
+	ld (iy+2), c        ; eastwise in iy
+
+	and a
+	sbc hl, de
+	sbc a, b
+	jr c, 1f             ; major axis is N/S in ix, BDE
+
+	ld ix, #my_coord_tmp_6bytes + 3
+	ld iy, #my_coord_tmp_6bytes + 0  ; now major axis is in ix
+
+	ld hl, #mprs_qrb_dir_bits
+	set 2, (hl)          ; remember the direction major axis is E/W
+1:
+
+	; simple distance approximation
+	; distance = major + minor * 83 / 256
+	; less than %5 error except 7% at 45 degrees directions
+
+	ld e, (iy+0)
+	ld d, (iy+1)
+	ld l, (iy+2)
+	ld h, #0
+	push de
+	pop iy               ; minor axis in HLIY
+
+	push hl              ; remember 1 times
+	push iy
+
+	add iy, iy
+	adc hl, hl    ;  2 times
+	add iy, iy
+	adc hl, hl    ;  4 times
+	add iy, iy
+	adc hl, hl    ;  8 times
+	add iy, iy
+	adc hl, hl    ; 16 times
+	push hl              ; remember 16 times
+	push iy
+	add iy, iy
+	adc hl, hl    ; 32 times
+	add iy, iy
+	adc hl, hl    ; 64 times
+	pop de               ; get 16 times
+	pop bc
+	add iy, de
+	adc hl, bc    ; + 16 times
+	pop de
+	pop bc               ; get one times
+	add iy, de
+	adc hl, bc    ; + 1 times
+	add iy, de
+	adc hl, bc    ; + 1 times
+	add iy, de
+	adc hl, bc    ; + 1 times, totals 83 times
+
+	push iy
+	pop de               ; in HLDE
+	ld e, d
+	ld d, l
+	ld c, h              ; divided by 256, in CDE
+
+	ld l, (ix+0)
+	ld h, (ix+1)
+	ld a, (ix+2)
+	add hl, de
+	adc a, c                ; distance meters complete in AHL.
+
+	ld (ix+0), l
+	ld (ix+1), h
+	ld (ix+2), a         ; save for a while
+
+	; determine scale 
+
+	and a
+
+	ld de, #1000
+	sbc hl, de
+	sbc a, #0
+	ld l, (ix+0)
+	ld h, (ix+1)
+	ld a, (ix+2)
+	ld b, #0                  ; assume scale 1, zero trailing "0"
+	jr c, mprs_qrb_present   ; already < 1000, skip stuff at 1f
+
+	ld de, #10000
+	sbc hl, de
+	sbc a, #0
+	ld l, (ix+0)
+	ld h, (ix+1)
+	ld a, (ix+2)
+	inc b              ; trailing "0"
+	ld c, #10           ; divider to get the significant part
+	jr c, 1f
+
+	ld de, #100000 % 65536
+	sbc hl, de
+	sbc    a, #100000 / 65536
+	ld l, (ix+0)
+	ld h, (ix+1)
+	ld a, (ix+2)
+	inc b              ; trailing "00"
+	ld c, #100          ; divider is 100
+	jr c, 1f
+
+	ld de, #1000000 % 65536
+	sbc hl, de
+	sbc    a, #1000000 / 65536
+	ld l, (ix+0)
+	ld h, (ix+1)
+	ld a, (ix+2)
+	inc b               ; trailing "000"
+
+	ret nc     ; "too far"
+
+	; AHL / 100 / 10 some extra dancing.
+
+	ld c, #100
+	call div248
+	xor a             ; extend back for another div
+
+	ld c, #10            ; again to get the total /= 1000
+
+	; fall thru
+1:
+	; scale down by C, keep B valid.
+
+	call div248         ; AHL / C => HL
+
+	; fall thru
+
+mprs_qrb_present:
+
+	; scaled to less than 1000
+	;
+	; HL has 0...999 and
+	; B has number of trailing zeroes vs meters.
+
+	ld iy, #distance_bearing
+
+	ld c, #'.'      ; decimal point
+	inc b          ; preincrement to use djnz
+
+	djnz 1f
+	ld (iy), c     ; .999  kilometers
+	inc iy
+1:
+	ld a, #-1
+	ld de, #100     ; /= 100
+	and a          ; for sbc hl
+1:
+	inc a
+	sbc hl, de
+	jr nc, 1b      ;                                   max 9 loops
+	add hl, de     ; correct remainder
+
+	ld (iy), a     ; first digit
+	inc iy
+
+	djnz 1f
+	ld (iy), c     ; 9.99
+	inc iy
+1:
+	ld a, l        ; remaining 0...99 fits A
+	ld e, #-1
+1:
+	inc e
+	sub #10         ; /= 10
+	jr nc, 1b      ;                                   max 9 loops
+	add a, #10         ; and the remainder for third significant (ha!) place.
+
+	ld (iy), e     ; second digit
+	inc iy
+
+	djnz 1f
+	ld (iy), c     ; 99.9
+	inc iy
+1:
+	ld (iy), a     ; third (last) digit
+	inc iy
+
+	dec b
+	jr z, 1f       ; 3 trailing zeroes
+	ld c, #0        ; 4 trailing zeroes, no decimal point but a "0"
+1:
+	ld (iy), c     ; 999. or 9990
+	inc iy
+
+	ld a, #' '
+	ld (iy), a     ; blank separator for "xxxx d" format
+	inc iy
+
+	; direction character as the sixth in buffer
+
+	ld a, (mprs_qrb_dir_bits)
+	call mprs_qrb_dir_char
+
+	ld (iy+0), a
+	ld a, #EOS
+	ld (iy+1), a
+
+	ret            ; Whew.
+
+;----------------------------------------------------------------------
+
+minutes_to_meters_wrt_latitude_degree:
+	.dw 1852 ;  0
+	.dw 1852 ;  1
+	.dw 1851 ;  2
+	.dw 1849 ;  3
+	.dw 1847 ;  4
+	.dw 1845 ;  5
+	.dw 1842 ;  6
+	.dw 1838 ;  7
+	.dw 1834 ;  8
+	.dw 1829 ;  9
+	.dw 1824 ; 10
+	.dw 1818 ; 11
+	.dw 1812 ; 12
+	.dw 1805 ; 13
+	.dw 1797 ; 14
+	.dw 1789 ; 15
+	.dw 1780 ; 16
+	.dw 1771 ; 17
+	.dw 1761 ; 18
+	.dw 1751 ; 19
+	.dw 1740 ; 20
+	.dw 1729 ; 21
+	.dw 1717 ; 22
+	.dw 1705 ; 23
+	.dw 1692 ; 24
+	.dw 1678 ; 25
+	.dw 1665 ; 26
+	.dw 1650 ; 27
+	.dw 1635 ; 28
+	.dw 1620 ; 29
+	.dw 1604 ; 30
+	.dw 1587 ; 31
+	.dw 1571 ; 32
+	.dw 1553 ; 33
+	.dw 1535 ; 34
+	.dw 1517 ; 35
+	.dw 1498 ; 36
+	.dw 1479 ; 37
+	.dw 1459 ; 38
+	.dw 1439 ; 39
+	.dw 1419 ; 40
+	.dw 1398 ; 41
+	.dw 1376 ; 42
+	.dw 1354 ; 43
+	.dw 1332 ; 44
+	.dw 1310 ; 45
+	.dw 1287 ; 46
+	.dw 1263 ; 47
+	.dw 1239 ; 48
+	.dw 1215 ; 49
+	.dw 1190 ; 50
+	.dw 1166 ; 51
+	.dw 1140 ; 52
+	.dw 1115 ; 53
+	.dw 1089 ; 54
+	.dw 1062 ; 55
+	.dw 1036 ; 56
+	.dw 1009 ; 57
+	.dw  981 ; 58
+	.dw  954 ; 59
+	.dw  926 ; 60
+	.dw  898 ; 61
+	.dw  869 ; 62
+	.dw  841 ; 63
+	.dw  812 ; 64
+	.dw  783 ; 65
+	.dw  753 ; 66
+	.dw  724 ; 67
+	.dw  694 ; 68
+	.dw  664 ; 69
+	.dw  633 ; 70
+	.dw  603 ; 71
+	.dw  572 ; 72
+	.dw  541 ; 73
+	.dw  510 ; 74
+	.dw  479 ; 75
+	.dw  448 ; 76
+	.dw  417 ; 77
+	.dw  385 ; 78
+	.dw  353 ; 79
+	.dw  322 ; 80
+	.dw  290 ; 81
+	.dw  258 ; 82
+	.dw  226 ; 83
+	.dw  194 ; 84
+	.dw  161 ; 85
+	.dw  129 ; 86
+	.dw   97 ; 87
+	.dw   65 ; 88
+	.dw   32 ; 89
+
+
+;----------------------------------------------------------------------
+
+
+; OH5NXO-1>APRS:!6103.52N/02806.18E>
+
+mbus_mprs_call_latlon:
+
+	ld a, (cfg_mbus_mprs)      ; how exactly ?
+	cp #4
+	jr z, mbus_mprs_out_logger  ; different from the others below
+
+
+	ld de, #mbus_mprs_buffer     ; format message like !6103.52N/02806.18E>
+
+
+	ld a, #'!'
+	ld (de), a
+	inc de
+
+	ld ix, #mprs_packed_packet + 6
+	call mprs_lat_format
+	ld a, (ix+2)
+	and #0x80
+	ld a, #'N'
+	jr z, 1f
+	ld a, #'S'
+1:
+	ld (de), a
+	inc de
+
+	ld a, #'/'                   ; Primary symbol table
+	ld (de), a
+	inc de
+
+	ld ix, #mprs_packed_packet + 9
+	call mprs_lon_format
+	ld a, (ix+2)
+	and #0x80
+	ld a, #'E'
+	jr z, 1f
+	ld a, #'W'
+1:
+	ld (de), a
+	inc de
+
+	ld a, (mprs_packed_packet + 6 + 1)
+	and #0xC0
+	srl a
+	srl a
+	srl a
+	srl a
+	ld b, a
+	ld a, (mprs_packed_packet + 9 + 1)
+	and #0xC0
+	rlca
+	rlca
+	or b                                   ; symbol nibble complete
+	ld hl, #symbol_nibble_to_primary_symbol
+	cp #15
+	jr nz, 1f
+	ld a, (mprs_packed_packet + 4)         ; symbol=15, indirect symbol from SSID
+	srl a
+	srl a
+	srl a
+	srl a
+	ld hl, #ssid_nibble_to_primary_symbol
+1:
+	ld b, #0
+	ld c, a
+	add hl, bc
+	ld a, (hl)
+	ld (de), a
+	inc de
+
+	ld a, #EOS
+	ld (de), a               ; !6103.52N/02806.18E>  complete
+
+	ld a, (cfg_mbus_mprs)      ; how exactly ?
+
+	dec a                            ; if 1
+	jp z, mbus_mprs_out_emu_tnc
+	dec a                            ; if 2
+	jp z, mbus_mprs_out_emu_kiss_tnc
+	dec a                            ; if 3
+	jp z, mbus_mprs_out_3rd_party
+
+	ret ; ???
+
+; 120000 6103.52N 02806.18E KP41BB 0 128 OH5NXO-15 <CRLF>
+;  utc    lat       lon     loc  sym rssi call
+
+mbus_mprs_out_logger:
+
+	ld de, #mbus_mprs_buffer     ; format message " 6103.52N 02806.18E "
+
+
+	ld a, #' '
+	ld (de), a
+	inc de
+
+	ld ix, #mprs_packed_packet + 6
+	call mprs_lat_format
+	ld a, (ix+2)
+	and #0x80
+	ld a, #'N'
+	jr z, 1f
+	ld a, #'S'
+1:
+	ld (de), a
+	inc de
+
+	ld a, #' '
+	ld (de), a
+	inc de
+
+	ld ix, #mprs_packed_packet + 9
+	call mprs_lon_format
+	ld a, (ix+2)
+	and #0x80
+	ld a, #'E'
+	jr z, 1f
+	ld a, #'W'
+1:
+	ld (de), a
+	inc de
+
+	ld a, #' '
+	ld (de), a
+	inc de
+
+	ld a, #EOS
+	ld (de), a               ; " 6103.52N 02806.18E "  complete
+
+	ld ix, #gps_utc
+	call mbus_mprs_out_string_ascify
+
+	ld ix, #mbus_mprs_buffer         ; message formatted above
+	call mbus_mprs_out_string
+
+	ld ix, #locator_display_buffer
+	call mbus_mprs_out_string
+
+	ld c, #' '
+	call putchar
+
+	ld a, (mprs_packed_packet + 6 + 1)
+	and #0xC0
+	rrca
+	rrca
+	rrca
+	rrca      ; 0x0C
+	ld b, a
+	ld a, (mprs_packed_packet + 9 + 1)
+	and #0xC0
+	rlca
+	rlca      ; 0x03
+	or b                    ; symbol nibble complete
+	call putchar_hex_nybble ; print just as a hex digit
+
+	ld c, #' '
+	call putchar                    ; so far fixed width fields
+
+	ld a, (packet_rssi)
+	call putchar_hex_byte
+
+	ld c, #' '
+	call putchar                    ; so far fixed width fields
+
+	ld ix, #remote_display_buffer    ; OH5NXO-15
+	call mbus_mprs_out_string
+
+	ld c, #0x0D
+	call putchar
+	ld c, #0x0A
+	call putchar                    ; CRLF
+
+	ret
+
+putchar_hex_byte:
+
+	ld b, a
+	rra
+	rra
+	rra
+	rra
+	call putchar_hex_nybble
+
+	ld a, b
+
+putchar_hex_nybble:
+
+	and #0xF
+	cp #10
+	jr c, 1f
+	add a, #'A' - 10 - '0'
+1:
+	add a, #'0'
+	ld c, a
+	jp putchar
+
+
+mprs_fake_dst_0:	.ascii "APRS"
+.db EOS, EOS, EOS, EOS
+mprs_fake_dst_1:	.ascii "RELAY"
+.db      EOS, EOS, EOS
+mprs_fake_dst_2:	.ascii "WIDE"
+.db EOS, EOS, EOS, EOS
+
+mprs_fake_dst_mprs:	.ascii "MPRS"
+.db EOS, EOS, EOS, EOS
+
+mbus_mprs_out_string:
+1:
+	ld a, (ix)
+	cp #EOS
+	ret z
+	inc ix
+	ld c, a
+	call putchar
+	jr 1b
+
+mbus_mprs_out_string_ascify:
+1:
+	ld a, (ix)
+	cp #EOS
+	ret z
+	cp #0x10         ; 0...9, 0xA...0xF
+	jr nc, 2f       ; nope.
+	cp #10           ; 
+	jr c, 3f        ; 0...9
+	add a, #'A' - 10 - '0'
+3:
+	add a, #'0'         ; '0' ... '9' or 'A' ... 'F'
+2:
+	inc ix
+	ld c, a
+	call putchar
+	jr 1b
+
+mbus_mprs_out_emu_tnc:          ; OH5NXO-15>APRS,RELAY,WIDE:!nnn/nnn>
+
+	ld ix, #remote_display_buffer    ; OH5NXO-15
+	call mbus_mprs_out_string
+
+	ld ix, #mprs_fake_dst_0
+	ld c, #'>'                       ; >APRS
+	call putchar
+	call mbus_mprs_out_string
+
+	ld ix, #mprs_fake_dst_1
+	ld a, (ix)
+	cp #EOS
+	jr z, 1f
+		ld c, #','                   ; ,digi
+		call putchar
+		call mbus_mprs_out_string
+1:
+	ld ix, #mprs_fake_dst_2
+	ld a, (ix)
+	cp #EOS
+	jr z, 1f
+		ld c, #','                   ; ,digi
+		call putchar
+		call mbus_mprs_out_string
+1:
+
+	ld c, #':'                       ; >APRS,RELAY,WIDE:
+	call putchar
+
+	ld ix, #mbus_mprs_buffer         ; preformatted APRS message !nnn/nnn>
+	call mbus_mprs_out_string
+
+	ld c, #0x0D
+	call putchar
+	ld c, #0x0A
+	call putchar                    ; CRLF
+
+	ret
+
+mbus_mprs_out_3rd_party:
+
+	ld c, #'}'
+	call putchar                    ; third party format
+
+	ld ix, #remote_display_buffer    ; OH5NXO-15
+	call mbus_mprs_out_string
+
+	ld c, #'>'                       ; >APRS
+	call putchar
+	ld ix, #mprs_fake_dst_0
+	call mbus_mprs_out_string
+
+	ld c, #','                   ; ,digi
+	call putchar
+	ld ix, #mprs_fake_dst_mprs
+	call mbus_mprs_out_string
+
+	ld c, #'*'
+	call putchar
+	ld c, #':'                       ; }OH5NXO-15>APRS,MPRS*:
+	call putchar
+
+	ld ix, #mbus_mprs_buffer         ; preformatted APRS message !nnn/nnn>
+	call mbus_mprs_out_string
+
+	ld c, #0x0D
+	call putchar           ; CR only, CONVERS send
+
+	ret
+
+;
+;  KISS
+;
+;  FEND 0300(0xc0), FESC 0333(0xdb), TFEND 0334(0xdc), TFESC 0335(0xdd)
+;
+;  first byte after FEND is 0xW0 = data from tnc port W.
+;  rest is ax25 packet without crc or flags:
+;
+;  addresses                      control pid  info    
+;                                   03     F0  !nnn/nnn>
+;  destination[7] source[7] digis[n*7]  n=0-8
+;  chars <<= 1
+;  dest SSID    011ssid0
+;  src  SSID    011ssidL
+;  digi-SSID    H11ssidL   H has-been-repeated, L last-of-addresses
+;
+
+putchar_slipped:
+	cp #192
+	jr z, 1f
+	cp #219
+	jr z, 2f
+
+	ld c, a
+	jp putchar
+1:
+	ld c, #219
+	call putchar
+	ld c, #220
+	jp putchar
+2:
+	ld c, #219
+	call putchar
+	ld c, #221
+	jp putchar
+
+mbus_mprs_out_address_kiss:
+
+	ld b, #6         ; 6 characters (and ssid) always
+1:
+	ld c, #' '       ; assume at end of call
+	ld a, (ix)
+	cp #EOS
+	jr z, 2f
+	cp #'-'
+	jr z, 2f
+	ld c, a
+	inc ix           ; do not step over end of call
+2:
+	ld a, c
+	sla a          ; characters shifted up
+	call putchar_slipped
+	djnz 1b
+
+	ld c, #0         ; assume no ssid
+	ld a, (ix+0)
+	cp #'-'
+	jr nz, 1f       ; no ssid was there
+	ld a, (ix+1)
+	sub #'0'
+	ld c, a         ; assume -x singledigit ssid
+	ld a, (ix+2)
+	cp #EOS
+	jr z, 1f        ; not -1x
+	sub #'0' - 10
+	ld c, a
+1:
+	ld a, c
+	sla a           ; SSID shifted up
+	and #0x1E        ; gigo safety
+	or #0x60         ; SSID reserved bits
+	or d            ; Last-bit maybe
+	call putchar_slipped
+
+	ret
+
+
+mbus_mprs_out_emu_kiss_tnc:
+
+	ld c, #192
+	call putchar                ; flush junk
+
+	ld c, #0x00                  ; data from tnc 0
+	call putchar
+
+	ld ix, #mprs_fake_dst_0          ; APRS - destination
+	ld d, #0                         ; not last
+	call mbus_mprs_out_address_kiss
+
+	ld ix, #remote_display_buffer    ; OH5NXO-15 - source
+	ld d, #1                         ; also last one
+	call mbus_mprs_out_address_kiss
+
+
+	ld c, #0x03                  ; control
+	call putchar
+	ld c, #0xF0                  ; PID
+	call putchar
+
+	ld ix, #mbus_mprs_buffer     ; preformatted APRS message !nnn/nnn>
+	call mbus_mprs_out_string   ; ... it will not contain FEND or FESC, ever
+
+	ld c, #192
+	call putchar                ; end slip
+
+	ret
+
+
+
+mprs_lon_format:
+	ld a, (ix+0)                  ; no reserved bit in lon degrees (0...180)
+	ld c, a
+	sub #100
+	jr c, 1f
+	ld c, a
+	ld a, #'1'
+	jr 2f
+1:
+	ld a, #'0'
+2:
+	ld (de), a
+	inc de
+	ld a, c
+	jr 1f                         ; rest is same with lat and lon
+
+	; JUMP THRU
+
+mprs_lat_format:                  ; lat is 0..90, one less digit
+
+	ld a, (ix+0)
+	and #0x7F                      ; mask off reserved bit
+1:
+	call dekavalue_format
+
+	ld a, (ix+1)
+	and #0x3F                      ; mask off symbol bits
+	call dekavalue_format
+
+	ld a, #'.'
+	ld (de), a
+	inc de
+
+	ld a, (ix+2)
+	and #0x7F                      ; mask of hemisphere bit
+	call dekavalue_format
+
+	ret
+
+dekavalue_format:
+
+	ld c, #'0' - 1
+1:
+	inc c
+	sub #10
+	jr nc, 1b
+	add a, #10 + '0'             ; undo last subtract and ascify also
+	push af
+
+	ld a, c
+	ld (de), a
+	inc de
+
+	pop af
+	ld (de), a
+	inc de
+
+	ret
+
+;----------------------------------------------------------------------
+
+;; Garmin GPS12, MAP168, GPSII+, GPSIII, GPSIII+, EMap(updated Software),
+;; Etrex Venture, Legend, and Vista(with updated software),
+;; Garmin 45, StreetPilot III(with 2.11 and above software),
+;; and the GPS 12xl are known to be capable of this function.
+;
+; $GPWPL,6103.52,N,02806.18,E,OH5NXO-15*XX <CRLF>
+; $PMGNWPL,6103.52,N,02806.18,E,altitude,F/M,call,,icon,*XX <CRLF>
+
+1:   .ascii "GPWPL,"             ; last char must be , it is also copyed.
+2:   .ascii "PMGNWPL,"
+
+gps_mprs_call_latlon:
+
+	; upload at 4800 bauds takes less time than mprs packet in 1200 bauds.
+	; buffer will be free.
+
+	ld de, #mbus_mprs_buffer      ; careful with the buffer size !
+
+	ld hl, #1b                    ; more common sentence
+	ld a, (cfg_gps_upload)
+	cp #2
+	jr nz, 1f
+	ld hl, #2b                    ; Magellan enhanced
+
+1:
+	ld a, (hl)
+	inc hl
+	ld (de), a
+	inc de
+	cp #','
+	jr nz, 1b                        ; $FOO,
+
+	ld ix, #mprs_packed_packet + 6
+	call mprs_lat_format
+
+	ld a, #','
+	ld (de), a
+	inc de    ; $FOO,lat.lat,
+
+	ld a, (ix+2)
+	and #0x80
+	ld a, #'N'
+	jr z, 1f
+	ld a, #'S'
+1:
+	ld (de), a
+	inc de
+
+	ld a, #','
+	ld (de), a
+	inc de    ; $FOO,lat.lat,N,
+
+	ld ix, #mprs_packed_packet + 9
+	call mprs_lon_format
+
+	ld a, #','
+	ld (de), a
+	inc de
+
+	ld a, (ix+2)
+	and #0x80
+	ld a, #'E'
+	jr z, 1f
+	ld a, #'W'
+1:
+	ld (de), a
+	inc de
+
+	ld a, #','
+	ld (de), a
+	inc de   ; $FOO,lat.lat,N,lon.lon,E,
+
+	ld a, (cfg_gps_upload)
+	cp #2
+	jr nz, 1f
+	ld a, #','
+	ld (de), a
+	inc de   ; dummy altitude and altitude ...
+	ld a, #','
+	ld (de), a
+	inc de   ; ... unit for Magellan
+1:
+
+	ld hl, #remote_display_buffer    ; OH5NXO-15
+	push de                         ; remember start of waypoint name.
+1:
+	ld a, (hl)
+	inc hl
+	ld (de), a                      ; EOS is also stored, DE left over it.
+	cp #EOS
+	jr z, 1f
+	inc de                          ; good character added, next.
+	jr 1b
+1:
+	pop hl                          ; squeeze waypoint name
+	call gps_waypoint_tidy
+
+	ld a, #'*'
+	ld (de), a
+	inc de   ; Magellan extras are left out.
+
+	ld hl, #mbus_mprs_buffer         ; NMEA checksum between $ and *
+	ld c, #0
+1:
+	ld a, (hl)
+	inc hl
+	cp #'*'
+	jr z, 1f
+	xor c
+	ld c, a
+	jr 1b
+1:
+	ld a, c
+	rra
+	rra
+	rra
+	rra
+	and #0xF
+	cp #10
+	jr c, 1f
+	add a, #'A' - 10 - '0'
+1:
+	add a, #'0'
+	ld (de), a
+	inc de
+	ld a, c
+	and #0x0F
+	cp #10
+	jr c, 1f
+	add a, #'A' - 10 - '0'
+1:
+	add a, #'0'
+	ld (de), a
+	inc de
+
+	ld a, #0x0D
+	ld (de), a
+	inc de       ; CR
+	ld a, #0x0A
+	ld (de), a
+	inc de       ; LF
+	ld a, #0x00
+	ld (de), a
+	inc de       ; NUL
+
+	; buffer holds "GPWPL,6103.52,N,02806.18,E,OH5NXO-15*XX\r\n\0"
+
+	ld hl, #mbus_mprs_buffer         ; message formatted above
+	ld (gps_upload_ptr), hl
+
+	ld a, #'$'
+	out (SIO+ADATA), a              ; start !
+
+	ret
+
+; input: HL points to string ending with EOS, DE points to the EOS.
+; output: DE points just past waypoint name
+
+gps_waypoint_tidy:
+	ret
+
+;------------------------------------------------------------------------
+
+ascify:
+	cp #16
+	ret nc        ; not hex digit
+	cp #10
+	jr nc, 1f
+	add a, #'0'       ; 0x0 into '0'
+	ret
+1:
+	add a, #'A' - 10  ; 0xA into 'A'
+	ret
+
+pack_aprs_report_digi_maybe:
+	or a
+	ret z                           ; None
+
+	ld hl, #cfg_ax25_digi_other     ; maybe this ?
+	cp #AX25_DIGI_OTHER_IDX
+	jr nc, pack_aprs_report_packet_call
+
+	ld hl, #tab_ax25_digi + 1  ; others are verbatim in menu
+	push de
+	add a, a          ; 2x
+	add a, a          ; 4x
+	add a, a          ; 8x   junk in setup, junk into packet
+	ld d, #0
+	ld e, a
+	add hl, de     ; index into selected string
+	pop de
+
+	; FALL THRU
+
+pack_aprs_report_packet_call:
+
+	ld b, #6         ; 6 characters (plus ssid) always
+2:
+	ld c, #' '       ; assume at end of call, blank padded
+	ld a, (hl)
+	cp #EOS
+	jr z, 1f
+	cp #'-'
+	jr z, 1f
+	inc hl          ; do not step over end of call
+	call ascify
+	ld c, a
+	cp #'a'          ; lowercase ?
+	jr c, 1f        ; nope.
+	res 5, c        ; make upper case
+1:
+	ld a, c
+	sla a           ; characters are shifted up
+	ld (de), a
+	inc de
+	djnz 2b         ; do all 6 characters.
+
+	; then SSID
+
+	ld c, #0         ; assume no ssid
+	ld a, (hl)
+	cp #'-'
+	jr nz, 2f       ; no -ssid was there
+	inc hl
+	ld a, (hl)      ; -x
+	sub #'0'         ; turn to binary
+	jr nc, 1f
+	add a, #'0'         ; oops, was already binary
+1:
+	ld c, a         ; assume -x singledigit ssid
+	cp #1
+	jr nz, 2f       ; not -1(x)
+	inc hl
+	ld a, (hl)
+	cp #EOS
+	jr z, 2f        ; not -1x
+	sub #'0'
+	jr nc, 1f
+	add a, #'0'         ; morerepetitition
+1:
+	add a, #10          ; must be 10...15
+	ld c, a
+2:
+	ld a, c
+	jr 9f           ; save a few bytes
+
+	; jumpover
+
+pack_aprs_report_packet_mycall:
+
+	ld hl, #cfg_mprs_callsign        ; OH5NXO - source
+	ld b, #6                         ; 6 characters (plus ssid) always
+2:
+	ld c, #' '       ; assume at end of call
+	ld a, (hl)
+	cp #EOS
+	jr z, 1f
+	inc hl           ; do not step over end of call
+	call ascify
+	ld c, a
+1:
+	ld a, c
+	sla a          ; characters shifted up
+	ld (de), a
+	inc de
+	djnz 2b
+
+	ld a, (cfg_mprs_ssid)
+9:
+	rla             ; SSID shifted up
+	and #0x1E        ; gigo safety - also clear C bit
+	or #0x60         ; SSID reserved bits are set
+	ld (de), a      ; Last-bit (0x01) clear
+	inc de          ; DE points one past SSID
+
+	ret
+
+
+
+encode_aprs_report_packet_normal:          ; store into DE
+
+	ld hl, #mprs_fake_dst_0                 ; APRS - destination
+	call pack_aprs_report_packet_call
+
+	call pack_aprs_report_packet_mycall    ; MYCALL - source
+
+	ld a, (cfg_ax25_digi0)                 ; digipeat paths, if any
+	call pack_aprs_report_digi_maybe
+	ld a, (cfg_ax25_digi1)
+	call pack_aprs_report_digi_maybe
+	ld a, (cfg_ax25_digi2)
+	call pack_aprs_report_digi_maybe
+	ld a, (cfg_ax25_digi3)
+	call pack_aprs_report_digi_maybe
+
+	ex de, hl           ; use HL to insert stuff, for a while
+
+	dec hl              ; back over SSID of last address
+	set 0, (hl)         ; insert LAST-bit in last address
+	inc hl
+
+	; control and PID
+
+	ld (hl), #0x03                ; control
+	inc hl
+	ld (hl), #0xF0                ; PID
+	inc hl
+
+	; aprs message in data part
+
+	ld (hl), #'!'               ; data is like !6103.52N/02806.18E>  
+	inc hl
+
+	ld ix, #cfg_gps_latitude
+	ld a, (ix+1)
+	add a, #'0'
+	ld (hl), a
+	inc hl    ; 6
+	ld a, (ix+2)
+	add a, #'0'
+	ld (hl), a
+	inc hl    ; 1
+	ld a, (ix+3)
+	add a, #'0'
+	ld (hl), a
+	inc hl    ; 0
+	ld a, (ix+4)
+	add a, #'0'
+	ld (hl), a
+	inc hl    ; 3
+	                       ld (hl), #'.'
+	                       inc hl  ; .
+	ld a, (ix+5)
+	add a, #'0'
+	ld (hl), a
+	inc hl    ; 5
+	ld a, (ix+6)
+	add a, #'0'
+	ld (hl), a
+	inc hl    ; 2
+
+	ld a, (ix+7)
+	cp #'S'
+	jr z, 1f
+	ld a, #'N'              ; anything but 'S' means North
+1:
+	ld (hl), a
+	inc hl     ; N
+
+	ld (hl), #'/'
+	inc hl                         ; / Primary symbol table
+
+	ld ix, #cfg_gps_longitude
+	ld a, (ix+0)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 0
+	ld a, (ix+1)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 2
+	ld a, (ix+2)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 8
+	ld a, (ix+3)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 0
+	ld a, (ix+4)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 6
+	                       ld (hl), #'.'
+	                       inc hl ; .
+	ld a, (ix+5)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 1
+	ld a, (ix+6)
+	add a, #'0'
+	ld (hl), a
+	inc hl   ; 8
+
+	ld a, (ix+7)
+	cp #'W'
+	jr z, 1f
+	ld a, #'E'              ; anything but 'W' means East
+1:
+	ld (hl), a
+	inc hl     ; E
+
+	; swap "insert pointer" to DE for the rest of this
+
+	ex de, hl
+
+	; the station symbol
+
+	ld a, (cfg_mprs_symbol)
+	ld hl, #symbol_nibble_to_primary_symbol
+	cp #15
+	jr nz, 1f
+	ld a, (cfg_mprs_ssid)         ; symbol=15, indirect symbol from SSID
+	ld hl, #ssid_nibble_to_primary_symbol
+1:
+	ld c, a
+	ld b, #0
+	add hl, bc
+	ldi                   ; [DE++] = [HL++], BC--
+
+	; course/speed - only if moving at speed over 1 knots
+
+	ld hl, (gps_knots)
+	ld bc, #-2
+	add hl, bc
+	jr nc, 1f               ; speed less than 2 knots, no CSE/SPD
+
+	call gps_course_1_to_360_degrees
+	call HL_to_3_ascii_at_DE
+
+	ld a, #'/'
+	ld (de), a
+	inc de
+
+	ld hl, (gps_knots)
+	call HL_to_3_ascii_at_DE
+1:
+	; finished message.
+
+	ex de, hl               ; HL has "one past last byte"
+	ret                     ; endptr of packet in HL
+
+gps_course_1_to_360_degrees:
+
+	ld hl, (gps_course)
+	ld a, l
+	or h
+	ret nz               ; not 0 degrees course, ok
+	ld hl, #360           ; 0 degrees goes as 360 degrees.
+	ret
+
+; HL to ascii digits in [DE], [DE+1] and [DE+2]
+; DE += 3
+; A, BC and HL trashed
+
+9:	.ascii "999"
+
+HL_to_3_ascii_at_DE:
+
+	ld bc, #-1000      ; paranoid, clamp at 999
+	add hl, bc
+	jr nc, 1f         ; go if less than 1000
+
+	ld hl, #9b
+	ldi
+	ldi
+	ldi
+	ret               ; 999
+1:
+	sbc hl, bc        ; undo it. NC condition nicely
+
+	; it fits in 3 characters, so do it
+
+	ld bc, #-100       ; possibly more than 8 bits in HL
+	ld a, #'0' - 1
+1:
+	inc a
+	add hl, bc
+	jr c, 1b
+	sbc hl, bc        ; NC condition nicely
+
+	ld (de), a        ; hundreds
+	inc de
+
+	ld a, l           ; now 8 bits is enough
+
+	ld c, #10
+	ld b, #'0' - 1
+1:
+	inc b
+	sub c
+	jr nc, 1b
+	add a, c
+	add a, #'0'           ; leftover to ascii too
+
+	ex de, hl
+
+	ld (hl), b        ; tens
+	inc hl
+
+	ld (hl), a        ; ones
+	inc hl
+
+	ex de, hl
+	ret               ; and done
+
+mic_e_binary_dmh:
+	ld a, (hl)     ; tens       these are 0x00 ... 0x09 always
+	add a, a          ; 2 times
+	add a, a          ; 4 times
+	add a, (hl)       ; 5 times
+	add a, a          ; 10 times
+	inc hl
+	add a, (hl)       ; plus ones
+	inc hl
+	cp #100
+	ret c
+	ld a, #99       ; hmpft
+	ret
+
+mic_e_DC_tab: .ascii " *4>HR"
+.db 0x5C
+.ascii "fpz"
+mic_e_DC_tab_size = . - mic_e_DC_tab
+ASSERT_EQ(mic_e_DC_tab_size, 10)
+
+encode_aprs_report_packet_mic_e:        ; into DE
+
+	; first fish for the message/N/+100/W bits
+
+	ld a, (cfg_mic_e_message)
+	cp #8           ; Was this a custom message (messages 8-14) ?
+	ld h, #'P'      ; Assume will be standard message, chars for 1-bits from 'P'
+	jr c, 1f       ; yes, index 0 ... 7, OffDuty ... -HELP-
+	ld h, #'A'      ; Custom message uses characters from 'A'
+1:
+	ld l, #3        ; custom characters, if any, only in 3 first slots
+	and #7          ; mask out custom indicator, bit 0x08
+	xor #7          ; complement the bits - at index 0 is OffDuty = Std 111
+	rrca
+	rrca
+	rrca           ; leftjustify them into bits 765 - picked out from left
+	ld c, a        ; keep them in C
+
+	ld a, (cfg_gps_latitude + 7)
+	cp #'S'
+	jr z, 1f       ; South. skip
+	set 4, c       ; Northern latitude - bit 1 in 4th byte
+1:
+	ld a, (cfg_gps_longitude + 7)
+	cp #'W'
+	jr nz, 1f      ; Not West. skip
+	set 2, c       ; Western longitude - bit 1 in 6th byte
+1:
+	ld a, (cfg_gps_longitude + 0)
+	or a           ; 1xx ?
+	jr nz, 2f      ; Longitude >= 100 degrees - "+100 bit" is always set
+	ld a, (cfg_gps_longitude + 1)
+	or a           ; 00x ?
+	jr nz, 1f      ; Longitude 010..099 degrees, skip
+2:
+	set 3, c       ; 100 or more, or less than 10 degrees, "lon +100"
+1:
+
+	; DESTINATION ADDRESS
+	; XXX position uncertainty
+
+	ld ix, #cfg_gps_latitude + 1     ; latitude [0] is always 0
+	ld b, #6
+2:
+	ld a, h        ; assume 1-bit
+	rl c           ; next message/n/l/w bit into carry
+	jr c, 1f
+	ld a, #'0'      ; zerobit. character is one of 0123456789
+1:
+	add a, (ix)       ; latitude digit (0x00...0x09)
+	inc ix
+	sla a          ; leftshifted characters in ax.25 addresses
+	ld (de), a
+	inc de
+	dec l          ; just did slot 3 ?
+	jr nz, 1f
+	ld h, #'P'      ; then later 1-bits will use PQRST... always
+1:
+	djnz 2b        ; all six characters of destaddr
+
+	; destination address ssid (distribution/routing thing)
+
+	ld a, (cfg_mic_e_dest_ssid)
+	rla
+	and #0x1E       ; CrrSSID0 - C mbz
+	or #0x60        ; and rr mbo
+	ld (de), a     ; SSID slot
+	inc de
+
+	; SOURCE ADDRESS
+
+	call pack_aprs_report_packet_mycall
+
+	; use HL for cursor, for a while
+
+	ex de, hl
+
+	dec hl
+	set 0, (hl)           ; insert LAST-bit in last address (no digis here)
+	inc hl
+
+	; CONTROL AND PID
+
+	ld (hl), #0x03        ; UI packet
+	inc hl
+	ld (hl), #0xF0        ; No level 3 protocol
+	inc hl
+
+	; INFORMATION FIELD
+
+	; first slot of information field
+
+	ld (hl), #0x60  ; MIC-E valid GPS data XXX 'GPS data is old' unsupported
+	inc hl
+
+	; HL needed for arithmetic, back to DE as  "cursor"
+
+	ex de, hl
+
+	; lon degrees
+
+	ld hl, #cfg_gps_longitude + 0
+	ld b, (hl)               ; lon hundreds of degrees
+	inc hl
+	call mic_e_binary_dmh    ; and tens and ones
+	dec b
+	jr nz, 1f      ; was not 1 (1xx degrees)
+	add a, #100        ; longitude degrees total 0...179
+1:
+	cp #10
+	jr nc, 1f
+	add a, #190        ; if 0-9, add 190, get 190-199
+	jr 2f
+1:
+	cp #100
+	jr c, 2f
+	cp #110
+	jr nc, 2f
+	add a, #80         ; if 100-109, add 80, get 180-189
+2:
+	cp #100
+	jr c, 1f
+	sub #100        ; get % 100
+1:
+	add a, #28
+	ld (de), a
+	inc de
+
+	; lon minutes
+
+	call mic_e_binary_dmh
+	cp #10
+	jr nc, 1f
+	add a, #60         ; 0-9 goes as 60-69
+1:
+	add a, #28
+	ld (de), a
+	inc de
+
+	; lon hundredths of minute
+
+	call mic_e_binary_dmh
+	add a, #28
+	ld (de), a
+	inc de
+
+	; encoded speed, hundreds and tens of knots
+
+	ld hl, (gps_knots)
+	ld bc, #100
+	xor a           ; clear carry
+
+	ld a, #'l'       ; 0-99 knots - 'l' (ell) ... 'u'
+	sbc hl, bc
+	jr c, 1f
+
+	ld a, #'v'       ; 100-199 knots - 'v' ... DEL
+	sbc hl, bc
+	jr c, 1f
+
+	ld a, #'0'       ; 200-299 knots - '0' ... '9'
+	sbc hl, bc
+	jr c, 1f
+
+	ld a, #':'       ; 300 knots - ':'
+	ld hl, #-100     ; tsk - clamp at 300 knots.
+1:
+	add hl, bc      ; fixup to 0...99 range
+	ld b, a
+	ld a, l
+	dec b           ; fixup one-inc-too-many
+1:
+	inc b
+	sub #10
+	jr nc, 1b       ; divide by 10
+	add a, #10          ; fixup remainder
+	ld c, a         ; remember it.
+
+	ld a, b
+	ld (de), a      ; SP+28
+	inc de
+
+	; encoded speed, ones of knots, plus ...
+	; ... encoded course, hundreds of degrees
+
+	ld b, #0
+	ld hl, #mic_e_DC_tab
+	add hl, bc           ; recall knots % 10
+	ld b, (hl)           ; encoded speed % 10
+
+	ld hl, (gps_knots)
+	ld a, l
+	or h
+	jr z, 1f             ; zero knots implies course 0.
+	call gps_course_1_to_360_degrees ; to HL
+1:
+	ld a, b              ; encoded speed % 10 from above
+	ld bc, #-100          ; divide by 100
+	dec a                ; fixup one-inc-too-many
+1:
+	inc a
+	add hl, bc
+	jr c, 1b             ; inverted carry from add -100
+	sbc hl, bc           ; fixup remainder
+
+	ld (de), a           ; DC+28
+	inc de
+
+	; encoded course, tens and ones of degrees
+
+	ld a, l              ; course % 100 from above
+	add a, #28
+	ld (de), a           ; SE+28
+	inc de
+
+	; symbol and symbol table (XXX symtab always /)
+
+	ld hl, #symbol_nibble_to_primary_symbol
+	ld a, (cfg_mprs_symbol)
+	cp #15
+	jr c, 1f                             ; codes 0-14 select symbols
+	ld hl, #ssid_nibble_to_primary_symbol
+	ld a, (cfg_mprs_ssid)                ; code 15, redirect from SSID
+	and #0x0F
+1:
+	ld c, a
+	ld b, #0
+	add hl, bc
+	ld a, (hl)
+
+	ld (de), a           ; symbol
+	inc de
+
+	ld a, #'/'
+	ld (de), a           ; and symtab.
+	inc de
+
+	; MIC-E PACKET FINISHED
+
+	ex de, hl            ; packet in aprs_packet_out, 'endptr' in HL
+
+	ret
+
+
+encode_aprs_report_packet:
+	ld a, (cfg_report_type)
+	cp #2
+	jp z, encode_aprs_report_packet_mic_e ; MIC-E format
+
+	jp encode_aprs_report_packet_normal   ; else normal ascii format
+
+send_aprs_report_packet:
+
+	ld de, #aprs_packet_out
+
+	call encode_aprs_report_packet
+
+	ld de, #aprs_packet_out
+	and a
+	sbc hl, de
+	ld b, l
+	push bc                ; remember length
+
+	ld ix, #aprs_packet_out
+
+	call calc_ax25_crc     ; ix and b
+	cpl
+	ld (ix + 0), a         ; notice the MSByte/LSByte difference
+	ld a, c
+	cpl
+	ld (ix + 1), a
+
+
+	; bitstuffing. XXX do this on the fly in emit() xxx no time for that
+
+	ld ix, #aprs_bits_out   ; buffer for stuffed data
+	ld d, #0x80             ; spool bits here, catch every 8th rr
+
+	; preamble, first some filler ...
+
+	ld a, (cfg_ax25_padbits)
+	ld b, a
+	or a
+	jr nz, 1f
+	ld b, #36            ; default to 36 bits = 30 milliseconds
+1:
+	srl d                  ; zerobit
+	call c, stuffed_8bits
+	djnz 1b
+
+	; ... (unstuffed) starting flag ...
+
+	ld e, #0x7E
+	ld b, #8
+1:
+	srl e
+	rr d
+	call c, stuffed_8bits
+	djnz 1b
+
+	; ... the frame content (stuffed) ...
+
+	pop bc
+	ld c, b                    ; bytecount to C
+	inc c
+	inc c                      ; crc added two bytes to length
+	xor a                      ; count onebits here XXX cumbersome 
+	ld hl, #aprs_packet_out
+2:
+	ld e, (hl)
+	inc hl
+	ld b, #8
+1:
+	srl e
+	call stuff_ax25_bit
+	djnz 1b                   ; another bit in byte
+	dec c
+	jr nz, 2b                 ; another byte in data
+
+	; ... ending flag ...
+
+	ld e, #0x7E
+	ld b, #8
+1:
+	srl e
+	rr d
+	call c, stuffed_8bits
+	djnz 1b
+
+	; ... then flush residue (always 1 to 8 zerobits) ...
+1:
+	srl d
+	jr nc, 1b
+	call stuffed_8bits
+
+	; ... finally the terminator marker for emit(). xxx ought to do bit-level.
+
+	ld (ix), #0x7F
+
+	ld hl, #aprs_bits_out
+
+	jp emit_ax25_packet
+
+
+stuff_ax25_bit:
+	jr nc, 1f              ; zerobits are simple.
+	rr d                   ; shift in the one
+	call c, stuffed_8bits  ; flush if needed.
+	inc a                  ; one more onebit.
+	cp #5                   ; need stuffing zero ?
+	ret c                  ; if less than 5 ones, no.
+1:
+	xor a                ; no onebits now.
+	srl d                  ; add zerobit.
+	ret nc                 ; done if no need to flush.
+
+	; fall thru, if flushing
+
+stuffed_8bits:
+
+	ld (ix), d
+	inc ix
+	ld d, #0x80             ; rewind counting pattern
+	ret
+
+;----------------------------------------------------------------------
+	;--------------------------------------------------
 
 #ifdef BANK_TEST
 bank_test_ping:

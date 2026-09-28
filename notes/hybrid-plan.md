@@ -199,13 +199,29 @@ decided otherwise):
      out of range), run all tests incl. `test_diff.py` against the release
      and `make C=1`; confirm with a breakpoint in the moved code that it
      runs with `cur_bank` = 1.
-- **Next candidates:** APRS/MPRS/MIC-E + locator maths (~3 KB) and GPS
-  parsing (~1 KB), then remote config/FSK packet building and MBUS
-  CFGSnd/CFGGEt. Check first that none of it runs from the SIO/modem
-  interrupt handlers (`modem_handler`, sioa/siob) — only the mainline
-  parsers can move. Test coverage: `test_signalling.py` (APRS decoded from
-  the tone pin, GPS NMEA → APRS, packet CRC); MBUS/CFGSnd are untested, so
-  add tests before moving them (Phase 0 gap).
+- **Done: APRS/MPRS/MIC-E, locator maths and GPS sentence processing**
+  (2026-09-28), 4.0 KB: `handle_mprs_packets` … `stuffed_8bits` and
+  `gps_process_aisin_seiki` … `gps_information_has_been_updated`. Four
+  stubs: `far_handle_mprs_packets`, `far_send_aprs_report_packet`,
+  `far_gps_process_sentence`, `far_gps_process_aisin_seiki`. The per-pass
+  byte gatherer `gps_check` stays fixed on purpose: it runs on every
+  mainloop pass, and time spent in bank 1 starves the multiboard DTMF/CTCSS
+  readers; the processors run once per complete sentence. The AX.25 PWM
+  loop (`emit_ax25_packet`) stays fixed and is tail-jumped from bank 1.
+  Fixed ROM now ends at 0x4F89 (**~12 KB free**); bank 1 ends at 0xB04F
+  (**~4 KB free**). All tests pass, including `test_diff.py` against the
+  release for both `make` and `make C=1`; breakpoints in
+  `gps_process_sentence`, `gps_own_locator`, `send_aprs_report_packet` and
+  `encode_aprs_report_packet_normal` hit with `cur_bank` = 1 on P8E and
+  P8N. **Not covered by tests:** `handle_mprs_packets` (incoming MPRS 4x
+  packets; FSK receive is a Phase 0 gap). `tab_ax25_digi` is now read only
+  from bank 1, so it could move there too.
+- **Next candidates:** remote config/FSK packet building and MBUS
+  CFGSnd/CFGGEt (`mbus_mprs_*` already moved with the APRS block). Check
+  first that none of it runs from the SIO/modem interrupt handlers
+  (`modem_handler`, sioa/siob). MBUS/CFGSnd and FSK receive are untested,
+  so add tests before moving them (Phase 0 gap). With ~4 KB left in bank
+  1, bigger moves need a second bank (P8N-only page, or EPROM1) or C.
 - P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
   it. Don't depend on it, or make it P8N-only.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused
