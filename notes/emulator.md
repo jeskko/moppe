@@ -21,6 +21,16 @@ Time is counted in 8.064 MHz crystal periods ("xt"). P8E: 1 T = 1 xt plus one wa
 - Synth R/N/A values match values computed independently from the firmware source, for example 433.500 MHz → R=1024, N=325, A=1.
 - The firmware's SAnE procedure runs end to end: menu, powers itself down through PB7, re-powers.
 
+## Several radios
+
+Radios are independent objects, so a test can run several side by side.
+`emu/tests/rflink.py` links them at FX429 byte level: it steps them in
+lockstep and forwards each packet a radio sends to the others while its
+transmitter is on, its TX frequency is their RX frequency, and they are not
+transmitting (one packet at a time per receiver, at 1200 bit/s).
+`test_remote_config.py` uses it for remote configuration end to end,
+including an operator on the released firmware.
+
 ## Known limits and assumptions
 
 | Item | Assumption | Source of uncertainty |
