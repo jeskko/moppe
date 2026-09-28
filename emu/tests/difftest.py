@@ -31,6 +31,17 @@ A scenario is a list of steps, each a tuple `(kind, *args)`:
                                    then run(boot_s) (like a real power cycle:
                                    only the NV survives)
     ("check", label)               snapshot + compare here
+    ("tones", label, seconds)      run both radios for `seconds`, sampling
+                                   the 8254 counter-1 pitch (Radio.tone_hz)
+                                   every TONE_STEP_S, and compare the runs
+                                   of equal pitch (CW elements and gaps,
+                                   marker tones): pitch within 1 %,
+                                   durations within the timing tolerance;
+                                   one-sample runs are folded into the run
+                                   before (half-loaded 8254 counts)
+    ("probe", label, fn)           compare fn(radio) of both sides (state no
+                                   display/NV/latch shows, e.g. a state
+                                   machine's state resolved per build)
 
 Every step except "check" and "reboot" is applied identically, in order,
 to both radios.  Differences are collected only at "check" steps (state)
@@ -315,6 +326,49 @@ def _make_radio(rom_lst, kw, nv=None):
     return Radio(rom, lst, **kw)
 
 
+TONE_STEP_S = 0.005
+
+
+def _tone_runs(radio, seconds):
+    runs = []
+    for _ in range(int(round(seconds / TONE_STEP_S))):
+        radio.run(TONE_STEP_S)
+        hz = radio.tone_hz()
+        hz = round(hz) if hz is not None else None
+        if runs and (runs[-1][0] == hz or (hz and runs[-1][0] and abs(runs[-1][0] - hz) <= hz * 0.01)):
+            runs[-1][1] += TONE_STEP_S
+        else:
+            runs.append([hz, TONE_STEP_S])
+    return runs
+
+
+def _settled(runs):
+    """Fold one-sample runs into the run before: the 8254 count is written
+    a byte at a time, so a sample can catch a half-loaded count."""
+    out = []
+    for hz, d in runs:
+        if out and d <= TONE_STEP_S * 1.5:
+            out[-1][1] += d
+        elif out and (out[-1][0] == hz or (hz and out[-1][0] and abs(out[-1][0] - hz) <= hz * 0.01)):
+            out[-1][1] += d
+        else:
+            out.append([hz, d])
+    return out
+
+
+def _diff_tones(label, a, b, tolerance_s):
+    a, b = _settled(a), _settled(b)
+
+    def fmt(runs):
+        return " ".join("%s:%.3f" % (hz, d) for hz, d in runs)
+    # the first and last runs are cut by the window: compare their pitch only
+    same = len(a) == len(b) and all(
+        (ha == hb or (ha and hb and abs(ha - hb) <= ha * 0.01)) and
+        (i in (0, len(a) - 1) or abs(da - db) <= tolerance_s)
+        for i, ((ha, da), (hb, db)) in enumerate(zip(a, b)))
+    return [] if same else ["%s: tones differ:\n  stock %s\n  cand  %s" % (label, fmt(a), fmt(b))]
+
+
 def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
              stock_kw=None, cand_kw=None, **radio_kw):
     """Run `scenario` against the stock build (`stock = (rom, lst)`) and
@@ -350,6 +404,15 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
             snap = {side: observe(radios[side]) for side in radios}
             diffs += _diff_snapshot(label, snap["stock"], snap["cand"],
                                      lst["stock"], lst["cand"])
+            continue
+        if kind == "tones":
+            runs = {side: _tone_runs(radios[side], step[2]) for side in radios}
+            diffs += _diff_tones(step[1], runs["stock"], runs["cand"], tolerance_s)
+            continue
+        if kind == "probe":
+            v = {side: step[2](radios[side]) for side in radios}
+            if v["stock"] != v["cand"]:
+                diffs.append("%s: stock %r, cand %r" % (step[1], v["stock"], v["cand"]))
             continue
         if kind == "reboot":
             off_s = step[1] if len(step) > 1 else 0.5
