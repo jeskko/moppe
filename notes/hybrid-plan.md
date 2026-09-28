@@ -316,9 +316,26 @@ first, port, differential test against stock, size check, commit.
   - Assembler constants: copy the expression, not the comment
     (`#80 * 256 / 156` is 8 V in tenths; a VOLTS(8) that dropped the 10
     was caught by the low-battery tests).
-- **Next module:** key handling (`keycheck`, `dokey`, typematic), covered by
-  test_radio/test_menu_power key and typematic tests; then display
-  composition. Porting code that is in bank 1 needs C in a bank (SDCC
+- **Done: key dispatch** (2026-09-28), `c/keys.c`: `keycheck`, `dokey`,
+  `dokey_not_menu`, `menu_input`, `handle_key_during_tx` (a `switch` per
+  mode). The keypad scanners and `typematic` stay asm (interrupt
+  context), as do `execute` (24-bit AHL helpers) and `is_key_down`
+  (returns a flag, and clears the key as a side effect). Every handler
+  takes the key in A, where `--sdcccall 1` passes a `uint8_t`; checked
+  that none reads B/C before writing them. `script_check` now loads A
+  before calling `dokey_not_menu`. 287 bytes of C for 302 of asm. Safety
+  net: `test_diff.py` every-key scenarios (all keys short and long, normal,
+  menu and TX, 'K'/'T' via a hook script; CU53AN and CU58AF).
+- **Phase 2 regression found by those scenarios and fixed** (f2e982f): the
+  bank bits made each SCL edge 26 T-states slower, so a CU58AF display
+  refresh took 28.1 ms instead of 25.1 and keys were handled up to ~40 ms
+  later than with the release. `out2_last` is now recorded once in
+  `i2c_stop`, and `i2c_delay` has two watchdog writes instead of three:
+  24.7 / 8.1 ms (release 25.1 / 8.3). Lesson: the differential tests only
+  cover what their scenarios drive; the CU58AF variant had run only boot
+  and frequency entry.
+- **Next module:** display composition (`draw_*`, `redraw`); covered by the
+  display assertions throughout the suite and the differential tests. Porting code that is in bank 1 needs C in a bank (SDCC
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
 
 ### Future: EPROM1
