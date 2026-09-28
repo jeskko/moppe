@@ -204,6 +204,11 @@ notes/open-bugs.md):
   there): `load_menu_ptr` swapped only BYTE records, and CtCSSt is a TAB
   record. **Fixed 2026-09-29** (user decision): TAB records swap too (asm
   and C); `test_menu_power.MenuMemoryCtcss`.
+- Temporary rejects: `add_reject` compared a slot's middle byte with the
+  new frequency's low byte (`cp (iy+0)`), so rejecting the same
+  frequency again took a second slot, and a reject whose middle byte
+  equalled the new low byte was overwritten. **Fixed 2026-09-29**
+  (obvious bug); `test_scan_rptr.Rejects`.
 - MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
   the first GPS fix there is none and it prints the RAM after it. Kept.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a

@@ -4999,7 +4999,7 @@ add_reject:
 	cp (iy+0)
 	jr nz, 2f
 	ld a, (ix+1)
-	cp (iy+0)
+	cp (iy+1)		; v3_Z: (iy+0)
 	jr nz, 2f
 	ld a, (ix+2)
 	cp (iy+2)

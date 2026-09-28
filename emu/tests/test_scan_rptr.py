@@ -316,6 +316,41 @@ class Scanner(RadioTest):
         r.run(0.3)
 
 
+class Rejects(RadioTest):
+    """The temporary reject list (tmp_rejects: 3-byte frequency + minutes
+    left). A long S rejects rx_freq (not scanning); rejecting a frequency
+    already in the list reuses its slot. v3_Z compared the middle byte
+    with the new frequency's low byte (add_reject), so the same frequency
+    took a second slot, and a reject whose middle byte equalled the new
+    low byte was overwritten. Fixed 2026-09-29."""
+
+    def entries(self, r):
+        raw = r.peek("tmp_rejects", 4 * 20)
+        return [(int.from_bytes(raw[i:i + 3], "little"), raw[i + 3])
+                for i in range(0, len(raw), 4) if raw[i + 3]]
+
+    def reject(self, r):
+        r.press("S", hold=1.5)
+        r.run(0.3)
+
+    def test_same_frequency_twice_one_slot(self):
+        r = self.boot()
+        r.poke("cfg_unreject_mins", 7)
+        self.enter("433425")
+        self.reject(r)
+        self.reject(r)
+        self.assertEqual(self.entries(r), [(433425, 7)])
+
+    def test_other_reject_not_overwritten(self):
+        r = self.boot()
+        r.poke("cfg_unreject_mins", 7)
+        # 433425 = 0x069D11; 0x061111 has its middle byte = that low byte
+        r.poke("tmp_rejects", bytes([0x11, 0x11, 0x06, 9]))
+        self.enter("433425")
+        self.reject(r)
+        self.assertEqual(sorted(self.entries(r)), [(0x061111, 9), (433425, 7)])
+
+
 class Repeater(RadioTest):
     def enter_repeater_idle(self, r, access_method=None):
         """Enable rPtr (cfg_function=1) and fast-forward past the 60 s

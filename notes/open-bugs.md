@@ -66,6 +66,16 @@ and more (invalid settings; `mprs_qrb`, 90 entries). The assembler reads the
 code bytes after the table; the C port uses the 89° entry instead (the one
 deliberate difference in `c/aprs.c`).
 
+## Scanner
+
+**Overlapping bands make the scanner loop between two channels**
+(`scan_next_frequency`): slices are sorted by start only ("XXX also by
+end ?" in the source). With band A 433400-433500 and band B 433475-433550
+the scanner reaches 433500 (the end of A), goes to B's start 433475, which
+is inside A again, steps to 433500, and so on for ever; later slices are
+never scanned. Seen 2026-09-29 in `test_scan_diff.test_band_slices` (both
+builds). A configuration error, but silent.
+
 ## Menu
 
 **Remote config while a DC reply is shown writes the reply buffer**
