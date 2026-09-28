@@ -391,6 +391,27 @@ class Repeater(RadioTest):
         self.assertGreaterEqual(len(gaps), 1)
         self.assertAlmostEqual(gaps[0], GAP_S, delta=0.03, msg="inter-letter gap")
 
+    def test_fast_cw_and_high_pitch(self):
+        """cw_calc_delays at 200 CPM and 1320 Hz: slot = 652 // 200 = 3
+        ticks, pitch count 403200 // 132 = 3054. v3_Z's div248 overflowed
+        for divisors from 128 (0-tick slots from 164 CPM, 1320 Hz played
+        as ~1956 Hz; fixed 2026-09-28 with div248_full)."""
+        r = self.boot()
+        r.poke("cfg_cw_speed", 200)
+        r.poke("cfg_cw_pitch", 132)
+        self.enter_repeater_idle(r)
+        r.poke("repeater_cfg_id_greet1", cw_str("TE"))
+        r.poke("repeater_cfg_id_greet2", cw_str(""))
+        r.poke("repeater_cfg_id_greet3", cw_str(""))
+        key_access(r, "1750", hold=0.35)
+        runs = sample_tone_runs(r, 1.5, 4032000.0 / (403200 // 132), step=0.005)
+        self.assertEqual(r.peek("cw_slot_ticks"), 3)
+        self.assertEqual(r.peek16("cw_pitch_cnt"), 3054)
+        tones, gaps = tone_and_gaps(runs)
+        self.assertEqual(len(tones), 2, runs)
+        self.assertAlmostEqual(tones[0], 0.09, delta=0.015, msg="'T' element")
+        self.assertAlmostEqual(tones[1], 0.03, delta=0.015, msg="'E' element")
+
     def test_ctcss_stays_on_after_id(self):
         """CTCSS output WHEN = transmitter (1): the tone stays on through
         the greeting ID and after it while the repeater is open.

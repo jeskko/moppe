@@ -159,6 +159,17 @@ decided otherwise):
   message: with CTCSS output WHEN = transmitter the repeater went on
   transmitting without its tone after the greeting ID. **Fixed
   2026-09-28** (obvious bug); `test_scan_rptr.test_ctcss_stays_on_after_id`.
+- CW slot and pitch counts: `cw_calc_delays`/`cw_calc_blip` divided with
+  `div248`, which is only right while 2 × remainder + 1 < 256 (divisors
+  below ~128): CW speeds from 164 CPM gave 0-tick slots (no audible CW),
+  and 100 of the pitch settings from 1280 Hz were off (1320 Hz played as
+  ~1956 Hz). **Fixed 2026-09-28** (obvious bug): `div248_full` (any 8-bit
+  divisor; the same results wherever `div248` was right, checked
+  exhaustively for the CW inputs and on 200 000 random ones) for the CW
+  counts only; `test_scan_rptr.test_fast_cw_and_high_pitch`. **Open:** the
+  other `div248` callers (blip Hz, frequency, GPS, locator maths) have not
+  been checked for divisors ≥ 128; the frequency code also uses the carry
+  `div248` leaves, so do not swap it blindly.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
   southern latitude is sent as northern. Kept as is (asm and C): the
   radios are used in Finland only, so the southern case never mattered

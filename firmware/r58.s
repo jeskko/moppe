@@ -11316,6 +11316,36 @@ div248:
 
 	ret
 
+;  div248 needs 2 * remainder + 1 < 256, i.e. C < 128 in general; this one
+;  takes any C (a remainder doubled past 8 bits is always >= C).  AHL / C
+;  -> HL, remainder A.  v3_Z used div248 for the CW slot and pitch counts:
+;  speeds from 164 CPM gave 0-tick slots, many pitches from 1280 Hz were off.
+div248_full:
+
+	push bc
+
+	ld b, #16
+2:
+	add hl, hl
+	adc a, a
+	jr c, 4f		; 9-bit remainder
+	sub c
+	jr c, 1f
+3:
+	inc hl
+	djnz 2b
+	jr 5f
+4:
+	sub c			; 256 + A - C < C: fits
+	jr 3b
+1:
+	add a, c
+	djnz 2b
+5:
+	pop bc
+
+	ret
+
 ;======================================================================
 
 lookup_rfc:
@@ -19795,7 +19825,7 @@ cw_calc_delays:
 1:
 	ld c, a
 	imm_ahl(652)          ; see above for maths. CPM into slept ticks
-	call div248
+	call div248_full
 	ld a, l
 	ld (cw_slot_ticks), a
 
@@ -19804,7 +19834,7 @@ cw_calc_delays:
 	ld a, (cfg_cw_pitch)   ; 10 Hz units 00...2550 (cSEC in fact)
 	ld c, a
 	imm_ahl(403200)        ; timer CLK / 10
-	call div248
+	call div248_full
 	ld (cw_pitch_cnt), hl
 
 	ret
@@ -19812,7 +19842,7 @@ cw_calc_delays:
 cw_calc_blip:              ; C-reg has 10 Hz units 00...2550 (cSEC in fact)
 
 	imm_ahl(403200)        ; timer CLK / 10
-	call div248            ; /= C-reg
+	call div248_full       ; /= C-reg
 	ld (cw_pitch_cnt), hl
 
 	ret
