@@ -278,8 +278,11 @@ decided otherwise):
 - **Next:** Phase 4 (port to C).
 - Note: MPRS receive takes ~0.2 s on a P8N (QRB/locator maths), all of it
   in bank 1, i.e. with the multiboard DTMF/CTCSS readers off.
-- P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
-  it. Don't depend on it, or make it P8N-only.
+- P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0). The P8E was
+  read as unable to reach it, but the user's 2026-09-28 trace (hardware.md)
+  points to the same RA14 mux on the P8E; if confirmed, both cards have a
+  second 16 KB EPROM0 bank, the natural bank 2 (no EPROM1, no multiboard
+  conflict). Until then, don't depend on it.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused
   (unreachable on P8E); 0xC000-0xFFFF = bank 1. EPROM: 27C512 (or W27C512 /
   27SF512 for electrical erase).

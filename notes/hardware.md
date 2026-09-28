@@ -70,6 +70,22 @@ Outputs: PB7 power relay off, PB6 EXAL, PB4 /RXON (GPIO).
 | MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled | real radio |
 | CU58AF keypad row 6: manual says PCF8574 P7 (P6 unused), firmware decodes '+ S R' from P6 | follow firmware | real handset |
 | The RS window and EPROM1 banking on real hardware (P8E from schematic, P8N from manual) | modelled, unverified | the bench test ROM: `make -C firmware banktest`, see notes/hybrid-plan.md Phase 3 |
+| P8E: can the window reach EPROM0 chip 0x8000 (RS=1, RA14=0)? | emulator and notes say no (A14 forced high in the window, from an early reading of schematic 3C 305838); **now doubtful**, see the trace below | IC10 pins 12/13 and EPROM0 pin 1 on the P8E schematic, or the bench ROM |
+
+**P8E memory decode as traced by the user (schematic, 2026-09-28).**
+IC5/1 "MDEC" (half of a 2-to-4 decoder, presumably 74HC139): /E = "_WREQ"
+(presumably /MREQ), A = A14, B = A15; outputs /0 (0x0000-3FFF) → IC10/1
+pin 1, /1 (0x4000-7FFF) → IC10/1 pin 2, /2 (0x8000-BFFF) → IC11/1 pin 1
+and IC11/2 pin 5, /3 → /CSRAM. IC10 is AND (presumably 74HC08), IC11 OR
+(≥1), IC12/1 an inverter of RS. So /CSROM0 = IC10/2(IC10/1(/0, /1),
+IC11/1(/2, NOT RS)): EPROM0 for 0x0000-7FFF and for the window with RS=1;
+/CSROM1 = IC11/2(/2, RS): EPROM1 for the window with RS=0. EPROM0 A14
+(pin 27) is marked "IC10/11", read as IC10 pin 11 (the fourth AND gate,
+inputs 12/13), and the block diagram shows A14, A15 and RA14 (OUT2 D0)
+combined into EPROM0 A14. That fits a mux like the P8N's,
+A14_rom = (A14 OR A15) AND (RA14 OR NOT A15), i.e. the P8E would reach
+both EPROM0 pages too. To confirm: what drives IC10 pins 12 and 13, and
+EPROM0 pin 1 (A15).
 | FX429 modem socket | socketed; RX/TX audio pins carry "raw" RX and TX audio; bus pins /CS, R/W, /IRQ, A0, A1, D0-D7 and a CLK input. R/W = /WR; /CS = /CSMOD = IC6 pin 11, output /10 (Y10 = 0xA0-0xAF), consistent with the I/O map (user, 2026-09-28). **Provenance:** signal and pin readings are from the schematic (P8E); the part number 74HC154 is from the P8N parts list. Both give 0xA0, so the decode is assumed the same on both cards. CLK is the modem IC's own clock, not a bus clock (user). Mic/speaker would need extra wires | IC6 enables (user, 2026-09-28): /E0 (pin 19) = /IORQ, /E1 (pin 18) = /M1 through a gate of IC12 (presumably an inverter), so /CSMOD is active only for I/O cycles without M1: an interrupt acknowledge cannot select the modem. /CSMODEM also goes to IC27, with /M1 on another gate of IC27: what IC27 is and where its outputs go (a bus buffer enable? IRQ gating?). CPU pins as read: /IORQ 22, /M1 31 (not the 40-pin DIP numbering, /IORQ 20, /M1 27; which package?). CLK (P8E, user 2026-09-28): the 8.064 MHz crystal oscillator (a gate of IC2) clocks IC3's CP input; IC3 pin 9 goes to the modem's CLK. IC3's type is not recorded: if it is a 74HC74, pin 9 is 2Q and CLK is 8.064 / 2 = 4.032 MHz (like the 8254's CLK0/1). Check IC3's type or measure. P8N: assumed the same frequency at the modem pin (inferred: identical modem chip, which needs its rated clock; the P8N has the same 8.064 MHz crystal and a 4.032 MHz CPU, so only the divider differs). A free-running clock from the CPU oscillator: a replacement board does not need it, but a CPLD can clock its synchronizers from it. Matters for an ESP32 board in the modem socket (see below) |
 | Logic family on the CPU card bus | P8N: plenty of 74HC (user, 2026-09-28), so a board driving the data bus must give 5 V CMOS levels (74HC VIH = 3.5 V at 5 V) | schematic, per card |
 
