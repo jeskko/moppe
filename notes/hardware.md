@@ -111,8 +111,32 @@ at the start of a write is only gate delays. /CS decodes A7-A4 only, so
 the four registers repeat through 0xA0-0xAF. Because of the 74HC loads, a 5 V CPLD (ATF1504AS/ATF1508AS)
 fits better than a 3.3 V one (XC9572XL would need a 74HCT245 driver). If
 it keeps the FX429 register behaviour, the stock firmware works unchanged.
-Still to check: the FX429 bus pins and timing on the datasheet; whether
-its RX audio is filtered (CTCSS is below 300 Hz).
+Still to check: the FX429 bus pins and timing on the datasheet.
+
+**Modem socket audio lines (user trace, 2026-09-28):**
+- CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
+  and C31, both 47 nF, in parallel (94 nF), in series.
+- Audio board connector PP2: pin 15 = FFSKIN, pin 16 = FFSKOUT.
+- FFSKIN (receive audio into the modem) comes from IC2/1 output (pin 1),
+  possibly a low-pass filter stage.
+- FFSKOUT (modem output) goes through a 56 k series resistor on the audio
+  board to IC6 pin 13 ("-OP1"); C30 (value "100", unit missing) and R55
+  (100 k pot) in parallel go from pin 13 to pin 4 ("O1?").
+- User's reading: only some low-pass filtering between the audio and the
+  FFSK lines, so CTCSS decode and encode through the socket look possible,
+  among other things.
+- Inferred, not measured: IC6/OP1 looks like an inverting amplifier that
+  mixes the modem output into the TX audio, gain R55 / 56 k (0 to ~1.8,
+  the level trimmer), with C30 across the feedback as the low-pass. If
+  C30 is 100 pF its corner with 100 k is ~16 kHz, far above audio; if
+  100 nF, ~16 Hz, which would make no sense for FFSK, so pF is likely.
+  The 47 nF / 94 nF series capacitors are high-pass filters whose corner
+  depends on the load they drive (not known yet): into 100 k, ~34 Hz /
+  ~17 Hz, low enough for CTCSS (67-254 Hz). To confirm: C30's value, the
+  input impedance behind C30 (47 nF) on the CPU board, what IC2/1 filters
+  and its corner, and whether FFSKIN carries de-emphasized or flat
+  discriminator audio (CTCSS needs the sub-audio band, which a voice
+  high-pass elsewhere would remove).
 
 ## Settled by the service manual (P8N; reference/RD58DBG_SBG_Huolto-ohje.pdf)
 
