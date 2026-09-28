@@ -330,34 +330,20 @@ static uint32_t centiminutes_to_1852_meters(void)
 	return MOD24(v + t);
 }
 
-/* 24-bit centiminutes of longitude (v) into metres, w metres per minute.
- * v3_Z bugs, kept: the hundredths' sum starts at hundredths * 65536 (A
- * still holds them), and each 256 minutes add (minutes % 256) * 65536 +
- * (w % 256) * 256 instead of w * 256 (`pop bc` overwrites the C that held
- * w / 256) */
+/* 24-bit centiminutes of longitude (v) into metres, w metres per minute
+ * (v3_Z added hundredths * 655 m, and from 256 minutes on garbage) */
 static uint32_t centiminutes_to_meters(void)
 {
 	q = div248_v(100);			/* full minutes */
 	t = 0;
 	if (rem) {				/* hundredths */
 		v = rem;
-		v <<= 16;
-		t = rem;
-		t *= w;
-		v = MOD24(v + t);
+		v *= w;
 		t = div248_v(100);
 	}
-	l = q;					/* minutes % 256 */
-	h = q >> 8;
-	v = l;
+	v = q;
 	v *= w;
-	t = MOD24(t + v);
-	v = l;					/* each 256 minutes */
-	v <<= 8;
-	v |= (uint8_t)w;
-	v <<= 8;
-	v *= h;
-	return MOD24(t + v);
+	return MOD24(v + t);
 }
 
 /* into -180 .. +180 degrees */

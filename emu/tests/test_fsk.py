@@ -198,6 +198,85 @@ class FskRx(RadioTest):
         self.assertEqual(mbus, b"OH3XYZ-7>APRS,RELAY,WIDE:!6130.12N/02345.67Ep\r\n")
 
 
+# metres per minute of longitude by latitude degree (r58.s
+# minutes_to_meters_wrt_latitude_degree)
+M_PER_MIN = [1852, 1852, 1851, 1849, 1847, 1845, 1842, 1838, 1834, 1829, 1824, 1818,
+             1812, 1805, 1797, 1789, 1780, 1771, 1761, 1751, 1740, 1729, 1717, 1705,
+             1692, 1678, 1665, 1650, 1635, 1620, 1604, 1587, 1571, 1553, 1535, 1517,
+             1498, 1479, 1459, 1439, 1419, 1398, 1376, 1354, 1332, 1310, 1287, 1263,
+             1239, 1215, 1190, 1166, 1140, 1115, 1089, 1062, 1036, 1009, 981, 954,
+             926, 898, 869, 841, 812, 783, 753, 724, 694, 664, 633, 603, 572, 541,
+             510, 479, 448, 417, 385, 353, 322, 290, 258, 226, 194, 161, 129, 97, 65, 32]
+
+
+def qrb_model(own, his):
+    """distance_bearing as mprs_qrb means it: flat model, north metres
+    1852 per minute, east metres by the own latitude, distance = major +
+    minor * 83 / 256, 3 digits (values 0..9) and a '.' or trailing 0.
+    own, his: ((deg, min, hundredths), (deg, min, hundredths)), N/E."""
+    def cm(d, m, h):
+        return (d * 60 + m) * 100 + h
+    dlat = cm(*own[0]) - cm(*his[0])
+    dlon = cm(*own[1]) - cm(*his[1])
+    q, r = divmod(abs(dlat), 100)
+    north = q * 1852 + r * 1852 // 100
+    w = M_PER_MIN[own[0][0]]
+    q, r = divmod(abs(dlon), 100)
+    east = q * w + r * w // 100
+    ew = east >= north
+    major, minor = (east, north) if ew else (north, east)
+    dist = major + minor * 83 // 256
+    for b, div in ((0, 1), (1, 10), (2, 100), (3, 1000)):
+        if dist < 1000 * div:
+            break
+    v = dist // div
+    out = []
+    digits = [v // 100, v // 10 % 10, v % 10]
+    for k in range(3):
+        if b == k:
+            out.append(ord("."))
+        out.append(digits[k])
+    out.append(ord(".") if b == 3 else 0)
+    out.append(ord(" "))
+    out.append(ord("E" if dlon < 0 else "W") if ew else ord("N" if dlat < 0 else "S"))
+    return bytes(out + [0xFF])
+
+
+def mprs_position(call, lat, lon):
+    """an MPRS packet of call at lat/lon ((deg, min, hundredths), N/E)"""
+    from test_aprs_diff import pack_callsign
+    return with_crc(bytes([0x40] + pack_callsign(call) + list(lat) + list(lon)))
+
+
+class Qrb(RadioTest):
+    """Distance and bearing of a received MPRS position (mprs_qrb). v3_Z's
+    east-west metres (centiminutes_to_meters) were wrong: hundredths of a
+    minute added hundredths * 655 m, and from 256 minutes of longitude
+    difference on each 256 minutes added garbage (fixed 2026-09-28)."""
+
+    OWN = ((61, 30, 0), (23, 45, 0))
+
+    def qrb(self, his):
+        r = self.boot()
+        r.poke("cfg_remote_dpy_secs", 5)
+        r.poke("cfg_gps_latitude", bytes([0, 6, 1, 3, 0, 0, 0, ord("N")]))
+        r.poke("cfg_gps_longitude", bytes([0, 2, 3, 4, 5, 0, 0, ord("E")]))
+        r.modem_rx(mprs_position("OH3XYZ", *his))
+        r.run(0.8)
+        return r.peek("distance_bearing", 8)
+
+    def test_distances(self):
+        for his in (((61, 30, 0), (24, 0, 13)),      # 15.13' east, hundredths
+                    ((61, 35, 47), (23, 45, 0)),     # 5.47' north
+                    ((61, 30, 20), (23, 45, 30)),    # a few hundred metres
+                    ((60, 10, 0), (20, 0, 50)),      # 224.5' west
+                    ((61, 0, 0), (18, 0, 0)),        # 345' west (256 or more)
+                    ((62, 0, 0), (30, 0, 0))):       # 375' east
+            with self.subTest(his=his):
+                want = qrb_model(self.OWN, his)
+                self.assertEqual(self.qrb(his)[:len(want)], want)       # up to EOS
+
+
 class FskTx(RadioTest):
     def modem_tx(self):
         return split_tx(bytes(e[2] for e in self.r.take_events("MODEM_TX")))

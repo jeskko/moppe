@@ -14139,19 +14139,19 @@ menu_0:
 	REC("GE", "APrS  ",CFG_TAB,  cfg_aprs_tx,        tab_onoff,      0, Real-APRS-mode - /LOCAL PTT ja mikkilinjaan mic-e tms - QSY tr:APrSFq)
 	REC("GE", "rEPSit",CFG_BYTE, cfg_repeater_sitters_special,0,     0, repeater sitters special - seconds)
 
-	REC("Pr", "CALL  ",CFG_STR,  cfg_mprs_callsign,  0,              0, kutsu MPRS-modessa - max 6 merkkiä)
+	REC("Pr", "CALL  ",CFG_STR,  cfg_mprs_callsign,  0,              0, kutsu MPRS-modessa - max 6 merkkiÃ¤)
 	REC("Pr", "SSId  ",CFG_BYTE, cfg_mprs_ssid,      0,              0, SSID MPRS-modessa (0...15))
 	REC("Pr", "ObJECt",CFG_TAB,  cfg_mprs_symbol,    tab_mprs_symbol,0, aseman symboli MPRS-modessa)
 	REC("Pr", "PttSnd",CFG_TAB,  cfg_keyup_mprs,     tab_pttsnd,     0, MPRS vapautettaessa PTT - Ei/Aina/Tarvittaessa - katso SndInt)
 	REC("Pr", "AutSnd",CFG_TAB,  cfg_spontaneous_mprs, tab_onoff,    0, MPRS spontaanisti - QSY tr:APrSFq)
 	REC("Pr", "CutAud",CFG_TAB,  cfg_fsk_silencer,  tab_fsk_silencer, 0, audion sulku FSK:n kohdalla)
 	REC("Pr", "buS Fn",CFG_TAB,  cfg_mbus_mprs,      tab_mbus_mprs,  0, MPRS releoidaan MBUS:iin tavalla X)
-	REC("Pr", "dPYSEC",CFG_BYTE, cfg_remote_dpy_secs, 0,             0, MPRS tiedot pidetään näytöllä N sekuntia)
-	REC("Pr", "GPSUPL",CFG_TAB,  cfg_gps_upload,     tab_gps_upload, 0, MPRS tiedot GPS:ään waypointteina)
-	REC("Pr", "dStSnd",CFG_TAB,  cfg_gps_dst_send,   tab_onoff,      0, MPRS oman määränpään julkaisu)
+	REC("Pr", "dPYSEC",CFG_BYTE, cfg_remote_dpy_secs, 0,             0, MPRS tiedot pidetÃ¤Ã¤n nÃ¤ytÃ¶llÃ¤ N sekuntia)
+	REC("Pr", "GPSUPL",CFG_TAB,  cfg_gps_upload,     tab_gps_upload, 0, MPRS tiedot GPS:Ã¤Ã¤n waypointteina)
+	REC("Pr", "dStSnd",CFG_TAB,  cfg_gps_dst_send,   tab_onoff,      0, MPRS oman mÃ¤Ã¤rÃ¤npÃ¤Ã¤n julkaisu)
 	REC("Pr", "buS rF",CFG_TAB,  cfg_bus_rf_relay,   tab_onoff,      0, MBUS/RF relay)
-	REC("Pr", "SndInt",CFG_WORD, cfg_mprs_seconds,   0,        900, MPRS lähetysintervalli - sekuntia - tiukentuu liikkeessä)
-	REC("Pr", "tProto",CFG_TAB,  cfg_report_type,    tab_mprs_aprs,  0, MPRS vai APRS lähetys - VAIKUTTAA VAIN LÄHETYKSEEN)
+	REC("Pr", "SndInt",CFG_WORD, cfg_mprs_seconds,   0,        900, MPRS lÃ¤hetysintervalli - sekuntia - tiukentuu liikkeessÃ¤)
+	REC("Pr", "tProto",CFG_TAB,  cfg_report_type,    tab_mprs_aprs,  0, MPRS vai APRS lÃ¤hetys - VAIKUTTAA VAIN LÃHETYKSEEN)
 	REC("Pr", "dGPAth",CFG_TAB,  cfg_mic_e_dest_ssid,tab_mic_e_dest_ssid,  0, MIC-E toistoreitti - vaikuttaa vain MIC-E formaatissa)
 	REC("Pr", "StAtuS",CFG_TAB,  cfg_mic_e_message,  tab_mic_e_message,  0, MIC-E statustieto - vaikuttaa vain MIC-E formaatissa)
 	REC("Pr", "APdiG0",CFG_TAB,  cfg_ax25_digi0,     tab_ax25_digi,  0, APRS digipeater #0 - vaikuttaa vain ascii-formaatissa)
@@ -14160,18 +14160,18 @@ menu_0:
 	REC("Pr", "APdiG3",CFG_TAB,  cfg_ax25_digi3,     tab_ax25_digi,  0, APRS digipeater #3 - vaikuttaa vain ascii-formaatissa)
 	REC("Pr", "APdiGo",CFG_STR,  cfg_ax25_digi_other,0,              0, APRS digipeater 'othEr' - aktivoidaan APdiG0..3 valintojen kautta)
 
-	REC("Pr", "PAdbit",CFG_BYTE, cfg_ax25_padbits,  0,      0, AX.25 preamble - "TXDELAY*10" - kts. myös PH:PLLdEL)
+	REC("Pr", "PAdbit",CFG_BYTE, cfg_ax25_padbits,  0,      0, AX.25 preamble - "TXDELAY*10" - kts. myÃ¶s PH:PLLdEL)
 
 #if 0
 	REC("Pr", "r AX25",CFG_TAB,  cfg_fx614_exist,   tab_onoff,      0, AX.25 modem (like tcm3105 or fx614) is wired to /LOCAL - see elsewhere for details)
 	REC("Pr", "b AX25",CFG_STR,  fx614_buffer + 16,  0,      0, palanen vikaa vastaanotettua ax.25 pakettia)
-	REC("Pr", "c AX25",CFG_BYTE, fx614_rxcnt,        0,      0, oikein vastaanotettujen ax.25 pakettien lukumäärä modulo 256)
+	REC("Pr", "c AX25",CFG_BYTE, fx614_rxcnt,        0,      0, oikein vastaanotettujen ax.25 pakettien lukumÃ¤Ã¤rÃ¤ modulo 256)
 #endif
 
 menu_1:
 	REC("to", "LiGHtS",CFG_BYTE, cfg_light_seconds,  0,             255, valojen pitoaika)
 	REC("to", "Lit Sq",CFG_TAB,  cfg_light_sql,      tab_onoff,       0, aukeava salpa = valot on)
-	REC("to", "IGnAPO",CFG_BYTE, cfg_ign_apo_hours,  0,             255, auto sytytysvirraton: viive-sammutus - jos käytössä niin gpio2 pitää olla 2 tai 3 eli /EXIN2 on Hi-Z)
+	REC("to", "IGnAPO",CFG_BYTE, cfg_ign_apo_hours,  0,             255, auto sytytysvirraton: viive-sammutus - jos kÃ¤ytÃ¶ssÃ¤ niin gpio2 pitÃ¤Ã¤Â olla 2 tai 3 eli /EXIN2 on Hi-Z)
 	REC("to", "tr tot",CFG_BYTE, cfg_tx_tot_minutes, 0,             255, tx aikaraja)
 	REC("to", "UnrEJt",CFG_BYTE, cfg_unreject_mins,  0,               5, skannaus: automaattinen unreject)
 
@@ -14194,10 +14194,10 @@ menu_rec_sqB:
 	REC("Sq", "BonGo ",CFG_TAB,  cfg_serv_blip_pitch, tab_blip,        0, piip salvan sulkeutuessa)
 
 menu_3:
-	REC("LP", "7 SqL ",CFG_BYTE, cfg_def_squelch,    0,               0, oletustaso salvalle; pitkä 7)
-	REC("LP", "8 CHAn",CFG_BYTE, cfg_def_memory,     0,               0, oletusmuistipaikka; pitkä 8)
-	REC("LP", "9 FrEq",CFG_FREQ, cfg_def_frequency,  0,               0, oletustaajuus; pitkä 9)
-	REC("LP", "0 Loud",CFG_BYTE, cfg_def_volume,     0,               1, oletusvolume; pitkä 0)
+	REC("LP", "7 SqL ",CFG_BYTE, cfg_def_squelch,    0,               0, oletustaso salvalle; pitkÃ¤ 7)
+	REC("LP", "8 CHAn",CFG_BYTE, cfg_def_memory,     0,               0, oletusmuistipaikka; pitkÃ¤ 8)
+	REC("LP", "9 FrEq",CFG_FREQ, cfg_def_frequency,  0,               0, oletustaajuus; pitkÃ¤ 9)
+	REC("LP", "0 Loud",CFG_BYTE, cfg_def_volume,     0,               1, oletusvolume; pitkÃ¤ 0)
 
 
 menu_4:
@@ -14207,10 +14207,10 @@ menu_4:
 	REC("b1", "duPL  ",CFG_DPX,  cfg_band1_duplex,   0,               0, viipaleella voimassaoleva erotus)
 	REC("b1", "StEP  ",CFG_TAB,  cfg_band1_step,     tab_chstep,      0, ... askellus)
 	REC("b1", "SCtAIL",CFG_BYTE, cfg_band1_sctail,   0,               2, skannaus: odotteluviive)
-	REC("b1", "LIStEn",CFG_BYTE, cfg_band1_sclisten, 0,              15, skannaus: overin kesto; kärsivällisyys)
-	REC("b1", "AutorJ",CFG_TAB,  cfg_band1_autoreject,tab_onoff,      0, skannaus: kärsivällisyyden loppu = tmp reject)
+	REC("b1", "LIStEn",CFG_BYTE, cfg_band1_sclisten, 0,              15, skannaus: overin kesto; kÃ¤rsivÃ¤llisyys)
+	REC("b1", "AutorJ",CFG_TAB,  cfg_band1_autoreject,tab_onoff,      0, skannaus: kÃ¤rsivÃ¤llisyyden loppu = tmp reject)
 
-	REC("b2", "StArt ",CFG_FREQ, cfg_band2_start,    0,               0, kuten edellä)
+	REC("b2", "StArt ",CFG_FREQ, cfg_band2_start,    0,               0, kuten edellÃ¤)
 	REC("b2", "End   ",CFG_FREQ, cfg_band2_end,      0,               0,)
 	REC("b2", "duPL  ",CFG_DPX,  cfg_band2_duplex,   0,               0,)
 	REC("b2", "StEP  ",CFG_TAB,  cfg_band2_step,     tab_chstep,      0,)
@@ -14218,7 +14218,7 @@ menu_4:
 	REC("b2", "LIStEn",CFG_BYTE, cfg_band2_sclisten, 0,              15,)
 	REC("b2", "AutorJ",CFG_TAB,  cfg_band2_autoreject,tab_onoff,      0,)
 
-	REC("b3", "StArt ",CFG_FREQ, cfg_band3_start,    0,               0, kuten edellä)
+	REC("b3", "StArt ",CFG_FREQ, cfg_band3_start,    0,               0, kuten edellÃ¤)
 	REC("b3", "End   ",CFG_FREQ, cfg_band3_end,      0,               0,)
 	REC("b3", "duPL  ",CFG_DPX,  cfg_band3_duplex,   0,               0,)
 	REC("b3", "StEP  ",CFG_TAB,  cfg_band3_step,     tab_chstep,      0,)
@@ -14226,7 +14226,7 @@ menu_4:
 	REC("b3", "LIStEn",CFG_BYTE, cfg_band3_sclisten, 0,              15,)
 	REC("b3", "AutorJ",CFG_TAB,  cfg_band3_autoreject,tab_onoff,      0,)
 
-	REC("b4", "StArt ",CFG_FREQ, cfg_band4_start,    0,               0, kuten edellä)
+	REC("b4", "StArt ",CFG_FREQ, cfg_band4_start,    0,               0, kuten edellÃ¤)
 	REC("b4", "End   ",CFG_FREQ, cfg_band4_end,      0,               0,)
 	REC("b4", "duPL  ",CFG_DPX,  cfg_band4_duplex,   0,               0,)
 	REC("b4", "StEP  ",CFG_TAB,  cfg_band4_step,     tab_chstep,      0,)
@@ -14234,7 +14234,7 @@ menu_4:
 	REC("b4", "LIStEn",CFG_BYTE, cfg_band4_sclisten, 0,              15,)
 	REC("b4", "AutorJ",CFG_TAB,  cfg_band4_autoreject,tab_onoff,      0,)
 
-	REC("b5", "StArt ",CFG_FREQ, cfg_band5_start,    0,               0, kuten edellä)
+	REC("b5", "StArt ",CFG_FREQ, cfg_band5_start,    0,               0, kuten edellÃ¤)
 	REC("b5", "End   ",CFG_FREQ, cfg_band5_end,      0,               0,)
 	REC("b5", "duPL  ",CFG_DPX,  cfg_band5_duplex,   0,               0,)
 	REC("b5", "StEP  ",CFG_TAB,  cfg_band5_step,     tab_chstep,      0,)
@@ -14242,7 +14242,7 @@ menu_4:
 	REC("b5", "LIStEn",CFG_BYTE, cfg_band5_sclisten, 0,              15,)
 	REC("b5", "AutorJ",CFG_TAB,  cfg_band5_autoreject,tab_onoff,      0,)
 
-	REC("b6", "StArt ",CFG_FREQ, cfg_band6_start,    0,               0, kuten edellä)
+	REC("b6", "StArt ",CFG_FREQ, cfg_band6_start,    0,               0, kuten edellÃ¤)
 	REC("b6", "End   ",CFG_FREQ, cfg_band6_end,      0,               0,)
 	REC("b6", "duPL  ",CFG_DPX,  cfg_band6_duplex,   0,               0,)
 	REC("b6", "StEP  ",CFG_TAB,  cfg_band6_step,     tab_chstep,      0,)
@@ -14258,7 +14258,7 @@ menu_4:
 	REC("bo", "AutorJ",CFG_TAB,  cfg_other_autoreject,tab_onoff,      0,)
 
 menu_5:
-	REC("rJ", "n tEmP",CFG_BYTE, cfg_num_tmp_rejects, 0,              0, temp rejektien lukumäärä 0=max 20)
+	REC("rJ", "n tEmP",CFG_BYTE, cfg_num_tmp_rejects, 0,              0, temp rejektien lukumÃ¤Ã¤rÃ¤ 0=max 20)
 
 	REC("rJ", "rEJ  0",CFG_FREQ, cfg_reject_0,       0,               0, fixed reject-taajuus)
 	REC("rJ", "rEJ  1",CFG_FREQ, cfg_reject_1,       0,               0, ... 20 kpl)
@@ -14298,8 +14298,8 @@ menu_6:
 	REC("dH", "FSK  H",CFG_DYN,  fsk_hist_walk,      draw_fsk_hist,   0, ja fsk)
 	REC("dH", "GPS  H",CFG_DYN,  gps_hist_walk,      draw_gps_hist,   0, ja NMEA)
 	REC("dH", "APr  0",CFG_STR,  remote_display_buffer, 0,            0, Viimeisin MPRS ...)
-	REC("dH", "Sqr  0",CFG_STR,  locator_display_buffer, 0,           0, ... tästä ruudusta)
-	REC("dH", "diSt 0",CFG_STR,  distance_bearing,   0,               0, ... etäisyys ja suunta)
+	REC("dH", "Sqr  0",CFG_STR,  locator_display_buffer, 0,           0, ... tÃ¤stÃ¤ ruudusta)
+	REC("dH", "diSt 0",CFG_STR,  distance_bearing,   0,               0, ... etÃ¤isyys ja suunta)
 
 	REC("AL", "id   1",CFG_STR,  cfg_mycall_1,       0,               0, fsk-omatunnus)
 	REC("AL", "id   2",CFG_STR,  cfg_mycall_2,       0,               0, ...)
@@ -14312,7 +14312,7 @@ menu_6:
 	REC("AL", "dtnf 3",CFG_STR,  cfg_dtmf_3,         0,               0, ... 3 kpl)
 	REC("AL", "PEPA  ",CFG_STR,  cfg_pepa_on,        0,               0, OFF)
 	REC("AL", "PEPAoF",CFG_STR,  cfg_pepa_off,       0,               0, OFF)
-	REC("AL", "Loud  ",CFG_BYTE, cfg_alert_vol,      0,               7, hälytysääni volume)
+	REC("AL", "Loud  ",CFG_BYTE, cfg_alert_vol,      0,               7, hÃ¤lytysÃ¤Ã¤ni volume)
 	REC("AL", "cirdur",CFG_cSEC, cfg_ccir_minlen,    0,              20, ccir min kestoaika)
 	REC("AL", "dtfdur",CFG_BYTE, cfg_dtmf_holdtime,  0,               5, dtmf hold aika)
 
@@ -14326,19 +14326,19 @@ menu_6:
 menu_7:
 	REC("Fn", "Func  ",CFG_TAB,  cfg_function,       tab_func,        0, rigin toimintamode (Std!))
 
-	REC("rP", "id   t",CFG_WORD, repeater_cfg_TID,   0,             600, kutsunlähetysintervalli; sec)
+	REC("rP", "id   t",CFG_WORD, repeater_cfg_TID,   0,             600, kutsunlÃ¤hetysintervalli; sec)
 	REC("rP", "OPEn t",CFG_WORD, repeater_cfg_TOPEN, 0,              15, kantoaaltoaika; 0 sec: tx pois heti)
-	REC("rP", "HOG  t",CFG_WORD, repeater_cfg_THOG,  0,             300, pyörtymisaika; max 65535 sec: 18+ tuntia)
+	REC("rP", "HOG  t",CFG_WORD, repeater_cfg_THOG,  0,             300, pyÃ¶rtymisaika; max 65535 sec: 18+ tuntia)
 	REC("rP", "CLOS t",CFG_WORD, repeater_cfg_TCLS,  0,              30, valmiusaika; 0 sec: ei valmiusaikaa)
-	REC("rP", "dEAd t",CFG_WORD, repeater_cfg_TDEAD, 0,              60, karenssiaika; 0 sec: ei viivyttelyä)
-	REC("rP", "bLiP t",CFG_cSEC, repeater_cfg_TBLIP, 0,              50, välibongon viive; msec)
+	REC("rP", "dEAd t",CFG_WORD, repeater_cfg_TDEAD, 0,              60, karenssiaika; 0 sec: ei viivyttelyÃ¤)
+	REC("rP", "bLiP t",CFG_cSEC, repeater_cfg_TBLIP, 0,              50, vÃ¤libongon viive; msec)
 	REC("rP", "SqIncr",CFG_BYTE, repeater_cfg_sqincr,0,               8, salvan kiristysarvo)
 	REC("rP", "trIncr",CFG_BYTE, repeater_cfg_txincr,0,               8, tehon nostoarvo)
 	REC("rP", "SPEEd ",CFG_BYTE, cfg_cw_speed,       0,             120, cw nopeus mrk/min)
-	REC("rP", "PItCH ",CFG_cSEC, cfg_cw_pitch,       0,             140, cw äänenkorkeus)
-	REC("rP", "AF Src",CFG_TAB,  repeater_cfg_afsrc, tab_rep_mic,   140, audion kytkentätapa)
+	REC("rP", "PItCH ",CFG_cSEC, cfg_cw_pitch,       0,             140, cw Ã¤Ã¤nenkorkeus)
+	REC("rP", "AF Src",CFG_TAB,  repeater_cfg_afsrc, tab_rep_mic,   140, audion kytkentÃ¤tapa)
 	REC("rP", "ACCESS",CFG_TAB,  repeater_cfg_access_method,tab_rep_access, 0, avaustapa)
-	REC("rP", "tonE t",CFG_WORD, repeater_cfg_TBEEPMAX,  0,           5, maksimiaika avausäänelle)
+	REC("rP", "tonE t",CFG_WORD, repeater_cfg_TBEEPMAX,  0,           5, maksimiaika avausÃ¤Ã¤nelle)
 	REC("rP", "id G1 ",CFG_STR,  repeater_cfg_id_greet1, 0,           0, identifikaatio; tervehdysviesti)
 	REC("rP", "id G2 ",CFG_STR,  repeater_cfg_id_greet2, 0,           0, ...)
 	REC("rP", "id G3 ",CFG_STR,  repeater_cfg_id_greet3, 0,           0, ... 3 osainen)
@@ -14349,28 +14349,28 @@ menu_7:
 	REC("rP", "id b2 ",CFG_STR,  repeater_cfg_id_bye2,   0,           0, ...)
 	REC("rP", "id b3 ",CFG_STR,  repeater_cfg_id_bye3,   0,           0, ... 3 osainen)
 
-	REC("rP", "id Hot",CFG_STR,  repeater_cfg_msg_hot_alert, 0,       0, cw viesti kun lämpötila nousee; TP4 below rP:Hot)
-	REC("rP", "idCoLd",CFG_STR,  repeater_cfg_msg_cold_alert, 0,      0, cw viesti kun lämpötila laskee; TP4 above rP:Cold)
+	REC("rP", "id Hot",CFG_STR,  repeater_cfg_msg_hot_alert, 0,       0, cw viesti kun lÃ¤mpÃ¶tila nousee; TP4 below rP:Hot)
+	REC("rP", "idCoLd",CFG_STR,  repeater_cfg_msg_cold_alert, 0,      0, cw viesti kun lÃ¤mpÃ¶tila laskee; TP4 above rP:Cold)
 	REC("rP", "id Ant",CFG_STR,  repeater_cfg_msg_ant_bad,    0,      0, cw viesti kun palaava teho nousee)
-	REC("rP", "id HOG",CFG_STR,  repeater_cfg_msg_hog,        0,      0, cw viesti pyörryttäessä)
+	REC("rP", "id HOG",CFG_STR,  repeater_cfg_msg_hog,        0,      0, cw viesti pyÃ¶rryttÃ¤essÃ¤)
 
-	REC("rP", "bLIP  ",CFG_STR,  repeater_cfg_blip,  0,               0, cw välibongo)
-	REC("rP", "bLIP L",CFG_STR,  repeater_cfg_blip_link,  0,          0, cw välibongo linkki-ptt:n takia)
-	REC("rP", "bLIGP1",CFG_STR,  repeater_cfg_blip_gpio_001, 0,       0, cw välibongo GPio2+1 = 00 1)
-	REC("rP", "bLIGP2",CFG_STR,  repeater_cfg_blip_gpio_010, 0,       0, cw välibongo GPio2+1 = 01 0)
-	REC("rP", "bLIGP3",CFG_STR,  repeater_cfg_blip_gpio_011, 0,       0, cw välibongo GPio2+1 = 01 1)
-	REC("rP", "bLIGP4",CFG_STR,  repeater_cfg_blip_gpio_100, 0,       0, cw välibongo GPio2+1 = 10 0)
-	REC("rP", "bLIGP5",CFG_STR,  repeater_cfg_blip_gpio_101, 0,       0, cw välibongo GPio2+1 = 10 1)
-	REC("rP", "bLIGP6",CFG_STR,  repeater_cfg_blip_gpio_110, 0,       0, cw välibongo GPio2+1 = 11 0)
-	REC("rP", "bLIGP7",CFG_STR,  repeater_cfg_blip_gpio_111, 0,       0, cw välibongo GPio2+1 = 11 1)
-	REC("rP", "PItCHb",CFG_cSEC, cfg_cw_pitch_blip,  0,             140, välibongon äänenkorkeus)
-	REC("rP", "PItCHL",CFG_cSEC, cfg_cw_pitch_blip_link,  0,        140, linkki-ptt-bongon äänenkorkeus)
-	REC("rP", "PItCHG",CFG_cSEC, cfg_cw_pitch_blip_gpio,  0,        140, gpio-bongon äänenkorkeus)
-	REC("rP", "Hot  L",CFG_BYTE, cfg_temperature_limit_hot,  0,       0, lämpötilan raja-arvo)
-	REC("rP", "CoLd L",CFG_BYTE, cfg_temperature_limit_cold, 0,     255, lämpötilan raja-arvo)
+	REC("rP", "bLIP  ",CFG_STR,  repeater_cfg_blip,  0,               0, cw vÃ¤libongo)
+	REC("rP", "bLIP L",CFG_STR,  repeater_cfg_blip_link,  0,          0, cw vÃ¤libongo linkki-ptt:n takia)
+	REC("rP", "bLIGP1",CFG_STR,  repeater_cfg_blip_gpio_001, 0,       0, cw vÃ¤libongo GPio2+1 = 00 1)
+	REC("rP", "bLIGP2",CFG_STR,  repeater_cfg_blip_gpio_010, 0,       0, cw vÃ¤libongo GPio2+1 = 01 0)
+	REC("rP", "bLIGP3",CFG_STR,  repeater_cfg_blip_gpio_011, 0,       0, cw vÃ¤libongo GPio2+1 = 01 1)
+	REC("rP", "bLIGP4",CFG_STR,  repeater_cfg_blip_gpio_100, 0,       0, cw vÃ¤libongo GPio2+1 = 10 0)
+	REC("rP", "bLIGP5",CFG_STR,  repeater_cfg_blip_gpio_101, 0,       0, cw vÃ¤libongo GPio2+1 = 10 1)
+	REC("rP", "bLIGP6",CFG_STR,  repeater_cfg_blip_gpio_110, 0,       0, cw vÃ¤libongo GPio2+1 = 11 0)
+	REC("rP", "bLIGP7",CFG_STR,  repeater_cfg_blip_gpio_111, 0,       0, cw vÃ¤libongo GPio2+1 = 11 1)
+	REC("rP", "PItCHb",CFG_cSEC, cfg_cw_pitch_blip,  0,             140, vÃ¤libongon Ã¤Ã¤nenkorkeus)
+	REC("rP", "PItCHL",CFG_cSEC, cfg_cw_pitch_blip_link,  0,        140, linkki-ptt-bongon Ã¤Ã¤nenkorkeus)
+	REC("rP", "PItCHG",CFG_cSEC, cfg_cw_pitch_blip_gpio,  0,        140, gpio-bongon Ã¤Ã¤nenkorkeus)
+	REC("rP", "Hot  L",CFG_BYTE, cfg_temperature_limit_hot,  0,       0, lÃ¤mpÃ¶tilan raja-arvo)
+	REC("rP", "CoLd L",CFG_BYTE, cfg_temperature_limit_cold, 0,     255, lÃ¤mpÃ¶tilan raja-arvo)
 	REC("rP", "AntbAd",CFG_BYTE, cfg_rpm_limit,      0,               0, palaavan tehon raja-arvo)
-	REC("rP", "rEMOtE",CFG_WORD, cfg_remote_id,      0,               0, kaukokäytön osoite (0!))
-	REC("rP", "PASS C",CFG_STR,  cfg_remote_passwd,  0,               0, kaukokäytön salasana)
+	REC("rP", "rEMOtE",CFG_WORD, cfg_remote_id,      0,               0, kaukokÃ¤ytÃ¶n osoite (0!))
+	REC("rP", "PASS C",CFG_STR,  cfg_remote_passwd,  0,               0, kaukokÃ¤ytÃ¶n salasana)
 
 	REC("rP", "ccirPF",CFG_STR,  repeater_cfg_ccir_cmd_pfx, 0,        0, ruutukomentojen ccir-prefiksi)
 
@@ -14385,8 +14385,8 @@ menu_7:
 
 	REC("rP", "HidE 9", CFG_TAB, cfg_repeater_cmd_9_hidden, tab_pass_hide, 0, #9 sallittu)
 	REC("rP", "SIMPLE", CFG_TAB, cfg_repeater_wierd_simplex, tab_onoff, 0, toistimen omituinen simplex-mode)
-	REC("rP", "BLIPS ", CFG_TAB, repeater_cfg_musical_blips, tab_cw_notes, 0, välibongot cw vai nuotit)
-	REC("rP", "BrSSiS", CFG_TAB, repeater_cfg_rssi_bongos, tab_onoff, 0, rssi välibongot käytössä - #5 dtmf toggle)
+	REC("rP", "BLIPS ", CFG_TAB, repeater_cfg_musical_blips, tab_cw_notes, 0, vÃ¤libongot cw vai nuotit)
+	REC("rP", "BrSSiS", CFG_TAB, repeater_cfg_rssi_bongos, tab_onoff, 0, rssi vÃ¤libongot kÃ¤ytÃ¶ssÃ¤ - #5 dtmf toggle)
 	REC("rP", "rSSi 1", CFG_BYTE, repeater_cfg_rssi_A, 0,             0, RSSI A raja-arvo)
 	REC("rP", "BrSSi1", CFG_STR,  repeater_cfg_blip_rssi_A, 0,        0, RSSI A raja-arvon bongo)
 	REC("rP", "rSSi 2", CFG_BYTE, repeater_cfg_rssi_B, 0,             0, RSSI B raja-arvo)
@@ -14402,21 +14402,21 @@ menu_7:
 	REC("tr", "tSPot2",CFG_FREQ, cfg_tx_oob_2,       0,               0, ...)
 	REC("tr", "tSPot3",CFG_FREQ, cfg_tx_oob_3,       0,               0, ...)
 	REC("tr", "tSPot4",CFG_FREQ, cfg_tx_oob_4,       0,               0, ... 5 kpl)
-	REC("tr", "APrSFq",CFG_FREQ, cfg_aprs_tx_freq,   0,               0, Real-APRS lähetystaajuus)
+	REC("tr", "APrSFq",CFG_FREQ, cfg_aprs_tx_freq,   0,               0, Real-APRS lÃ¤hetystaajuus)
 
 menu_8:
 	REC("PH", "SynCrd",CFG_TAB,  cfg_synth_card,     tab_synth_card,  0, RF-osan tyyppi)
-	REC("PH", "3diGit",CFG_STR,  cfg_implied,        0,               0, implied MHz (3 ensimmäistä numeroa))
-	REC("PH", "IFFrEq",CFG_FREQ, cfg_if_freq,        0,               0, rx välitaajuus)
+	REC("PH", "3diGit",CFG_STR,  cfg_implied,        0,               0, implied MHz (3 ensimmÃ¤istÃ¤ numeroa))
+	REC("PH", "IFFrEq",CFG_FREQ, cfg_if_freq,        0,               0, rx vÃ¤litaajuus)
 	REC("PH", "LO InJ",CFG_TAB,  cfg_inj_below,      tab_above_below, 0, injektion puoli)
 	REC("PH", "r CEnt",CFG_FREQ, cfg_rx_vco_center,  0,               0, rx vcon keskitaajuus)
 	REC("PH", "t CEnt",CFG_FREQ, cfg_tx_vco_center,  0,               0, tx vcon keskitaajuus)
-	REC("PH", "LPFILt",CFG_WORD, cfg_lpf_hz,         0,            3600, tx audion alipäästö)
-	REC("PH", "FonE d",CFG_BYTE, cfg_deviation_fone, 0,              15, puhedeviaation säätö - 0 ... 15)
-	REC("PH", "SiG dE",CFG_BYTE, cfg_deviation_sign, 0,               7, signalointideviaation säätö - 0 ... 15)
+	REC("PH", "LPFILt",CFG_WORD, cfg_lpf_hz,         0,            3600, tx audion alipÃ¤Ã¤stÃ¶)
+	REC("PH", "FonE d",CFG_BYTE, cfg_deviation_fone, 0,              15, puhedeviaation sÃ¤Ã¤tÃ¶ - 0 ... 15)
+	REC("PH", "SiG dE",CFG_BYTE, cfg_deviation_sign, 0,               7, signalointideviaation sÃ¤Ã¤tÃ¶ - 0 ... 15)
 tune_tone_position:
 	REC("PH", "t tunE",CFG_WORD, cfg_txtune_hz,      0,               0, tx testisignaalia)
-	REC("PH", "PLLdEL",CFG_BYTE, cfg_pll_delay,      0,               0, txpll käynnistysviive - karkeasti msec - PLL stabiiliksi)
+	REC("PH", "PLLdEL",CFG_BYTE, cfg_pll_delay,      0,               0, txpll kÃ¤ynnistysviive - karkeasti msec - PLL stabiiliksi)
 
 	REC("PH", "tr oFF", CFG_FREQ, cfg_tx_mix_freq,       0, 0, tx mikseri)
 	REC("PH", "t mult", CFG_BYTE, cfg_tx_vco_multiplier, 0, 0, tx kertoja)
@@ -14424,7 +14424,7 @@ tune_tone_position:
 	REC("PH", "CtCdEc", CFG_TAB,  cfg_ctcss_input_method, tab_ctcss_input_method, 0, ctcss-detektori: ROM1 /TMR0 TMR0)
 	REC("PH", "CtCtHr", CFG_BYTE, cfg_ctcss_dec_threshold, 0,      100, ctcss-softadekooderin raja-arvo)
 	REC("PH", "CtCGEn", CFG_TAB,  cfg_ctcss_output_method, tab_ctcss_output_method, 0, ctcss:n luontitapa - huomaa: kaikki vaativat modifikaatioita)
-	REC("PH", "CtHAnG", CFG_BYTE, cfg_ctcss_hang,    0,               0, hang-aika overin lopussa ilman ctcss-ääntä - msec)
+	REC("PH", "CtHAnG", CFG_BYTE, cfg_ctcss_hang,    0,               0, hang-aika overin lopussa ilman ctcss-Ã¤Ã¤ntÃ¤ - msec)
 	REC("PH", "CtGAin", CFG_BYTE, cfg_ctcss_generator_gain, 0,      127, rfc-dac ctcss-generaattorin gain - mahduttava rfc:n ja abs(-rfc):n rajoihin)
 	REC("PH", "dtGAin", CFG_BYTE, cfg_dtmf_gain, 0,       31, dtmf-generaattorin gain - oltava 1...31)
 	REC("PH", "PrGAin", CFG_BYTE, cfg_ax25_gain, 0,       63, ax.25-generaattorin gain - P8N 1...70 P8E 1...84)
@@ -14433,13 +14433,13 @@ tune_tone_position:
 	REC("PH", "GPSCFG", CFG_TAB,  cfg_gps_config,    tab_gps_config,  0, GPS-konfiguraatio - Std = geneerinen NMEA- 9600Std -OH1E)
 
 	REC("dF", "CFGGEt",CFG_RST,  all_config_get,     0,               0, KAIKKIEN asetusten ylikirjoitus MBUS-karvasta)
-	REC("dF", "CFGSnd",CFG_RST,  all_config_send,    0,               0, asetusten lähetys MBUS-karvaan)
+	REC("dF", "CFGSnd",CFG_RST,  all_config_send,    0,               0, asetusten lÃ¤hetys MBUS-karvaan)
 	REC("dF", "ALLrSt",CFG_RST,  disaster,           0,               0, asetusten nollaus)
 	REC("dF", "CH rSt",CFG_RST,  wipe_memories,      0,               0, muistien nollaus)
 	REC("dF", "SAnE  ",CFG_RST,  sane_defaults,      0,               0, monien asetusten oletusasetus)
-	REC("dF", "rFcrSt",CFG_RST,  wipe_rfctab,        0,               0, rx säätöarvojen nollaus)
-	REC("dF", "rFcFIL",CFG_RST,  rfc_fill_blanks,    0,               0, rx säätöarvojen interpolointi)
-	REC("dF", "rEboot",CFG_RST,  do_reboot,          0,               0, lämmin käynnistys)
+	REC("dF", "rFcrSt",CFG_RST,  wipe_rfctab,        0,               0, rx sÃ¤Ã¤tÃ¶arvojen nollaus)
+	REC("dF", "rFcFIL",CFG_RST,  rfc_fill_blanks,    0,               0, rx sÃ¤Ã¤tÃ¶arvojen interpolointi)
+	REC("dF", "rEboot",CFG_RST,  do_reboot,          0,               0, lÃ¤mmin kÃ¤ynnistys)
 
 	REC("dF", "EntLen",CFG_BYTE, cfg_enter_time,     0,               0, setupnapin turva-aika)
 
@@ -14447,7 +14447,7 @@ menu_9:
 	REC("St", "SoFt  ",CFG_STR,  version,            0,               0, softaversio)
 	REC("St", "AdrSSI",CFG_BYTE, ad_rssi,            0,               0, RSSI arvo)
 	REC("St", "Ad SqL",CFG_BYTE, ad_sql,             0,               0, SQL arvo)
-	REC("St", "AdbAtt",CFG_BYTE, ad_batt,            0,             255, jännite) ; HA!
+	REC("St", "AdbAtt",CFG_BYTE, ad_batt,            0,             255, jÃ¤nnite) ; HA!
 	REC("St", "Ad tPc",CFG_BYTE, ad_tpc,             0,               0, tx power control)
 	REC("St", "Ad For",CFG_BYTE, ad_fpm,             0,               0, forward power)
 	REC("St", "Ad rEF",CFG_BYTE, ad_rpm,             0,               0, reflected power)
@@ -14456,7 +14456,7 @@ menu_9:
 	REC("St", "ctcFit",CFG_BYTE, ctcss_dec_fit,      0,               0, ctcss korrelaatio - isompi parempi)
 
 	REC("St", "USEcnt",CFG_FREQ, repeater_cfg_open_counter,  0,       0, avauskerrat)
-	REC("St", "USEhrS",CFG_FREQ, transmitter_hours,  0,               0, käyttötunnit)
+	REC("St", "USEhrS",CFG_FREQ, transmitter_hours,  0,               0, kÃ¤yttÃ¶tunnit)
 	REC("GP", "utc   ",CFG_STR,  gps_utc,            0,               0, HHMMSS)
 	REC("GP", "dAtE  ",CFG_STR,  gps_date,           0,               0, YYMMDD)
 	REC("GP", "LAt   ",CFG_STR,  cfg_gps_latitude,   0,               0, DDDMMmmN/S)
@@ -14465,9 +14465,9 @@ menu_9:
 	REC("GP", "knotS ",CFG_WORD, gps_knots,          0,               0, knots - solmua)
 	REC("GP", "CourSE",CFG_WORD, gps_course,         0,               0, course - degrees)
 	REC("GP", "GridSq",CFG_STR,  cfg_gps_locator,    0,               0, Maidenhead)
-	REC("GP", "StAtuS",CFG_STR,  gps_status,         0,               0, vastaanoton laatu - sisältö laitekohtainen)
+	REC("GP", "StAtuS",CFG_STR,  gps_status,         0,               0, vastaanoton laatu - sisÃ¤ltÃ¶ laitekohtainen)
 
-	REC("rF", "rFc   ",CFG_DYN,  menu_rfc_change,    draw_rfc_dpy,    0, rx säätöarvon asetus vfo MHz:lla)
+	REC("rF", "rFc   ",CFG_DYN,  menu_rfc_change,    draw_rfc_dpy,    0, rx sÃ¤Ã¤tÃ¶arvon asetus vfo MHz:lla)
 end_menu:
 
 	ASSERT_GT(end_menu + 255 * size_menurec, start_menu) ; safety for overflow calc
@@ -16182,6 +16182,7 @@ centiminutes_to_meters:
 	ld hl, #0            ; start to accumulate
 
 	ld b, a             ; decimal minutes ?
+	xor a               ; (v3_Z kept them in A: + hundredths * 655 m)
 	inc b
 	dec b
 	jr z, 2f            ; happens to be none.
@@ -16206,11 +16207,11 @@ centiminutes_to_meters:
 	adc a, #0
 	djnz 1b             ; continue adding 1 * minute     max 256 loops
 2:
-	ld c, d
-	ld d, e
+	pop bc              ; full minutes / 256 ?
+	ld c, d             ; (after the pop: v3_Z lost C, the upper byte of
+	ld d, e             ; the multiplier, to the minutes' low byte)
 	ld e, #0             ; now upper byte of full minute
 
-	pop bc              ; full minutes / 256 ?
 	inc b
 	dec b
 	jr z, 2f
@@ -20585,7 +20586,7 @@ num_bandrecs = 6
 
 	repeater_cfg_msg_hog:          STRING
 
-	cfg_serv_blip_pitch:    BYTE     ; local välibongo
+	cfg_serv_blip_pitch:    BYTE     ; local vÃ¤libongo
 
 	cfg_enter_time:         BYTE     ; how many seconds must ENT be down
 

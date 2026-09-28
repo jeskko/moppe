@@ -173,6 +173,16 @@ decided otherwise):
   other `div248` callers (blip Hz, frequency, GPS, locator maths) have not
   been checked for divisors ≥ 128; the frequency code also uses the carry
   `div248` leaves, so do not swap it blindly.
+- MPRS distance/bearing (QRB) was wrong for nearly every received position:
+  `centiminutes_to_meters` (east-west metres) kept the hundredths of a
+  minute in A, adding hundredths × 655 m (a station 13.5 km east showed
+  22.1 km, one 457 m north "20.0 km E"), and its `pop bc` overwrote the
+  multiplier's upper byte, so from 256 minutes of longitude difference on
+  the result was garbage (345' west showed nothing). **Fixed 2026-09-28**
+  (obvious bug, asm and C); `test_fsk.Qrb` against a model of the flat
+  formula.
+- MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
+  the first GPS fix there is none and it prints the RAM after it. Kept.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
   southern latitude is sent as northern. Kept as is (asm and C): the
   radios are used in Finland only, so the southern case never mattered
@@ -588,7 +598,7 @@ first, port, differential test against stock, size check, commit.
   copy of `div248` (its overflow for wrapped 24-bit values of out-of-range
   packets), 24-bit wrap, digits as values in `distance_bearing`, and two
   v3_Z bugs in `centiminutes_to_meters` (fixed in the next commit, see
-  "Firmware behaviour"). Deliberate difference: the metres-per-minute
+  "Firmware behaviour": QRB). Deliberate difference: the metres-per-minute
   table for own latitudes of 90 and more (the asm read past it). Also
   found: the logger format prints `gps_utc` up to EOS, and before the first
   fix there is none, so it prints RAM after it (kept, noted).
