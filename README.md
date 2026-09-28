@@ -14,9 +14,10 @@ without burning an EPROM for every change.
 | C in firmware | `make C=1` links C modules (squelch, packet CRCs, systick timers, battery check, key dispatch, display composition, frequency/band/duplex logic) as normal SDCC objects. All tests pass; the differential tests show no behaviour difference to the stock build. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
-| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Phases 0-3 done: the setup menu, APRS/MPRS/GPS, the FSK packet layer and the repeater/CW code run from bank 1 (EPROM0 chip 0xC000, nearly full); bank 2 (EPROM0 chip 0x8000, both cards) holds banked C in `make C=1`: the FSK packet layer (`c/fsk.c`), the repeater/CW code (`c/rptr.c`), GPS sentence processing (`c/gps.c`) and MPRS/APRS (`c/aprs.c`); bank 1 then holds only the menu. Phase 4 (C port, `make C=1`) under way: timers, battery check, key dispatch, display composition, frequency/band logic, FSK packets, repeater/CW, GPS parsing and MPRS/APRS (bank 2). Pending: the ROM window bench test on a real board (`make -C firmware banktest`, checks both pages). |
+| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Phases 0-3 done: the setup menu, APRS/MPRS/GPS, the FSK packet layer and the repeater/CW code run from bank 1 (EPROM0 chip 0xC000, nearly full) in the asm build; bank 2 (EPROM0 chip 0x8000, both cards) holds banked C in `make C=1`: the FSK packet layer (`c/fsk.c`), the repeater/CW code (`c/rptr.c`), GPS sentence processing (`c/gps.c`) and MPRS/APRS (`c/aprs.c`); bank 1 then holds only the menu. Phase 4 (C port, `make C=1`) under way: timers, battery check, key dispatch, display composition, frequency/band logic, FSK packets, repeater/CW, GPS parsing and MPRS/APRS (bank 2). Next: the menu engine to C in bank 1. Pending: the ROM window bench test on a real board (`make -C firmware banktest`, checks both pages). |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
+Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md).
 Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).
 
 ## Quick start
@@ -62,6 +63,9 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `tools/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py` | Build steps around sdasz80/sdldz80 |
 | `tools/jp2jr.py` | Size optimiser: `jp` → `jr` outside timing-critical code |
 | `tools/bankxref.py` | Cross-references of a source block, before moving it to bank 1 |
+| `tools/isrreach.py` | Routines reachable from interrupts (must stay in fixed ROM) |
+| `tools/mutate.py` | Mutation check of a C module against the tests |
+| `tools/banktest.py` | ROM window bench-test image (`make banktest`) |
 | `tools/as80tosdas.py` | One-shot as80 → sdasz80 source converter |
 | `tools/as80/` | The original assembler (patched), for reference builds |
 | `emu/` | Emulator in C: `z80.c` core, `pio/sio/pit/daisy.c` Zilog/Intel chips, `cu53an.c`, `cu58af.c` handsets, `r58.c` board, `api.c` flat API |

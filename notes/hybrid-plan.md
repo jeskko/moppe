@@ -21,18 +21,46 @@ modules (see "Done: ... bank 2" under Phase 4); fixed ROM ends at ~0x493D
 (~13.7 KB free, `_HOME` included). 186 tests pass on both builds; `make
 -C firmware verify` still byte-identical for the release reference.
 
-**Next task: the menu engine to C** (bank 1 holds only the menu now in
-`C=1`: 8.2 KB of asm, mostly the REC/TAB/STR tables; the engine could be C
-with `#pragma bank 1` next to the tables, which stay asm data, since bank
-2 is nearly full). Then the scanner (coroutine → state machine) and the
-other fixed-ROM modules. Per module: tests first (reference = the asm
-build when a fixed bug makes the release differ), entry points as plain
-`void f(void)` behind `far_X` stubs under `#ifdef C_MODULES`, register
-interfaces through fixed-ROM shims, data it reads moved out of other
-banks (link.py refuses cross-bank references), a mutation run.
-Other open items: scanner to C (coroutine → state machine); the real-board
-bench test (EPROM programmer); `notes/hardware.md` open questions (IC27,
-EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
+**Next task: the setup menu engine to C, in bank 1** (`#pragma bank 1`).
+In `make C=1` bank 1 holds only the menu (`bank1_start` … the GPS section
+marker, ~1890 lines: engine + 288 `REC` records, `TAB`/`STR` tables,
+SAnE/band defaults, CFGSnd/CFGGEt `all_config_send/get`, wipe/reboot).
+Bank 2 has only ~4.3 KB left, bank 1 ~8 KB, so the engine goes to C in
+bank 1 next to the tables, which stay asm data (`REC` layout: offset_tag 0,
+title 2, ptr 8, arg 10, def 12, type 14; types CFG_BYTE 1 … CFG_EXE 10).
+What to know before starting:
+- Entry points (fixed-ROM `far_*` stubs, `bank1_call`): `init_menu`,
+  `update_gpio12_foo`, `toggle_or_position_menu`, `menu_enter_or_walk`,
+  `menu_defval_or_exec`, `menu_up_value`, `menu_dn_value`,
+  `menu_next_group`, `menu_prev`, `decoder_hist_rewind`,
+  `remote_config_execute` (DE ptr, HL data), `leaved_setup`,
+  `load_menu_ptr` (IX record → HL value ptr), `draw_menu_title`,
+  `draw_menu_lower_row` (DE display cursor). Callers: keys.c, display.c
+  (`DPY_SHIM`s), fsk.c (`fsk_menu_ptr`, `fsk_remote_config_execute`),
+  asm. Check each for register interfaces.
+- `menu_ptr` holds a record address; fixed code only compares it or hands
+  it back. The records are data in bank 1, so C in bank 1 can read them;
+  nothing outside bank 1 may dereference them (link.py's cross-bank check
+  covers C).
+- `_CODE_1` placement (after `bank1_end`, link.py) and `#pragma bank 1`
+  are wired but **never exercised**: first build a tiny bank-1 C function
+  and check the map, the image offset (window 0x8000 → file 0xC000) and a
+  `BankedC` breakpoint, as was done for bank 2.
+- Tests to widen first: `test_menu_power.py` (27), `test_mbus_config.py`
+  (7), `test_remote_config.py` (7). Needed: every record type's up/down/
+  enter/default and value display, every group walked (the whole menu
+  drawn on both handsets, differential against the asm build), SAnE and
+  band defaults (NV compared), CFGSnd/CFGGEt, remote config per type. The
+  known menu bugs (cSEC last digit, SAnE and CFG_DYN) are in
+  notes/open-bugs.md: keep them unless decided.
+- Tools: `tools/mutate.py` for the mutation run (a `MUTANTS` list of
+  replacements; tests read the mutant through the env variables),
+  `tools/bankxref.py`, `tools/isrreach.py`; difftest steps `probe`,
+  `trace`, `tones`.
+Other open items: the scanner to C (coroutine → state machine); the
+real-board bench test (EPROM programmer); `notes/hardware.md` open
+questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency);
+the bugs left in place: **notes/open-bugs.md**.
 
 **Rules learned this session (details in Phase 3/4 below):**
 - Moving code to a bank: `tools/bankxref.py` (external users),
@@ -139,7 +167,8 @@ typematic timings.
   host-side helpers (CFGSnd/CFGGEt), maybe CTCSS slicer input.
 
 **Firmware behaviour the tests pinned down** (keep it when porting unless
-decided otherwise):
+decided otherwise; the bugs still in place are collected in
+notes/open-bugs.md):
 - TOT: v3_Z powered down at the (N+2)th minute boundary after TX on
   (N+1…N+2 minutes of TX; r58.asm L2451-2462/L13050). **Fixed 2026-09-28**
   (user decision): now N…N+1 minutes (the firmware clock ticks whole
@@ -621,10 +650,8 @@ first, port, differential test against stock, size check, commit.
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The menu (bank 1) goes to C
-    in bank 2 like `fsk.c` (~14.7 KB free there). The real-board bench
-    test still has to confirm both window pages.
-  `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
+  - The menu (bank 1) goes to C in bank 1 (see "Start here"). The
+    real-board bench test still has to confirm both window pages.
 
 ### Future: EPROM1
 - P8E: 27C010, 8 × 16 KB pages, A14/A15/A16 = OUT2 bits 0/1/3. Bit 3 is
