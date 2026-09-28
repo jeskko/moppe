@@ -50,6 +50,11 @@ class Dtmf(RadioTest):
             r.run(0.05)
             x = r.audio_samples(rate=16000)
             x = x[len(x) // 4: 3 * len(x) // 4]
+            # Hann window: with a plain cut the leakage alone put the purity
+            # ratio at 10-11 even for the released firmware, and a 1 ms shift
+            # of the tone start could tip it under the limit
+            n = len(x)
+            x = [v * (0.5 - 0.5 * math.cos(2 * math.pi * i / (n - 1))) for i, v in enumerate(x)]
             mag = {f: goertzel(x, 16000, f) for f in DTMF_ROWS + DTMF_COLS}
             row = max(DTMF_ROWS, key=mag.get)
             col = max(DTMF_COLS, key=mag.get)

@@ -52,6 +52,13 @@ r.symbolize(r.cpu()["pc"])        # 'tx_on+0'
 [r.symbolize(p) for p in r.trace(32)]   # last PCs
 r.step(10)                        # single instructions
 r.events                          # WDRESET, TX_ON/OFF, SYNTH, MODEM_TX, MBUS_TX, ...
+r.set_cpu(hl=0x8000, de=1)        # write registers (af bc de hl ix iy sp pc)
+ret = r.call("set_bank", af=0x0100)   # push PC, jump: as if a CALL were executed
 ```
+
+A run resumed at a breakpoint executes that one instruction before
+breakpoints apply again (fixed 2026-09-28: the skip used to stay armed
+until the next breakpoint hit anywhere, so a stop right after `call()` or
+at a different address could be missed).
 
 Watch out: a zeroed NV image contains zeroed hook "scripts". After the boot-time hook edge the firmware "types" eight `0` keys. Blank `cfg_onhook_script` / `cfg_offhook_script` (0xFF), or run SAnE; the test fixture does both.

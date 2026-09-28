@@ -682,7 +682,8 @@
 #define O1_TXOFF  0x80
 
 ;
-;	Changes only by mainline.
+;	Bits 0-3 select the memory bank (see set_bank); every writer keeps the
+;	current ones from out2_bank.  CS1/CS2/CLK/DP are the handset bus.
 ;
 
 #define O2_RA14   0x01
@@ -694,12 +695,17 @@
 #define O2_CLK    0x40	/* I2C SCL for CU58AF */
 #define O2_DP     0x80
 
-#define O2_XXX    O2_SMEM
+#define O2_BANK   (O2_SMEM | O2_RS | O2_RA15 | O2_RA14)
+#define O2_XXX    O2_SMEM	/* bank 0, the power-on state */
 
-#define O2_KEYPAD (O2_XXX | 0)
-#define O2_LATCH  (O2_XXX | O2_CS1)
-#define O2_LCD1   (O2_XXX | O2_CS2)
-#define O2_LCD2   (O2_XXX | O2_CS2 | O2_CS1)
+/* handset bus states, without the bank bits */
+#define O2_KEYPAD 0
+#define O2_LATCH  O2_CS1
+#define O2_LCD1   O2_CS2
+#define O2_LCD2   (O2_CS2 | O2_CS1)
+
+/* A = bus state | current bank bits, for OUT2 */
+#define LD_A_OUT2(bus) ld a, (out2_bank) @ or #bus
 
 ;----------------------------------------------------------------------
 ;
@@ -1165,6 +1171,7 @@ start:
 	;
 	ld a, #PB_INPUTS
 	ld (piob_mode), a                   ; 3.N fix after bss bzero.
+	call bank_init			; (fills the hole before crctbls exactly)
 
 	ld hl, #mbusrx_buf
 	ld (mbusrx_rp), hl
@@ -1619,7 +1626,7 @@ start_continue:
 	ld (sio_bctrl_local), a
 
 	and #SB_LOCAL		; inverted...
-	jp z, 1f			; go if LOCAL idle high, bit inverted
+	jr z, 1f			; go if LOCAL idle high, bit inverted
 	ld a, #1
 	ld (local_mode), a
 1:
@@ -1957,8 +1964,9 @@ ctcss_dec_entry:
 	add hl, bc               ; 11 step on the sine
 	ld (ctcss_dec_phacc), hl ; 16 keep track of phase
 
-	ld b, #HI(0x8000)         ;  7 HI(addr) only for speed
+	ld bc, (ctcss_dec_src)   ; 20 0x80xx, or a RAM zero while banked
 	ld a, (bc)               ;  7 A.0 is slicer status, "sample"
+	ld b, #0x80              ;  7 mask for the and below
 	rrca                     ;  4 sample to A.7
 	and b                    ;  4 A.6 zeroed with the lucky mask in B reg
 	xor h                    ;  4 merge quadrant bits from H.7 and H.6
@@ -2330,7 +2338,7 @@ once_per_second:
 
 	ld a, (gps_valid_seconds)
 	or a
-	jp z, 1f
+	jr z, 1f
 	dec a
 	ld (gps_valid_seconds), a
 1:
@@ -2351,7 +2359,7 @@ once_per_second:
 
 	ld a, (txon)
 	or a
-	jp z, 1f
+	jr z, 1f
 
 	; transmitter hours counter
 
@@ -2397,7 +2405,7 @@ once_per_second:
 	;
 	ld a, (alert_timer)
 	or a
-	jp z, 1f
+	jr z, 1f
 	dec a
 	ld (alert_timer), a
 1:
@@ -2406,7 +2414,7 @@ once_per_second:
 	;
 	ld a, (scan_on)
 	or a
-	jp z, 1f
+	jr z, 1f
 	ld a, (scan_patience)
 	or a
 	jr z, 1f
@@ -2429,11 +2437,11 @@ once_per_second:
 
 	ld a, (dtmf_idletime)
 	or a
-	jp z, 1f
+	jr z, 1f
 	inc a
 	ld hl, #cfg_dtmf_holdtime
 	cp (hl)
-	jp c, 2f
+	jr c, 2f
 	call dtmf_decoder_timeout
 	xor a
 2:
@@ -2500,7 +2508,7 @@ once_per_minute:
 
 	ld a, (txon)
 	or a
-	jp z, 1f
+	jr z, 1f
 	ld a, (cfg_tx_tot_minutes)
 	ld hl, #tx_tot_timer
 	cp (hl)                        ; if cfg is 255, never carry
@@ -2513,35 +2521,35 @@ once_per_minute:
 
 	ld a, (scan_on)
 	or a
-	jp nz, 1f       ; no idle timer if scanner already on
+	jr nz, 1f       ; no idle timer if scanner already on
 	ld a, (squelch_open)
 	or a
-	jp nz, 1f       ; no idle timer if squelch open
+	jr nz, 1f       ; no idle timer if squelch open
 	ld a, (key)
 	cp #-1
-	jp nz, 1f       ; no idle timer if key pending
+	jr nz, 1f       ; no idle timer if key pending
 	ld a, (digidx)
 	or a
-	jp nz, 1f       ; no idle timer if digit buffer pending
+	jr nz, 1f       ; no idle timer if digit buffer pending
 	ld a, (menu_active)
 	or a
-	jp nz, 1f       ; no idle timer if in setup
+	jr nz, 1f       ; no idle timer if in setup
 	call is_ptt_pressed
-	jp nz, 1f       ; no idle timer if PTT
+	jr nz, 1f       ; no idle timer if PTT
 
 	ld hl, #idle_timer
 	ld a, (hl)
 	inc a
-	jp z, 1f        ; stay at 255 minutes
+	jr z, 1f        ; stay at 255 minutes
 
 	ld (hl), a     ; bump idle_timer
 
 	ld a, (cfg_idlefn_delay)
 	or a
-	jp z, 1f       ; delay=0 == no autoscan
+	jr z, 1f       ; delay=0 == no autoscan
 
 	cp (hl)                       ; cfg - timer
-	jp nz, 1f       ; jump if not at exact point
+	jr nz, 1f       ; jump if not at exact point
 
 	ld a, #1
 	ld (idlefn_flag), a
@@ -2713,7 +2721,7 @@ squelch:
 
 	ld a, (squelch_open)       ; previous state
 	or a
-	jp nz, 9f
+	jr nz, 9f
 
 	;  squelch was closed --------------------------------
 
@@ -2729,7 +2737,7 @@ squelch:
 
 	ld a, (squelch_delay)
 	or a
-	jp z, 1f
+	jr z, 1f
 	dec a
 	ld (squelch_delay), a        ; still dragging to open
 	ret nz
@@ -2759,7 +2767,7 @@ squelch:
 	or a
 	ret nz					; Scanner etc forced no audio.
 
-	jp audioc_on
+	jr audioc_on
 
 	;  squelch was open ---------------------------------
 9:
@@ -2784,7 +2792,7 @@ squelch:
 1:
 	ld a, b                         ; a has sql
 	cp c							; sql - close_limit
-	jp nc, squelch_is_open     		; if sql >= close_limit, stay open
+	jr nc, squelch_is_open     		; if sql >= close_limit, stay open
 
 	;  sql now below close limit, tail delay ?
 
@@ -2792,13 +2800,13 @@ squelch:
 
 	ld a, (cfg_squelch_BIG)
 	cp d                       ; monster_threshold - value_20_msec_ago
-	jp c, 1f                   ; last value was above MONSTER, tail-less
+	jr c, 1f                   ; last value was above MONSTER, tail-less
 
 	ld c, #1                  ; close action has tail
 
 	ld a, (squelch_delay)
 	or a
-	jp z, 1f
+	jr z, 1f
 	dec a
 	ld (squelch_delay), a        ; still dragging
 	ret nz
@@ -2820,7 +2828,7 @@ squelch:
 	or a
 	ret nz						; Manually forced open.
 
-	jp audioc_off
+	jr audioc_off
 
 #endif /* C_MODULES */
 
@@ -2869,7 +2877,7 @@ start_repeater_sitters_special:
 tx_cut_local_audio:
 	ld a, (cfg_function)
 	or a
-	jp z, 1f                ; function is 0 = "Std", continue close audio and disable squelch
+	jr z, 1f                ; function is 0 = "Std", continue close audio and disable squelch
 	dec a
 	ret nz                  ; function is not 1 = "rPtr" but "Slave", keep audio with no regard to tx
 
@@ -2896,39 +2904,39 @@ mic_off_ccir_off:
 	ld a, (output_0)
 	and #~O0_CCIRC
 	or #O0_MICM
-	jp 1f
+	jr 1f
 
 mic_on:
 	di
 	call silence_timer1
 	ld a, (output_0)
 	and #~(O0_CCIRC | O0_MICM)	; No tones, no mic mute
-	jp 1f
+	jr 1f
 
 mic_off:
 	di
 	ld a, (output_0)
 	or #O0_MICM
-	jp 1f
+	jr 1f
 
 ccir_on:
 	di
 	ld a, (output_0)
 	or #O0_CCIRC
-	jp 1f
+	jr 1f
 
 ccir_off:
 	di
 	call silence_timer1
 	ld a, (output_0)
 	and #~O0_CCIRC
-	jp 1f
+	jr 1f
 
 mtc_on:
 	di
 	ld a, (output_0)
 	or #O0_MTC
-	jp 1f
+	jr 1f
 
 mtc_off:
 	di
@@ -2992,7 +3000,7 @@ ccir_decoder:
 	ret nz                ; CCIR bits are changing
 
 	cp #0xF0               ; restart duration if notone
-	jp nz, 1f
+	jr nz, 1f
 	xor a
 	ld (ccir_tonetime), a
 1:
@@ -3042,7 +3050,7 @@ ccir_decoder:
 
 	ld a, (cfg_ccir_minlen)  ; accept only N csec or longer series
 	cp d                     ; minimum_time - duration
-	jp c, 1f
+	jr c, 1f
 	ld a, (ccir_toneptr)
 	ld (ccir_hist_idx), a    ; next tone will overwrite this bad one
 	ret
@@ -3096,52 +3104,52 @@ ccir_ok_serie:
 compare_ccir_serie:
 	ld a, (ccir_toneptr)
 	ld l, a
-	jp compare_tone_serie
+	jr compare_tone_serie
 
 compare_dtmf_serie:
 	ld a, (dtmf_toneptr)
 	ld l, a
-	jp compare_tone_serie
+	jr compare_tone_serie
 
 compare_tone_serie:
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, #' '
@@ -3159,52 +3167,52 @@ compare_tone_serie:
 compare_ccir_prefix:
 	ld a, (ccir_toneptr)
 	ld l, a
-	jp compare_tone_prefix
+	jr compare_tone_prefix
 
 compare_dtmf_prefix:
 	ld a, (dtmf_toneptr)
 	ld l, a
-	jp compare_tone_prefix
+	jr compare_tone_prefix
 
 compare_tone_prefix:
 	ld a, (de)
 	cp (hl)
-	jp nz, 2f
+	jr nz, 2f
 	inc de
 	inc l   ; first one must be valid
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 	ld a, (de)
 	cp (hl)
-	jp nz, 1f
+	jr nz, 1f
 	inc de
 	inc l
 
@@ -3264,6 +3272,9 @@ dtmf_decoder_init:
 	ret
 
 dtmf_decoder:
+	ld a, (cur_bank)
+	or a
+	ret nz            ; multiboard not in the window: skip this sample
 	ld h, #HI(0x8000)  ; address LSbyte is dont care
 	ld a, (hl)        ; [0x80xx] is StD D3 D2 D1 D0 ? ? CTCSS
 	cp h              ; lucky address is also mask for StD
@@ -3328,27 +3339,27 @@ dtmf_decoder_timeout:
 pull_down_EXIN1:
 	ld hl, #piob_mode
 	res PB_BIT_EXIN1, (hl) ; i/o selection, 1 for input, 0 for output
-	jp 1f
+	jr 1f
 
 release_EXIN1:
 	ld hl, #piob_mode
 	set PB_BIT_EXIN1, (hl) ; i/o selection, 1 for input, 0 for output
-	jp 1f
+	jr 1f
 
 pull_down_EXIN2:
 	ld hl, #piob_mode
 	res PB_BIT_EXIN2, (hl) ; i/o selection, 1 for input, 0 for output
-	jp 1f
+	jr 1f
 
 release_EXIN2:
 	ld hl, #piob_mode
 	set PB_BIT_EXIN2, (hl) ; i/o selection, 1 for input, 0 for output
-	jp 1f
+	jr 1f
 
 pull_down_DCU:
 	ld hl, #piob_mode
 	res PB_BIT_DCU, (hl)   ; i/o selection, 1 for input, 0 for output
-	jp 1f
+	jr 1f
 
 release_DCU:
 	ld hl, #piob_mode
@@ -3379,9 +3390,9 @@ main:
 	call cu_now_known
 1:
 	call is_key_down
-	jp nz, 1b			; wait release
+	jr nz, 1b			; wait release
 	call is_ptt_pressed
-	jp nz, 1b			; wait release
+	jr nz, 1b			; wait release
 
 	call halt_txsynth
 	call set_channel_step
@@ -3438,7 +3449,7 @@ mainloop:
 
 	; halt
 	; jr mainloop
-	jp mainloop
+	jr mainloop
 
 ;======================================================================
 
@@ -3472,13 +3483,13 @@ gps_configure:
 	ld a, (cfg_gps_config)
 
 	dec a                                ; if 1
-	jp z, gps_configure_SiRF_generic
+	jr z, gps_configure_SiRF_generic
 	dec a                                ; if 2
-	jp z, gps_configure_SiRF_tailored
+	jr z, gps_configure_SiRF_tailored
 	dec a                                ; if 3
-	jp z, gps_configure_aisin_seiki
+	jr z, gps_configure_aisin_seiki
 	dec a                                ; if4 9600 gps riku
-	jp z, gps_configure_std_9600
+	jr z, gps_configure_std_9600
 
 ;        ld a, 4            ! restore SIO A into 4800 riku
 ;        out [SIO+ACTRL], a
@@ -3663,7 +3674,7 @@ gps_check:
 
 	ld a, (cfg_gps_config)
 	cp #3
-	jp z, gps_check_aisin_seiki
+	jr z, gps_check_aisin_seiki
 
 
 	ld a, (gps_sentence_len)
@@ -3689,7 +3700,7 @@ gps_check:
 	ld (de), a
 	inc de
 	inc c
-	jp 4f
+	jr 4f
 2:
 	push hl
 	ld a, c                    ; check for obvious junk, shorter than N chars.
@@ -3703,7 +3714,7 @@ gps_check:
 	ld a, (gps_hist_idx)       ; meanwhile... insertion idx
 	inc l                      ; stay in page buffer
 	cp l                       ; 
-	jp nz, 1b                  ; keep on loopin
+	jr nz, 1b                  ; keep on loopin
 
 	ld a, l
 	ld (gps_hist_rp), a        ; update removal idx
@@ -3730,7 +3741,7 @@ gps_check_aisin_seiki:         ; DE points to first new gps data byte
 
 	ld a, (gps_hist_idx)
 	cp e
-	jp nz, 1b
+	jr nz, 1b
 
 	ld a, e
 	ld (gps_hist_rp), a        ; update removal idx
@@ -4070,7 +4081,7 @@ gps_process_sentence:
 2:
 	call gps_checksum
 	ret nz               ; corrupt
-	jp gps_process_gprmc
+	jr gps_process_gprmc
 
 ; length in c-reg  ============================
 
@@ -4586,7 +4597,7 @@ battcheck:
 	ld a, (ad_batt)
 	jr z, 2f
 	cp  #80 * 256 / 156	       ; 8V
-	jp c, battcheck_lobatt
+	jr c, battcheck_lobatt
 
 	cp  #90 * 256 / 156	        ; 9V, was 11.2V, 184
 	jr c, 1f
@@ -4594,7 +4605,7 @@ battcheck:
 	ret
 2:
 	cp  #90 * 256 / 156	           ; 9V, was 10.2V, 167
-	jp c, battcheck_lobatt
+	jr c, battcheck_lobatt
 
 	cp #100 * 256 / 156	       ; 10V, was 11.2V, 184
 	jr c, 1f
@@ -4890,7 +4901,7 @@ monitor_audio:
 	push hl
 	call compare_tx_rx_freq
 	push af                 ; Remember to re-swap rx/tx if needed
-	jp z, 1f				; Simplex. No channel change
+	jr z, 1f				; Simplex. No channel change
 
 	load_ahl(tx_freq)
 	save_ahl(rx_freq)
@@ -4927,7 +4938,7 @@ monitor_audio:
 	pop af
 	pop hl
 	pop bc
-	jp z, 1f				; Simplex. No channel change
+	jr z, 1f				; Simplex. No channel change
 	ld a, b
 	save_ahl(rx_freq)
 	call temporary_change_rx_freq
@@ -5165,7 +5176,7 @@ insdig_punct:
 	ld e, a
 	ld d, #0
 	add hl, de
-	jp 1f
+	jr 1f
 
 	; JMPOVER
 
@@ -5195,10 +5206,10 @@ insdig_alpha:
 	ret nc        ; forget if buffer full
 	ld a, (digidx)
 	cp #0
-	jp z, 1f      ; impossible, digidx 0 but rnot first alpha XXX
+	jr z, 1f      ; impossible, digidx 0 but rnot first alpha XXX
 	ld a, (key_time)
 	cp #1
-	jp z, 1f      ; go if first alpha
+	jr z, 1f      ; go if first alpha
 
 	dec hl        ; else overwrite current char
 	ld (hl), e
@@ -5220,7 +5231,7 @@ duplex_key:
 	call redraw
 	ld a, (key_time)
 	cp #1
-	jp nc, 1f
+	jr nc, 1f
 	call is_key_down
 	jr nz, 1b
 	jp step_duplex_state     ; quick press, simplex/duplex/reverse
@@ -5230,7 +5241,7 @@ duplex_key:
 	call redraw
 	ld a, (key_time)
 	cp #2
-	jp nc, 1f
+	jr nc, 1f
 	call is_key_down
 	jr nz, 1b
 	jp set_duplex_shift_neg ; longer press, temp. duplex shift override
@@ -5240,7 +5251,7 @@ duplex_key:
 	call redraw
 	ld a, (key_time)
 	cp #3
-	jp nc, 1f
+	jr nc, 1f
 	call is_key_down
 	jr nz, 1b
 	jp set_duplex_shift_pos ; longer press, temp. duplex shift override
@@ -5264,7 +5275,7 @@ scanner_key:
 	call redraw
 	ld a, (key_time)
 	cp #1
-	jp nc, 1f
+	jr nc, 1f
 	call is_key_down
 	jr nz, 1b
 	jp scanner_start
@@ -5274,7 +5285,7 @@ scanner_key:
 	call redraw
 	ld a, (key_time)
 	cp #2
-	jp nc, 1f
+	jr nc, 1f
 	call is_key_down
 	jr nz, 1b
 	jp add_reject
@@ -5345,7 +5356,7 @@ remember_vip:
 	ld c, a
 	ld a, (mem_flags)
 	and #MEM_VALID
-	jp z, 1f  ; on "vfo"
+	jr z, 1f  ; on "vfo"
 	ld a, (mem_idx)
 	ld e, a   ; on memories
 	ld d, #0
@@ -5407,7 +5418,7 @@ next_vip:
 
 	load_ahl_ix_0
 	or h
-	jp nz, 1f     ; larger than 255, must be frequency
+	jr nz, 1f     ; larger than 255, must be frequency
 	ld a, l
 	jp go_mem_a   ; a memory else
 1:
@@ -5461,7 +5472,7 @@ is_freq_rejected_temp:
 2:
 	ld a, (ix + 3)
 	or a
-	jp z, 3f         ; timer has counted reject into stale condition ?
+	jr z, 3f         ; timer has counted reject into stale condition ?
 
 	ld a, l
 	cp (ix + 0)
@@ -5492,7 +5503,7 @@ is_freq_rejected_perm:
 	call check_ten_rejects
 	ret z
 	ld ix, #cfg_reject_10 ; 10 permanent in second group
-	jp check_ten_rejects
+	jr check_ten_rejects
 
 
 check_ten_rejects:
@@ -5563,7 +5574,7 @@ add_reject:
 	ld a, (ix+2)
 	cp (iy+2)
 	jr nz, 2f
-	jp add_reject_out        ; found, fill it
+	jr add_reject_out        ; found, fill it
 2:
 	ld a, (ix+3)
 	cp c                     ; this_timer - prev
@@ -5583,7 +5594,7 @@ add_reject:
 	jr z, 1f           ; z if did not find any aging slot
 	push hl
 	pop ix
-	jp add_reject_out
+	jr add_reject_out
 1:
 
 	; Still no slot ? Just pick the next one
@@ -5859,7 +5870,7 @@ build_scan_slicetab:
 3:
 	ld a, (scan_mask)
 	and l
-	jp z, 2f                ; this band not scanned
+	jr z, 2f                ; this band not scanned
 	ld e, (iy+0)
 	ld d, (iy+1)
 	ld c, (iy+2)   ; bandX_start
@@ -5983,7 +5994,7 @@ scan_do_step:
 	or a
 	jp nz, scan_next_memory
 
-	jp scan_next_frequency
+	jr scan_next_frequency
 
 scan_do_step_maybe_reject:
 
@@ -5991,7 +6002,7 @@ scan_do_step_maybe_reject:
 	or a
 	call nz, add_reject
 
-	jp scan_do_step
+	jr scan_do_step
 
 ;----------------------------------------------------------------------
 
@@ -6024,11 +6035,11 @@ scan_next_frequency:
 	and a
 	sbc hl, de
 	sbc a, c
-	jp c, 1f                  ; jump if rx_freq < lp->end
+	jr c, 1f                  ; jump if rx_freq < lp->end
 	ld de, #2 * SIZE_FREQ
 	add ix, de
 	djnz 1b
-	jp scan_first_memory      ; passed over all slices
+	jr scan_first_memory      ; passed over all slices
 1:
 	; orient in this slice
 
@@ -6037,7 +6048,7 @@ scan_next_frequency:
 	and a
 	sbc hl, de
 	sbc a, c
-	jp nc, 1f                 ; skip if rx_freq >= lp->start
+	jr nc, 1f                 ; skip if rx_freq >= lp->start
 	ld a, c
 	ld (rx_freq+0), de        ; else skip over to this slice
 	ld (rx_freq+2), a
@@ -6054,20 +6065,20 @@ scan_next_frequency:
 	and a
 	sbc hl, de
 	sbc a, c
-	jp c, scan_did_step_freq ; stayed in band, scan this freq
+	jr c, scan_did_step_freq ; stayed in band, scan this freq
 
 	; passed the slice, another there to skip over to ?
 
 	ld a, b
 	dec a
-	jp z, scan_first_memory  ; nope. nleft now 0
+	jr z, scan_first_memory  ; nope. nleft now 0
 
 	ld de, #2 * SIZE_FREQ
 	add ix, de                ; ++lp
 	load_ahl_ix_0             ; lp->start
 	save_ahl(rx_freq)
 	call changed_frequency
-	jp scan_did_step_freq
+	jr scan_did_step_freq
 
 ;----------------------------------------------------------------------
 
@@ -6078,20 +6089,20 @@ scan_first_memory:
 
 	ld a, (scan_mask+1)   ; bits 0xFFC0 are memory blocks
 	and #0xFF
-	jp nz, 1f
+	jr nz, 1f
 	ld a, (scan_mask+0)
 	and #0xC0
 	jp z, scan_first_frequency ; no memoryblocks scanned
 1:
 	xor a                ; start from mem 00
 	ld ix, #memories
-	jp 1f                  ; try 00
+	jr 1f                  ; try 00
 
 scan_next_memory:
 
 	ld a, (mem_idx)
 	call point_ix_memory_a
-	jp 2f                  ; step first, then try
+	jr 2f                  ; step first, then try
 1:
 	cp #100
 	jp nc, scan_first_frequency  ; if passing mem 99, run bands then
@@ -6104,12 +6115,12 @@ scan_next_memory:
 	ld a, e
 	jr nz, 2f                    ; empty or scanblocked
 	call go_mem_a			     ; Ah.
-	jp scan_did_step
+	jr scan_did_step
 2:
 	ld de, #mem_SIZE
 	add ix, de
 	inc a
-	jp 1b
+	jr 1b
 
 ;----------------------------------------------------------------------
 
@@ -6160,7 +6171,7 @@ scan_did_step:
 
 	ld a, (squelch_forced)
 	or a
-	jp nz, 2f				; Squelch manually forced open, act as if signal.
+	jr nz, 2f				; Squelch manually forced open, act as if signal.
 
 	call is_sql_over_level
 	jp nc, scan_do_step		; No signal. Next.
@@ -6177,7 +6188,7 @@ scan_did_step:
 
 	ld a, (cfg_scan_skip_fsk_channels) ; XXX
 	or a
-	jp z, 1f
+	jr z, 1f
 
 	in a, (MDM + MDMCTRL)
 	and #MDM_DCD
@@ -6472,15 +6483,15 @@ packet_for_whom:
 	jp z, handle_call_packet
 
 	cp #0xA
-	jp z, handle_config_packets    ; ask
+	jr z, handle_config_packets    ; ask
 	cp #0xE
-	jp z, handle_config_packets    ; enter
+	jr z, handle_config_packets    ; enter
 	cp #0xD
 	jp z, handle_display_packets
 	cp #0x4
 	jp z, handle_mprs_packets
 	cp #0x5
-	jp z, handle_relay_packets
+	jr z, handle_relay_packets
 
 	ret
 
@@ -6586,7 +6597,7 @@ handle_display_packets:
 	cp #0xD
 	jp z, handle_display_data
 	cp #0xC
-	jp z, handle_display_config
+	jr z, handle_display_config
 	ret
 
 handle_display_config:
@@ -6791,7 +6802,7 @@ send_remote_config_packets:
 
 	ld a, (digidx)
 	or a
-	jp z, send_remote_config_query
+	jr z, send_remote_config_query
 
 	; Enter config then
 
@@ -6974,13 +6985,13 @@ send_mprs_report_packet_1:
 mute_fsk_at_sync_maybe:
 	ld a, (cfg_fsk_silencer)
 	dec a                         ; if 1
-	jp z, 1f
+	jr z, 1f
 	ret                           ; not at ALL
 
 mute_fsk_at_tag_maybe:
 	ld a, (cfg_fsk_silencer)
 	cp #2
-	jp z, 1f
+	jr z, 1f
 	ret                           ; not at PrbEG
 1:
 	ld a, (squelch_open)
@@ -7006,7 +7017,7 @@ mute_fsk_at_tag_maybe:
 mute_fsk_at_mprs_end_maybe:
 	ld a, (cfg_fsk_silencer)
 	cp #3
-	jp z, 1f
+	jr z, 1f
 	ret                           ; not at PrEnd
 1:
 	ld a, (squelch_open)
@@ -7825,7 +7836,7 @@ mprs_qrb:
 	ld h, (ix+1)
 	ld a, (ix+2)
 	ld b, #0                  ; assume scale 1, zero trailing "0"
-	jp c, mprs_qrb_present   ; already < 1000, skip stuff at 1f
+	jr c, mprs_qrb_present   ; already < 1000, skip stuff at 1f
 
 	ld de, #10000
 	sbc hl, de
@@ -8049,7 +8060,7 @@ mbus_mprs_call_latlon:
 
 	ld a, (cfg_mbus_mprs)      ; how exactly ?
 	cp #4
-	jp z, mbus_mprs_out_logger  ; different from the others below
+	jr z, mbus_mprs_out_logger  ; different from the others below
 
 
 	ld de, #mbus_mprs_buffer     ; format message like !6103.52N/02806.18E>
@@ -9513,7 +9524,7 @@ fill_display_config_packet:
 	cp #0                    ; VERSION = 0
 	jr nz, 1f
 	ld hl, #version
-	jp 5b
+	jr 5b
 1:
 	cp #1                    ; RFC = 1
 	jr nz, 1f
@@ -9522,7 +9533,7 @@ fill_display_config_packet:
 	ld hl, #ad_rssi
 	ldi
 	ld hl, #onesies
-	jp 3b
+	jr 3b
 1:
 	cp #2                    ; SQL = 2
 	jr nz, 1f
@@ -9532,7 +9543,7 @@ fill_display_config_packet:
 	ld (de), a
 	inc de
 	ld hl, #onesies
-	jp 3b
+	jr 3b
 1:
 	cp #3                    ; SQL BI = 3
 	jr nz, 1f
@@ -9542,10 +9553,10 @@ fill_display_config_packet:
 	ld (de), a
 	inc de
 	ld hl, #onesies
-	jp 3b
+	jr 3b
 1:
 	ld hl, #onesies
-	jp 5b
+	jr 5b
 
 	;--------------------------------------------------
 
@@ -9689,7 +9700,7 @@ append_secret_packet_crc:
 	ADD_CRC(5)
 	ADD_CRC(6)
 	ADD_CRC(7)
-	jp 1f
+	jr 1f
 
 	; JMPOVER
 
@@ -10067,7 +10078,7 @@ up_memo:
 	jr nz, 2b
 
 	ld a, (mem_idx)
-	jp go_mem_a
+	jr go_mem_a
 8:
 	xor a
 	ld (mem_flags), a
@@ -10075,7 +10086,7 @@ up_memo:
 
 dn_memo:
 	call maybe_just_reenter_last
-	jp z, go_mem_a
+	jr z, go_mem_a
 	ld e, #132
 2:
 	dec e
@@ -10093,7 +10104,7 @@ dn_memo:
 	jr nz, 2b
 
 	ld a, (mem_idx)
-	jp go_mem_a
+	jr go_mem_a
 8:
 	xor a
 	ld (mem_flags), a
@@ -10201,7 +10212,7 @@ pttcheck:
 	; Try to start TX, bail out if illegal
 
 	call tx_on
-	jp c, tx_error
+	jr c, tx_error
 
 	; Hum on, if necessary
 
@@ -10253,7 +10264,7 @@ pttcheck:
 	pop de
 
 	call is_ptt_pressed
-	jp nz, 1b
+	jr nz, 1b
 
 	; Trailing end of PTT, query/command if in menu
 
@@ -10698,7 +10709,7 @@ powerdown_now:
 	out (PIO+BDATA), a       ; B0, EXAL /RXON low OFF high.
 1:
 	halt
-	jp powerdown_now
+	jr powerdown_now
 
 ;----------------------------------------------------------------------
 ;
@@ -10811,23 +10822,23 @@ keypad:
 	;
 	;	strobe the data into shifter
 	;
-	ld a, #O2_LCD1
+	LD_A_OUT2(O2_LCD1)
 	out (OUT2), a
 	call slight_delay
 
-	ld a, #O2_KEYPAD
+	LD_A_OUT2(O2_KEYPAD)
 	out (OUT2), a
 	call slight_delay
 
-	ld a, #O2_KEYPAD | O2_CLK
+	LD_A_OUT2(O2_KEYPAD|O2_CLK)
 	out (OUT2), a
 	call slight_delay
 
-	ld a, #O2_KEYPAD
+	LD_A_OUT2(O2_KEYPAD)
 	out (OUT2), a
 	call slight_delay
 
-	ld a, #O2_LCD1
+	LD_A_OUT2(O2_LCD1)
 	out (OUT2), a
 	call slight_delay
 	call slight_delay
@@ -10839,14 +10850,15 @@ keypad:
 	;
 	;	shift 5 keycode bits to l
 	;
+	ld (out2_last), a	; bus idle state, for set_bank
 	ld c, #0		; collect bits here
 	ld b, #5		; this many
 1:
-	ld a, #O2_LCD1 | O2_CLK
+	LD_A_OUT2(O2_LCD1|O2_CLK)
 	out (OUT2), a
 	call slight_delay
 
-	ld a, #O2_LCD1
+	LD_A_OUT2(O2_LCD1)
 	out (OUT2), a
 	call slight_delay
 	call slight_delay
@@ -11029,10 +11041,10 @@ update_LPF:
 	ld ix, #cfg_lpf_hz
 	ld a, (lpf_hz_now + 0)
 	cp (ix+0)
-	jp nz, init_LPF
+	jr nz, init_LPF
 	ld a, (lpf_hz_now + 1)
 	cp (ix+1)
-	jp nz, init_LPF
+	jr nz, init_LPF
 	ret
 
 ;-------------------
@@ -11403,7 +11415,7 @@ cu_lights_off:
 	res CU53AN_BIT_KEYLIGHT, (hl)
 	bit CU53AN_BIT_KEYLIGHT, a
 	ret z
-	jp redraw
+	jr redraw
 1:
 	res CU58AF_BIT_LCDLIGHT, (hl)	; lit the lights.
 	res CU58AF_BIT_KEYLIGHT, (hl)
@@ -11575,7 +11587,7 @@ clear_clock_icon:
 draw_squelch_ind:
 	ld a, (cu_is_alfa)
 	or a
-	jp nz, 1f
+	jr nz, 1f
 	ld a, (squelch_forced)
 	or a
 	jr nz, 2f
@@ -11599,7 +11611,7 @@ draw_dpx_ind:
 	ld a, (cu_is_alfa)
 	or a
 	ld a, (dpx_ind_flags)
-	jp nz, 3f
+	jr nz, 3f
 	bit 0, a                        ;;;;;;; CU53
 	jr z, 1f
 	segset_hl(CU53AN_SEG_V_D)
@@ -11657,11 +11669,11 @@ draw_upper_row:
 
 	ld a, (call_dpyed)
 	or a
-	jp nz, draw_call_timer
+	jr nz, draw_call_timer
 
 	ld a, (locator_dpyed)
 	or a
-	jp nz, draw_locator_in_upper_row
+	jr nz, draw_locator_in_upper_row
 
 	call draw_upper_colons
 
@@ -11696,7 +11708,7 @@ draw_upper_row:
 
 	ld a, (cfg_function)
 	dec a                        ; if 1 = "rPtr"
-	jp z, 1f
+	jr z, 1f
 	ld a, (txon)                 ; srssi if rx/rptr; txpwr if normal tx
 	or a
 	jr z, 1f
@@ -11803,7 +11815,7 @@ draw_memory_info:
 
 	ld a, (cfg_function)
 	dec a               ; if 1
-	jp nz, 1f
+	jr nz, 1f
 	ld a, #'r'           ; rP_
 	call dpydig
 	ld a, #'P'
@@ -11813,7 +11825,7 @@ draw_memory_info:
 1:
 	ld a, (mem_flags)
 	and #MEM_VALID
-	jp nz, 1f
+	jr nz, 1f
 	ld a, #' '           ; blank out memory info digits
 	call dpydig
 	ld a, #' '
@@ -11845,7 +11857,7 @@ set_dpx_ind_from_rx_tx_freq:
 	pop de
 	ret z                 ; tx = rx
 	ld a, #2
-	jp nc, 1f   ; tx above
+	jr nc, 1f   ; tx above
 	ld a, #1     ; tx below
 1:
 	ld (dpx_ind_flags), a
@@ -11918,7 +11930,7 @@ draw_adjust_feedback:
 	ld b, #10
 	ld a, (cu_is_alfa)
 	or a
-	jp z, 1f
+	jr z, 1f
 	ld b, #9        ; sorry
 1:
 	ld a, (hl)
@@ -11936,7 +11948,7 @@ draw_adjust_feedback:
 draw_remote_display:
 	ld hl, #remote_display_buffer
 
-	jp draw_adjust_feedback
+	jr draw_adjust_feedback
 
 
 ;----------------------------------------------------------------------
@@ -11944,7 +11956,7 @@ draw_scan_mask:
 	ld b, #10
 	ld a, (cu_is_alfa)
 	or a
-	jp z, 1f
+	jr z, 1f
 	ld b, #9        ; sorry
 1:
 	ld hl, (scan_mask)     ; 9876543210FEDCBA bitpositions
@@ -11970,7 +11982,7 @@ draw_scan_mask:
 2:
 	ld a, h
 	or l
-	jp nz, 1b      ; more bits to show
+	jr nz, 1b      ; more bits to show
 1:
 	ld a, #'-'
 	call dpydig    ; pad rest with ----------
@@ -11994,12 +12006,12 @@ draw_lower_row:
 
 	ld a, (call_dpyed)
 	or a
-	jp nz, draw_call_notice
+	jr nz, draw_call_notice
 
 	ld hl, (adj_feedback)
 	ld a, h
 	or l
-	jp nz, draw_adjust_feedback
+	jr nz, draw_adjust_feedback
 
 	ld a, (digidx)                    ; digit buffer non-empty ?
 	or a
@@ -12011,21 +12023,21 @@ draw_lower_row:
 
 	ld a, (display_buffer_time)
 	or a
-	jp nz, draw_remote_display
+	jr nz, draw_remote_display
 
 	;  Cursor still at lower left, scanner running ?
 
 	ld a, (scan_on)
 	or a
-	jp z, 1f                ; not scanning, std display
+	jr z, 1f                ; not scanning, std display
 	ld a, (scan_paused)
 	or a
-	jp nz, 1f               ; scanner paused, std display
+	jr nz, 1f               ; scanner paused, std display
 	ld a, (squelch_forced)
 	or a
-	jp nz, 1f               ; squelch opened, std display
+	jr nz, 1f               ; squelch opened, std display
 
-	jp draw_scan_mask       ; else show mask what are being scanned
+	jr draw_scan_mask       ; else show mask what are being scanned
 1:
 
 	;  Cursor still at lower left, now memory number and frequency
@@ -12039,7 +12051,7 @@ draw_lower_row:
 
 	ld a, (txon)
 	or a
-	jp nz, 1f
+	jr nz, 1f
 	load_ahl(rx_freq)
 	jp draw_long
 1:
@@ -12060,9 +12072,9 @@ draw_call_notice:
 1:
 	ld a, (call_dpyed)
 	dec a                 ; if 1
-	jp z, 1f
+	jr z, 1f
 	dec a                 ; if 2
-	jp z, 2f
+	jr z, 2f
 	call sput
 	.asciz "  ???"
 	ret
@@ -12147,35 +12159,36 @@ display_cu53an:
 
 	ld hl, #segments
 
-	ld a, #O2_LCD2
+	LD_A_OUT2(O2_LCD2)
 	out (OUT2), a
 
-	ld a, #O2_LCD1		; start 1st half of LCD1
+	LD_A_OUT2(O2_LCD1)	; start 1st half of LCD1
 	call display_group
 	call display_bit_zero
 
-	ld a, #O2_LCD2		; start 1st half of LCD2
+	LD_A_OUT2(O2_LCD2)	; start 1st half of LCD2
 	call display_group
 	call display_bit_zero
 
-	ld a, #O2_LCD1		; start 2nd half of LCD1
+	LD_A_OUT2(O2_LCD1)	; start 2nd half of LCD1
 	call display_group
 	call display_bit_one
 
-	ld a, #O2_LCD2		; start 2nd half of LCD2
+	LD_A_OUT2(O2_LCD2)	; start 2nd half of LCD2
 	call display_group
 	call display_bit_one
 
-	ld a, #O2_LCD1		; unselect LATCH
+	LD_A_OUT2(O2_LCD1)	; unselect LATCH
 	out (OUT2), a
 
 	ld hl, #indicators
 	call display_byte
 
-	ld a, #O2_LATCH		; select LATCH
+	LD_A_OUT2(O2_LATCH)	; select LATCH
 	out (OUT2), a
-	ld a, #O2_LCD1		; unselect LATCH
+	LD_A_OUT2(O2_LCD1)	; unselect LATCH
 	out (OUT2), a
+	ld (out2_last), a	; bus idle state, for set_bank
 
 	ret
 
@@ -12243,7 +12256,7 @@ probe_cu58af:
 
 	in a, (SIO+ACTRL)
 	and #SA_DA			; inverted...
-	jp nz, 1f			; go if DA low, idle state DA low vs. /INT high
+	jr nz, 1f			; go if DA low, idle state DA low vs. /INT high
 
 	ld a, #1
 	ld (cu_is_alfa), a
@@ -12294,7 +12307,7 @@ dtmf_cu58af:
 	ld a, (hl)
 2:
 	or #0x10              ; mapped or not, 0x10 is set
-	jp 1f
+	jr 1f
 
 stop_dtmf_tone:
 	ld a, (dtmf_code)
@@ -12611,13 +12624,15 @@ i2c_sda_high:
 	jp i2c_delay
 
 i2c_scl_low:
-	ld a, #O2_XXX
+	LD_A_OUT2(0)
 	out (OUT2), a
+	ld (out2_last), a	; bus state, for set_bank
 	jp i2c_delay
 
 i2c_scl_high:
-	ld a, #O2_XXX | O2_CLK
+	LD_A_OUT2(O2_CLK)
 	out (OUT2), a
+	ld (out2_last), a	; bus state, for set_bank
 	jp i2c_delay
 
 ;
@@ -12636,6 +12651,92 @@ i2c_delay:
 	jr nz, 1b
 	pop af
 #endif
+	ret
+
+;======================================================================
+;
+;  ROM banking (notes/hybrid-plan.md).  A bank is a 16 KB page mapped at
+;  0x8000-0xBFFF:
+;    0  power-on state: the EPROM1 socket (the DTMF/CTCSS multiboard when
+;       fitted), OUT2 bits 3..0 = 1000
+;    1  EPROM0 chip 0xC000-0xFFFF (OUT2 RS|RA14), on P8E and P8N
+;  Banked code runs from mainline only.  The interrupt code keeps the bank
+;  bits in its OUT2 writes (out2_bank) and does not read the multiboard
+;  while a bank is selected (dtmf_decoder, ctcss_dec_src).
+;
+;  These are the helpers SDCC's banked-call trampolines use; call banked
+;  code with
+;	ld e, #bank
+;	ld hl, #function
+;	call ___sdcc_bcall_ehl		; (SDCC library)
+;  which passes BC, D, IX, IY in and A, DE, HL back, and destroys BC.
+;
+;  get_bank: A = current bank; keeps the other registers.
+;  set_bank: select bank A (0..NUM_BANKS-1); destroys A and F only.
+
+NUM_BANKS = 2
+	.globl ___sdcc_bcall_ehl	; link the trampoline from the SDCC library
+
+bank_bits_p8e:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14
+bank_bits_p8n:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14
+
+bank_init:
+	ld a, #O2_XXX			; bank 0 (cur_bank is 0), as set at reset
+	ld (out2_bank), a
+	ld (out2_last), a
+	ld hl, #0x8000			; multiboard visible
+	ld (ctcss_dec_src), hl
+	ret
+
+get_bank:
+	ld a, (cur_bank)
+	ret
+
+set_bank:
+	push hl
+	push de
+	ld e, a
+	ld d, #0
+	ld hl, #bank_bits_p8n
+	ld a, (cpu_is_P8E)
+	or a
+	jr z, 1f
+	ld hl, #bank_bits_p8e
+1:
+	add hl, de
+	ld d, (hl)		; D = OUT2 bank bits
+	ld a, e
+	or a
+	jr z, 2f
+	; to a code bank: stop the multiboard readers first
+	ld (cur_bank), a
+	ld hl, #ctcss_idle_sample
+	ld (ctcss_dec_src), hl
+	call out2_set_bank
+	pop de
+	pop hl
+	ret
+2:
+	; back to bank 0: switch first, then let the readers look again
+	call out2_set_bank
+	xor a
+	ld (cur_bank), a
+	ld hl, #0x8000
+	ld (ctcss_dec_src), hl
+	pop de
+	pop hl
+	ret
+
+	; OUT2 = bus state | D.  An interrupt between the two writes uses the
+	; new bits already, which is harmless: we run from fixed ROM.
+out2_set_bank:
+	ld a, d
+	ld (out2_bank), a
+	ld a, (out2_last)
+	and #~O2_BANK
+	or d
+	out (OUT2), a
+	ld (out2_last), a
 	ret
 
 i2c_sendbit:
@@ -12815,7 +12916,7 @@ locate_tx_band:
 	and a
 	sbc hl, de
 	sbc a, c                    ; current - start
-	jp c, 2f                 ; current < start, try next
+	jr c, 2f                 ; current < start, try next
 	load_ahl(tx_freq)
 	ld e, (ix+3)
 	ld d, (ix+4)
@@ -12823,7 +12924,7 @@ locate_tx_band:
 	and a
 	sbc hl, de
 	sbc a, c                    ; current - end
-	jp c, 3f                 ; current < end, found !
+	jr c, 3f                 ; current < end, found !
 2:
 	ld de, #size_bandrec
 	add ix, de
@@ -12847,7 +12948,7 @@ locate_band:
 	and a
 	sbc hl, de
 	sbc a, c                    ; current - start
-	jp c, 2f                 ; current < start, try next
+	jr c, 2f                 ; current < start, try next
 	load_ahl(rx_freq)
 	ld e, (ix+3)
 	ld d, (ix+4)
@@ -12855,7 +12956,7 @@ locate_band:
 	and a
 	sbc hl, de
 	sbc a, c                    ; current - end
-	jp c, 3f                 ; current < end, found !
+	jr c, 3f                 ; current < end, found !
 2:
 	ld de, #size_bandrec
 	add ix, de
@@ -12868,7 +12969,7 @@ locate_band:
 3:
 	ld a, b
 	or a
-	jp z, 1f
+	jr z, 1f
 	ld a, #num_bandrecs + 1
 	sub b                ; b is 6....1, want 1...6, 7 - 6 = 1, 7 - 1 = 6
 1:
@@ -12909,7 +13010,7 @@ set_duplex_from_tx_rx:
 	call compare_tx_rx_freq    ; ahl has subtract value, CY and Z also
 	save_ahl(duplex_shift)
 	ld a, #DPX_DUPLEX
-	jp nz, 1f
+	jr nz, 1f
 	load_ahl(cfg_other_duplex)
 	save_ahl(duplex_shift)
 	ld a, #DPX_SIMPLEX
@@ -12926,19 +13027,19 @@ set_duplex_from_tx_rx:
 determine_tx_div:
 	ld a, (duplex_state)
 	cp #DPX_DUPLEX
-	jp z, 1f
+	jr z, 1f
 	cp #DPX_REVERSE
-	jp z, 2f
+	jr z, 2f
 	cp #DPX_SPLIT
-	jp z, 3f
+	jr z, 3f
 	load_ahl(rx_freq)         ; duplex 0, tx follows rx
 	save_ahl(tx_freq)
-	jp 3f
+	jr 3f
 1:
 	load_ahl(rx_freq)         ; duplex 1, tx = rx + shift (shift neg. usually)
 	add_ahl_de(duplex_shift)
 	save_ahl(tx_freq)
-	jp 3f
+	jr 3f
 2:
 	load_ahl(rx_freq)         ; duplex 2, tx = rx + shift
 	sub_ahl_de(duplex_shift)
@@ -12969,7 +13070,7 @@ determine_rx_div:
 
 	ld a, (cfg_inj_below)
 	or a
-	jp nz, 1f
+	jr nz, 1f
 
 	load_ahl(cfg_if_freq)
 	ld bc, (rx_bstep_cfg)
@@ -12997,37 +13098,37 @@ get_scan_patience:
 set_legal_tx_flag:
 	load_ahl(cfg_tx_band_start)
 	sub_ahl_de(tx_freq)
-	jp nc, 2f                  ; start >= vfo, illegal
+	jr nc, 2f                  ; start >= vfo, illegal
 
 	load_ahl(tx_freq)
 	sub_ahl_de(cfg_tx_band_end)
-	jp c, 1f                   ; vfo < end, and start < vfo, legal
+	jr c, 1f                   ; vfo < end, and start < vfo, legal
 2:
 	load_ahl(tx_freq)
 	sub_ahl_de(cfg_tx_oob_0)
 	or l
 	or h
-	jp z, 1f                   ; vfo at "oob tx spot", legal after all
+	jr z, 1f                   ; vfo at "oob tx spot", legal after all
 	load_ahl(tx_freq)
 	sub_ahl_de(cfg_tx_oob_1)
 	or l
 	or h
-	jp z, 1f                   ; vfo at "oob tx spot", legal after all
+	jr z, 1f                   ; vfo at "oob tx spot", legal after all
 	load_ahl(tx_freq)
 	sub_ahl_de(cfg_tx_oob_2)
 	or l
 	or h
-	jp z, 1f                   ; vfo at "oob tx spot", legal after all
+	jr z, 1f                   ; vfo at "oob tx spot", legal after all
 	load_ahl(tx_freq)
 	sub_ahl_de(cfg_tx_oob_3)
 	or l
 	or h
-	jp z, 1f                   ; vfo at "oob tx spot", legal after all
+	jr z, 1f                   ; vfo at "oob tx spot", legal after all
 	load_ahl(tx_freq)
 	sub_ahl_de(cfg_tx_oob_4)
 	or l
 	or h
-	jp z, 1f                   ; vfo at "oob tx spot", legal after all
+	jr z, 1f                   ; vfo at "oob tx spot", legal after all
 
 	ld a, (local_mode)         ; illegal if not local_mode 
 	ld (tx_is_legal), a
@@ -13048,7 +13149,7 @@ step_duplex_state:
 1:
 	ld (duplex_state), a
 	cp #DPX_DUPLEX
-	jp z, 1f
+	jr z, 1f
 	load_ahl(rx_freq)        ; 1 to 2 or 2 to 0, flip rx/tx
 	push af
 	push hl
@@ -13083,11 +13184,11 @@ set_duplex_shift_pos:
 set_tx_freq:
 	ld a, (digidx)
 	cp #3
-	jp c, 1f               ; 1...2 digits
+	jr c, 1f               ; 1...2 digits
 	cp #5
 	call c, fill_implied   ; if 3 or 4 digits, fix to abs.
 	call a2i               ; AHL freq
-	jp 2f
+	jr 2f
 1:
 	call a2i_byte
 	call point_ix_memory_a
@@ -13256,7 +13357,7 @@ check_and_clamp_divisor:
 	ld a, (cfg_synth_card)
 	cp #S8D
 	ld a, e       ; get 3rd byte of divisor
-	jp nz, 1f     ; go if RC58 or RB58 case
+	jr nz, 1f     ; go if RC58 or RB58 case
 	cp #2          ; RD58 case
 	ret c         ; ok, E was 0/1, AHL now 0/1HL
 	imm_ahl(0x1FFFF)
@@ -13323,14 +13424,14 @@ halt_txsynth:
 	set 2, a                ; cut supply, prediv & pll
 	res 3, a                ; cut supply, vco and amps
 	ld (synth_ctrl), a
-	jp load_synth_ctrl
+	jr load_synth_ctrl
 
 enable_txsynth:
 	ld a, (synth_ctrl)
 	res 2, a                ; supply on, prediv & pll
 	set 3, a                ; supply on, vco and amps
 	ld (synth_ctrl), a
-	jp load_synth_ctrl
+	jr load_synth_ctrl
 
 synth_dev_and_ctrl_into_c:
 	rlca
@@ -14091,7 +14192,7 @@ ctcss_off_nohang:
 	dec a                         ; if 1
 	jp z, ctcss_generator_off     ; RFC DAC method - off
 	dec a                         ; if 2
-	jp z, ctcss_fx465_off         ; addon FX465 method - off
+	jr z, ctcss_fx465_off         ; addon FX465 method - off
 
 	; and else, default, plain and simple i8253 generator off
 
@@ -14114,7 +14215,7 @@ ctcss_maybe:
 
 	call get_ctcss_tx_hz
 	or a
-	jp z, ctcss_off_nohang     ; tx hz is zero means off.
+	jr z, ctcss_off_nohang     ; tx hz is zero means off.
 
 	ld c, a               ; keep here for a while
 	ld (ctcss_is_on), a   ; also a flag, nz or not. now nz
@@ -14125,7 +14226,7 @@ ctcss_maybe:
 	dec a                         ; if 1
 	jp z, ctcss_generator_on      ; RFC DAC method
 	dec a                         ; if 2
-	jp z, ctcss_fx465_on          ; addon FX465 method
+	jr z, ctcss_fx465_on          ; addon FX465 method
 
 	; and else, default, plain and simple i8253 generator on
 	; CTCSS proper frequency OH5NXO/OH1E
@@ -14204,7 +14305,7 @@ ctcss_fx465_on:
 	ret nz                 ; cannot tx with FX465 in duplex functions.
 
 	ld a, c                ; Hz still in C.
-	jp ctcss_fx465_tx
+	jr ctcss_fx465_tx
 
 
 ;----------------------------------------------------------------------
@@ -14212,12 +14313,12 @@ ctcss_fx465_on:
 ctcss_fx465_tx:
 
 	ld d, #0               ; /TX
-	jp load_fx465
+	jr load_fx465
 
 ctcss_fx465_rx:
 
 	ld d, #1               ; RX
-	jp load_fx465
+	jr load_fx465
 
 
 load_fx465:
@@ -14364,7 +14465,7 @@ calculate_sintab:
 	pop hl                    ; get back destination page
 	ld (hl), a
 	inc l
-	jp nz, 2b                 ; do them all until index wraps at 256
+	jr nz, 2b                 ; do them all until index wraps at 256
 
 	ret
 
@@ -14403,7 +14504,7 @@ ctcss_enc_start:
 	ld hl, #ctcss_enc_entry
 	ld (ctcss_enc_jump), hl
 
-	jp ctcss_revector
+	jr ctcss_revector
 
 ctcss_generator_off:
 ctcss_enc_stop:
@@ -14428,7 +14529,7 @@ ctcss_dec_start:
 	ld hl, #ctcss_dec_entry
 	ld (ctcss_dec_jump), hl
 
-	jp ctcss_revector
+	jr ctcss_revector
 
 init_ctcss:
 
@@ -14457,9 +14558,9 @@ ctcss_dec_startstop:
 	ld a, (cfg_ctcss_input_method)
 	or a
 	jr nz, 1f                 ; ... skip if method is not dsp
-	jp ctcss_dec_start
+	jr ctcss_dec_start
 1:
-	jp ctcss_dec_stop
+	jr ctcss_dec_stop
 
 
 ; from systick, see what has happened in tone correlation process
@@ -14832,7 +14933,7 @@ get_rfc_hl:
 1:
 	sbc hl, de
 	sbc a, c
-	jp nc, 1b                 ; modulo down to 0...99999
+	jr nc, 1b                 ; modulo down to 0...99999
 	add hl, de
 	adc a, c
 
@@ -14843,7 +14944,7 @@ get_rfc_hl:
 	inc c
 	sbc hl, de
 	sbc a, #0
-	jp nc, 1b
+	jr nc, 1b
 
 	ld hl, #rfctab
 	ld b, #0
@@ -14860,8 +14961,10 @@ save_nvmisc_and_restart:
 
 #ifdef P8N
 	ld hl, #nvstart
-	ld d, #O2_LCD1 & ~O2_SMEM
-	ld e, #O2_LCD1 |  O2_SMEM
+	LD_A_OUT2(O2_LCD1 | O2_SMEM)
+	ld e, a			; normal: SMEM=1
+	and #~O2_SMEM
+	ld d, a			; battery RAM: SMEM=0
 	ld c, #OUT2
 1:
 	out (WD), a
@@ -14893,8 +14996,10 @@ save_nvdata:
 
 #ifdef P8N
 	ld hl, #nvstart
-	ld d, #O2_LCD1 & ~O2_SMEM
-	ld e, #O2_LCD1 |  O2_SMEM
+	LD_A_OUT2(O2_LCD1 | O2_SMEM)
+	ld e, a			; normal: SMEM=1
+	and #~O2_SMEM
+	ld d, a			; battery RAM: SMEM=0
 	ld c, #OUT2
 1:
 	ld a, (hl)
@@ -14919,8 +15024,10 @@ load_nvdata:
 
 #ifdef P8N
 	ld hl, #nvstart
-	ld d, #O2_LCD1 & ~O2_SMEM
-	ld e, #O2_LCD1 |  O2_SMEM
+	LD_A_OUT2(O2_LCD1 | O2_SMEM)
+	ld e, a			; normal: SMEM=1
+	and #~O2_SMEM
+	ld d, a			; battery RAM: SMEM=0
 	ld c, #OUT2
 1:
 	out (WD), a
@@ -15514,16 +15621,16 @@ repeater_init:
 repeater_halt:
 	call repeater_aoff
 	call repeater_txoff
-	jp repeater_init
+	jr repeater_init
 
 repeater_run:
 	ld a, (cfg_function)
 	dec a                       ; if 1
-	jp nz, repeater_init        ; not repeater, init in case later turned on
+	jr nz, repeater_init        ; not repeater, init in case later turned on
 
 	ld a, (cfg_repeater_suspended)
 	or a
-	jp z, 1f
+	jr z, 1f
 		ld a, (repeater_is_suspended)
 		or a
 		ret nz                     ; already. normal path during suspension.
@@ -15536,7 +15643,7 @@ repeater_run:
 		call z, repeater_txon
 		call repeater_send_qrt
 
-		jp repeater_halt
+		jr repeater_halt
 1:
 	ld a, (repeater_is_suspended)
 	or a
@@ -15570,7 +15677,7 @@ repeater_run:
 
 		ld a, (cfg_repeater_cmd_9_hidden)
 		or a
-		jp nz, 2f                          ; not allowed, skip
+		jr nz, 2f                          ; not allowed, skip
 
 		call repeater_aoff
 		call repeater_send_roger
@@ -15585,7 +15692,7 @@ repeater_run:
 		ld (txpwr_increment), a
 		call update_txpwr_if_tx
 		call repeater_send_roger
-		jp 2f
+		jr 2f
 1:
 	cp #1                              ; #1_, tighten squelch
 	jr nz, 1f
@@ -15594,7 +15701,7 @@ repeater_run:
 		ld a, (repeater_cfg_sqincr)
 		ld (squelch_tightening), a
 		call repeater_send_roger
-		jp 2f
+		jr 2f
 1:
 	cp #3                                  ; #3_ rise tx power
 	jr nz, 1f
@@ -15604,7 +15711,7 @@ repeater_run:
 		ld (txpwr_increment), a
 		call update_txpwr_if_tx
 		call repeater_send_roger
-		jp 2f
+		jr 2f
 1:
 	cp #5                                  ; #5_ toggle sending of rssi-bongos
 	jr nz, 1f
@@ -15614,7 +15721,7 @@ repeater_run:
 		xor #1
 		ld (repeater_cfg_rssi_bongos), a
 		call repeater_send_roger
-		jp 2f
+		jr 2f
 1:
 	cp #0xFE                                ; internal - just roger
 	jr nz, 1f
@@ -15627,7 +15734,7 @@ repeater_run:
 		call repeater_send_roger
 		pop af
 		call z, repeater_txoff
-		jp 2f
+		jr 2f
 1:
 2:
 	ld hl, (repeater_state)
@@ -15682,7 +15789,7 @@ dtmf_commands:
 
 	ld a, (hl)
 	cp #'#'          ; #xxxx
-	jp z, dtmf_commands_hash
+	jr z, dtmf_commands_hash
 
 	ret
 
@@ -15905,8 +16012,8 @@ repeater_boot:
 	call repeater_setstate
 
 	call repeater_check_timer
-	jp nz, 1f
-		jp repeater_idle
+	jr nz, 1f
+		jr repeater_idle
 1:
 	ret
 
@@ -15922,12 +16029,12 @@ repeater_idle:
 
 	call repeater_setstate
 	call repeater_check_beep
-	jp z, 1f
-		jp repeater_opening
+	jr z, 1f
+		jr repeater_opening
 1:
 	call repeater_check_carrier_access
-	jp z, 1f
-		jp repeater_opening
+	jr z, 1f
+		jr repeater_opening
 1:
 	ret
 
@@ -15948,11 +16055,11 @@ repeater_opening:
 	call repeater_setstate
 
 	call repeater_check_timer
-	jp nz, 1f
-		jp repeater_beep_too_long
+	jr nz, 1f
+		jr repeater_beep_too_long
 1:
 	call repeater_check_carrier
-	jp nz, 1f
+	jr nz, 1f
 
 repeater_open_by_reset:                ; from /LOCAL
 
@@ -15960,7 +16067,7 @@ repeater_open_by_reset:                ; from /LOCAL
 		call repeater_send_id_greet
 		call repeater_start_timer_ID
 		call repeater_start_timer_OPEN
-		jp repeater_open
+		jr repeater_open
 1:
 	ret
 
@@ -15973,7 +16080,7 @@ repeater_beep_too_long:
 	call repeater_recheck_beep_quickly
 	ret nz                               ; still accesstone
 
-	jp repeater_idle                     ; nothing. go idle.
+	jr repeater_idle                     ; nothing. go idle.
 
 	;
 	; open: (tx on, but audio muted)
@@ -15991,30 +16098,30 @@ repeater_open:
 	call repeater_check_report_req
 
 	call repeater_check_timer_BLIP
-	jp nz, 1f
+	jr nz, 1f
 		call repeater_send_blip
 1:
 	call repeater_check_carrier
-	jp z, 1f
+	jr z, 1f
 		call repeater_recheck_beep_quickly
-		jp nz, 1f
+		jr nz, 1f
 			call repeater_aon
 			call repeater_start_timer_HOG
-			jp repeater_active
+			jr repeater_active
 1:
 	call is_ptt_pressed
-	jp z, 1f
+	jr z, 1f
 		call repeater_aon
 		call repeater_start_timer_HOG
-		jp repeater_active
+		jr repeater_active
 1:
 	call repeater_check_timer_ID
-	jp nz, 1f
+	jr nz, 1f
 		call repeater_send_id_during
 		call repeater_start_timer_ID
 1:
 	call repeater_check_timer
-	jp nz, 1f
+	jr nz, 1f
 		; end of open time.
 		; either stay in closing state
 		; or fully close now
@@ -16025,7 +16132,7 @@ repeater_open:
 		jr z, 2f
 			call repeater_txoff               ; quiet time
 			call repeater_start_timer_CLS
-			jp repeater_closing
+			jr repeater_closing
 	2:
 		call repeater_send_id_bye             ; fully close, no closing state
 		call repeater_txoff
@@ -16049,14 +16156,14 @@ repeater_active:
 	call repeater_setstate
 
 	call repeater_check_carrier
-	jp nz, 1f
+	jr nz, 1f
 
 		call is_ptt_pressed
-		jp nz, 1f                    ; if PTT is pressed, stay active.
+		jr nz, 1f                    ; if PTT is pressed, stay active.
 			call repeater_aoff
 			call repeater_start_timer_BLIP
 			call repeater_start_timer_OPEN
-			jp repeater_open
+			jr repeater_open
 1:
 
 	; this omission is a crummy fix
@@ -16074,7 +16181,7 @@ repeater_active:
 #endif
 
 	call repeater_check_timer
-	jp nz, 1f
+	jr nz, 1f
 		call repeater_aoff
 		call repeater_send_to
 		call repeater_txoff
@@ -16097,24 +16204,24 @@ repeater_closing:
 	call repeater_setstate
 
 	call repeater_check_carrier
-	jp z, 1f
+	jr z, 1f
 		call repeater_recheck_beep_quickly
-		jp nz, repeater_reopening
+		jr nz, repeater_reopening
 
 		call repeater_txon
 		call repeater_aon
 		call repeater_start_timer_HOG
-		jp repeater_active
+		jr repeater_active
 1:
 	call is_ptt_pressed
-	jp z, 1f
+	jr z, 1f
 		call repeater_txon
 		call repeater_aon
 		call repeater_start_timer_HOG
-		jp repeater_active
+		jr repeater_active
 1:
 	call repeater_check_timer
-	jp nz, 1f
+	jr nz, 1f
 		call repeater_test_id_bye_length
 		jp z, repeater_idle            ; if id bye is empty, 
 
@@ -16139,10 +16246,10 @@ repeater_reopening:
 	call repeater_setstate
 
 	call repeater_recheck_beep_quickly
-	jp nz, 1f
+	jr nz, 1f
 
 		call repeater_check_carrier
-		jp z, 2f
+		jr z, 2f
 			call repeater_txon
 			call repeater_aon
 			call repeater_start_timer_HOG
@@ -16154,14 +16261,14 @@ repeater_reopening:
 		jp repeater_open
 1:
 	call is_ptt_pressed
-	jp z, 1f
+	jr z, 1f
 		call repeater_txon
 		call repeater_aon
 		call repeater_start_timer_HOG
 		jp repeater_active
 1:
 	call repeater_check_timer
-	jp nz, 1f
+	jr nz, 1f
 		call repeater_test_id_bye_length
 		jp z, repeater_idle            ; if id bye is empty, 
 
@@ -16180,7 +16287,7 @@ repeater_reopening:
 repeater_lockout:
 	call repeater_setstate
 	call repeater_check_timer
-	jp nz, 1f
+	jr nz, 1f
 		call repeater_txon
 		call repeater_send_id_bye
 		call repeater_txoff
@@ -16651,7 +16758,7 @@ send_cw_prolog:
 
 	call ccir_on
 	call silence_timer1
-	jp 1f
+	jr 1f
 
 send_cw_epilog:
 
@@ -16678,7 +16785,7 @@ send_cw:
 	ld a, (hl)
 	inc hl
 	cp #EOS
-	jp z, 1f
+	jr z, 1f
 	call cw_chr
 	djnz 1b
 1:
@@ -16720,28 +16827,28 @@ cw_chr_1:               ; fill slots contained in chr
 	call cw_ditdash     ; 1 or 3 slots tone
 	call cw_pause_1     ; 1 slot silence
 	pop af
-	jp 1b
+	jr 1b
 
 cw_pause_1:
 	ld a, (cw_slot_ticks)
 	ld hl, #4
-	jp cw_slots
+	jr cw_slots
 
 cw_pause_2:
 	ld a, (cw_slot_ticks)
 	add a, a
 	ld hl, #4
-	jp cw_slots
+	jr cw_slots
 
 cw_ditdash:
 	ld a, (cw_slot_ticks)
-	jp c, 1f            ; CY=1=dit = 1 slot only
+	jr c, 1f            ; CY=1=dit = 1 slot only
 	ld d, a
 	add a, d
 	add a, d               ; small values, *= 3 wont carry
 1:
 	ld hl, (cw_pitch_cnt)
-	jp cw_slots
+	jr cw_slots
 
 cw_slots:
 	ld d, a
@@ -16790,7 +16897,7 @@ send_notes:
 	ld a, (hl)
 	inc hl
 	cp #EOS
-	jp z, 1f
+	jr z, 1f
 	push hl
 	push bc
 	call send_note_chr
@@ -17031,7 +17138,7 @@ dpydigzb_xxx:
 	push af
 	ld a, (yucko_alfa_draw_long_6_only)
 	or a
-	jp z, 1f
+	jr z, 1f
 	xor a
 	ld (yucko_alfa_draw_long_6_only), a
 	pop af
@@ -17042,12 +17149,12 @@ dpydigzb_xxx:
 dpydigzb:
 	or a
 dpydigzb_Z_valid:
-	jp z, 1f
+	jr z, 1f
 	ld c, #0       ; seen nonzero
 1:
-	jp nz, dpydig
+	jr nz, dpydig
 	ld a, c       ; replace initial 0's with ' '
-	jp dpydig
+	jr dpydig
 
 dpyhexzb:
 	push af
@@ -17059,7 +17166,7 @@ dpyhexzb:
 	call dpydigzb_Z_valid
 	pop af
 	and #0xF
-	jp dpydigzb_Z_valid
+	jr dpydigzb_Z_valid
 
 dpyval255:
 
@@ -17070,12 +17177,12 @@ dpyval255:
 1:
 	inc h		    ; hundreds
 	sub l
-	jp nc, 1b
+	jr nc, 1b
 	add a, l
 1:
 	inc b		    ; tens
 	sub c
-	jp nc, 1b
+	jr nc, 1b
 	add a, c
 
 	ld c, a 	    ; ones
@@ -17093,7 +17200,7 @@ dpyval255:
 	ld a, b
 	call dpydig
 	ld a, c
-	jp dpydig
+	jr dpydig
 
 dpyval99:
 
@@ -17112,7 +17219,7 @@ dpyval99:
 1:
 	call dpydig     ; keeps BC
 	ld a, c
-	jp dpydig
+	jr dpydig
 
 ;----------------------------------------------------------------------
 
@@ -17136,7 +17243,7 @@ dpydiv9:
 	push bc
 	call byte_decade
 	pop bc
-	jp dpydig
+	jr dpydig
 
 dpydiv99:
 	push bc
@@ -17145,7 +17252,7 @@ dpydiv99:
 	ld a, b
 	call byte_decade   ; again with residue, next decade
 	pop bc
-	jp dpydig
+	jr dpydig
 
 ;	digit or character in a
 ;	location table in de
@@ -17205,7 +17312,7 @@ dpydig:
 draw_long_signed:
 
 	bit 7, a
-	jp z, draw_long ; positive
+	jr z, draw_long ; positive
 
 	; save cursor
 
@@ -17334,7 +17441,7 @@ bin_bcd_AHL_DDEEHHLL:
 	ld d, a
 
 	ld b, #24         ; 24 bits binary value
-	jp 2f            ; 24 shifts
+	jr 2f            ; 24 shifts
 1:
 	; BCD adjustment after all but last shift
 	; if nibble >= 5, 3 added to nibble
@@ -17435,7 +17542,7 @@ draw_menu_lower_row:
 
 	ld a, (cu_is_alfa)
 	or a
-	jp nz, 1f
+	jr nz, 1f
 	call draw_lower_colon
 	ld a, #' '
 	call dpydig
@@ -17459,7 +17566,7 @@ draw_menu_lower_row:
 	cp #CFG_DPX
 	jp z, draw_menu_dpx
 	cp #CFG_cSEC
-	jp z, draw_menu_csec
+	jr z, draw_menu_csec
 
 	call sput
 	.asciz "???????"
@@ -17538,7 +17645,7 @@ draw_menu_csec:
 	call load_menu_ptr
 	ld a, (hl)
 	or a
-	jp z, 1f
+	jr z, 1f
 	call dpyval255
 	ld a, #'0'
 	jp dpydig      ; NNN0
@@ -17571,7 +17678,7 @@ draw_menu_dpx:               ; 7 zeroblanked digits
 	load_ahl_ix_0
 	or h
 	or l
-	jp z, 1f
+	jr z, 1f
 	load_ahl_ix_0
 	jp draw_long_signed
 1:
@@ -17623,7 +17730,7 @@ draw_menu_str:
 draw_rfc_dpy:
 	ld a, (display_buffer_time)
 	or a
-	jp nz, draw_remote_dyn_dpy
+	jr nz, draw_remote_dyn_dpy
 	ld a, (rfc)
 	call dpyval255
 	ld a, #' '
@@ -17634,9 +17741,9 @@ draw_rfc_dpy:
 
 menu_rfc_change:
 	cp #-1
-	jp z, 1f
+	jr z, 1f
 	cp #+1
-	jp z, 1f
+	jr z, 1f
 	call a2i_byte
 	ld (rfc), a
 	xor a
@@ -17651,7 +17758,7 @@ menu_rfc_change:
 draw_sql_dpy:
 	ld a, (display_buffer_time)
 	or a
-	jp nz, draw_remote_dyn_dpy
+	jr nz, draw_remote_dyn_dpy
 	ld a, (cfg_squelch_level)
 	call dpyval255
 	ld a, #' '
@@ -17663,7 +17770,7 @@ draw_sql_dpy:
 draw_sqB_dpy:
 	ld a, (display_buffer_time)
 	or a
-	jp nz, draw_remote_dyn_dpy
+	jr nz, draw_remote_dyn_dpy
 	ld a, (cfg_squelch_BIG)
 	call dpyval255
 	ld a, #' '
@@ -17674,7 +17781,7 @@ draw_sqB_dpy:
 
 menu_sql_change:
 	cp #0
-	jp nz, 1f
+	jr nz, 1f
 	call a2i_byte
 	ld (cfg_squelch_level), a
 	ret
@@ -17686,7 +17793,7 @@ menu_sql_change:
 
 menu_sqB_change:
 	cp #0
-	jp nz, 1f
+	jr nz, 1f
 	call a2i_byte
 	ld (cfg_squelch_BIG), a
 	ret
@@ -17728,19 +17835,19 @@ decoder_hist_rewind:
 
 ccir_hist_walk:
 	ld hl, #ccir_hist_finger
-	jp decoder_history_walk
+	jr decoder_history_walk
 
 dtmf_hist_walk:
 	ld hl, #dtmf_hist_finger
-	jp decoder_history_walk
+	jr decoder_history_walk
 
 fsk_hist_walk:
 	ld hl, #fsk_hist_finger
-	jp decoder_history_walk
+	jr decoder_history_walk
 
 gps_hist_walk:
 	ld hl, #gps_hist_finger
-	jp decoder_history_walk
+	jr decoder_history_walk
 
 decoder_history_walk:
 	add a, (hl)
@@ -17820,7 +17927,7 @@ toggle_or_position_menu:
 
 	ld a, (digidx)
 	or a
-	jp nz, 1f              ; jump if any digits
+	jr nz, 1f              ; jump if any digits
 
 	; Just ENT - toggle setup
 
@@ -17837,9 +17944,9 @@ toggle_or_position_menu:
 	ld ix, #digbuf
 
 	cp #1                   ; just a single digit ?
-	jp z, 1f
+	jr z, 1f
 	cp #2                   ; two digits ?
-	jp z, 2f
+	jr z, 2f
 
 	; one and two digits here
 
@@ -17848,11 +17955,11 @@ toggle_or_position_menu:
 	call div248            ; /= 100, result L has top, A has sub indexes
 	ld b, a
 	ld a, l                ; a top index, b sub index
-	jp 3f
+	jr 3f
 1:
 	ld a, (ix + 0)         ; top index
 	ld b, #0                ; subindex 0
-	jp 3f
+	jr 3f
 2:
 	ld a, (ix + 0)         ; top index
 	ld b, (ix + 1)         ; sub index
@@ -17893,7 +18000,7 @@ toggle_or_position_menu:
 	and a
 	sbc hl, de
 	pop hl
-	jp c, 1f
+	jr c, 1f
 	ld hl, #end_menu - size_menurec       ; stick at last
 1:
 	ld (menu_ptr), hl
@@ -17910,7 +18017,7 @@ toggle_or_position_menu:
 menu_enter_or_walk:
 	ld a, (digidx)
 	or a
-	jp z, menu_next
+	jr z, menu_next
 
 	call menu_new_value
 	xor a
@@ -17922,9 +18029,9 @@ menu_defval_or_exec:
 	call load_menu_ptr            ; into hl
 	ld a, (ix + offset_type)
 	cp #CFG_DPX
-	jp z, menu_set_duplex_def      ; CFG_DPX, copy cfg_other_duplex
+	jr z, menu_set_duplex_def      ; CFG_DPX, copy cfg_other_duplex
 	cp #CFG_FREQ
-	jp z, menu_set_from_vfo        ; CFG_FREQ, copy rx_freq
+	jr z, menu_set_from_vfo        ; CFG_FREQ, copy rx_freq
 	cp #CFG_EXE
 	jp nz, reset_menurec
 	jp (hl)                        ; CFG_EXE, jump to ptr
@@ -17958,14 +18065,14 @@ menu_next_group:
 	ld a, (ix+offset_tag+1)
 	cp c
 	ret nz
-	jp 1b
+	jr 1b
 
 menu_next:
 	ld bc, #size_menurec
-	jp menu_next_prev
+	jr menu_next_prev
 menu_prev:
 	ld bc, #-size_menurec
-	jp menu_next_prev
+	jr menu_next_prev
 
 menu_next_prev:
 	ld hl, (menu_ptr)
@@ -17997,7 +18104,7 @@ remote_config_execute:
 
 	ld a, d
 	or a
-	jp nz, 1f            ; normal varible, search menu
+	jr nz, 1f            ; normal varible, search menu
 
 	ld a, e
 
@@ -18054,7 +18161,7 @@ remote_config_execute:
 	or (hl)
 	inc l              ; in page wrap
 	cp #EOS
-	jp z, 1f
+	jr z, 1f
 	ld (de), a
 	inc de
 	inc c
@@ -18077,13 +18184,13 @@ menu_new_value:
 	call load_menu_ptr          ; hl -> var
 	ld a, (ix+offset_type)
 	cp #CFG_BYTE
-	jp z, menu_new_value_byte
+	jr z, menu_new_value_byte
 	cp #CFG_WORD
-	jp z, menu_new_value_word
+	jr z, menu_new_value_word
 	cp #CFG_FREQ
 	jp z, menu_new_value_freq
 	cp #CFG_TAB
-	jp z, menu_new_value_tab
+	jr z, menu_new_value_tab
 	cp #CFG_DYN
 	jp z, menu_new_value_dyn
 	cp #CFG_RST
@@ -18093,7 +18200,7 @@ menu_new_value:
 	cp #CFG_DPX
 	jp z, menu_new_value_dpx
 	cp #CFG_cSEC
-	jp z, menu_new_value_csec
+	jr z, menu_new_value_csec
 
 	ret
 
@@ -18125,7 +18232,7 @@ menu_new_value_word:
 	push ix                       ; argh.... these must be generalized
 	pop hl
 
-	jp menu_word_value_changed
+	jr menu_word_value_changed
 
 
 menu_new_value_tab:
@@ -18136,14 +18243,14 @@ menu_new_value_tab:
 	call a2i_byte
 	pop bc
 	cp c
-	jp c, 1f
+	jr c, 1f
 	ld a, c
 	dec a
 1:
 	pop hl
 	ld (hl), a
 
-	jp menu_tab_value_changed
+	jr menu_tab_value_changed
 
 menu_word_value_changed:
 
@@ -18176,7 +18283,7 @@ menu_tab_value_changed:
 	cp #HI(cfg_gpio1_state)
 	jr nz, 1f
 
-	jp update_gpio12_foo
+	jr update_gpio12_foo
 1:
 	ld a, l
 	cp #LO(cfg_gpio2_state)
@@ -18185,7 +18292,7 @@ menu_tab_value_changed:
 	cp #HI(cfg_gpio2_state)
 	jr nz, 1f
 
-	jp update_gpio12_foo
+	jr update_gpio12_foo
 1:
 	ret
 
@@ -18244,7 +18351,7 @@ menu_new_value_dpx:
 
 menu_up_value:
 	ld a, #+1
-	jp 1f
+	jr 1f
 
 menu_dn_value:
 	ld a, #-1
@@ -18257,17 +18364,17 @@ menu_dn_value:
 	cp #CFG_DYN
 	jp z, menu_step_value_dyn
 	cp #CFG_BYTE
-	jp z, menu_step_value_byte
+	jr z, menu_step_value_byte
 	cp #CFG_cSEC
-	jp z, menu_step_value_byte
+	jr z, menu_step_value_byte
 	cp #CFG_TAB
-	jp z, menu_step_value_tab
+	jr z, menu_step_value_tab
 	cp #CFG_WORD
-	jp z, menu_step_value_word
+	jr z, menu_step_value_word
 	cp #CFG_FREQ
-	jp z, menu_step_value_freq
+	jr z, menu_step_value_freq
 	cp #CFG_DPX
-	jp z, menu_step_value_dpx
+	jr z, menu_step_value_dpx
 
 	pop af
 	ret         ; doh, +/- no effect
@@ -18288,11 +18395,11 @@ menu_step_value_freq:
 	pop ix
 	cp #+1
 	load_ahl_ix_0
-	jp z, 1f
+	jr z, 1f
 	and a
 	sbc hl, de
 	sbc a, #0
-	jp 2f
+	jr 2f
 1:
 	add hl, de
 	adc a, #0
@@ -18304,7 +18411,7 @@ menu_step_value_word:
 	pop af
 	ld bc, #1
 	cp #+1
-	jp z, 1f
+	jr z, 1f
 	ld bc, #-1
 1:
 	push hl
@@ -18337,12 +18444,12 @@ menu_step_value_tab:
 	pop hl
 	ld a, b
 	cp #-1
-	jp nz, 1f
+	jr nz, 1f
 	ld a, c
 	dec a             ; count - 1 if down from 0
 1:
 	cp c
-	jp c, 1f
+	jr c, 1f
 	xor a           ; 0 if up from max
 1:
 	ld (hl), a
@@ -18352,7 +18459,7 @@ menu_step_value_tab:
 
 menu_step_value_dyn:
 	pop af
-	jp 1f
+	jr 1f
 menu_new_value_dyn:
 	xor a
 1:
@@ -18369,17 +18476,17 @@ reset_menurec:
 	ld a, (ix + offset_type)
 
 	cp #CFG_BYTE
-	jp z, reset_menurec_byte
+	jr z, reset_menurec_byte
 	cp #CFG_TAB
-	jp z, reset_menurec_byte
+	jr z, reset_menurec_byte
 	cp #CFG_cSEC
-	jp z, reset_menurec_byte
+	jr z, reset_menurec_byte
 
 	cp #CFG_WORD
-	jp z, reset_menurec_word
+	jr z, reset_menurec_word
 
 	cp #CFG_STR
-	jp z, reset_menurec_str
+	jr z, reset_menurec_str
 
 	ret
 
@@ -19045,10 +19152,10 @@ set_defaults_band:
 	ld (cfg_synth_card), a
 	cp #S8B
 	ld hl, #defaults_6m
-	jp z, 1f
+	jr z, 1f
 	cp #S8C
 	ld hl, #defaults_2m
-	jp z, 1f
+	jr z, 1f
 	ld hl, #defaults_70cm
 1:
 	ldi_6(cfg_implied)
@@ -19087,10 +19194,10 @@ reset_menurecords:
 	pop de
 	ld a, d
 	cp #HI(end_menu)
-	jp nz, 1b
+	jr nz, 1b
 	ld a, e
 	cp #LO(end_menu)
-	jp nz, 1b
+	jr nz, 1b
 
 	ret
 
@@ -19499,7 +19606,7 @@ aisin_seiki_parse_latlon:
 	.ascii "TheEnd"
 	rom_cksum:
 	.db 0	; ROM checksum: 256 - sum(ROM[0 .. rom_cksum - 1]), set by ihx2bin.py
-rom_end:		; the C modules' _CODE area is linked here (tools/link.py)
+rom_end:		; linked code (C modules, SDCC library) follows (tools/link.py)
 
 	slack_at_end = 0x8000 - .
 
@@ -20259,6 +20366,12 @@ gps_valid_seconds:      BYTE     ; seconds downcounter from "good" nmea
 fx614_rxcnt:           BYTE ; XXX debug only
 
 junk:		WORD
+
+cur_bank:	BYTE	; set_bank: bank in the 0x8000 window
+out2_bank:	BYTE	; its OUT2 bits (O2_BANK)
+out2_last:	BYTE	; last handset bus state written to OUT2
+ctcss_dec_src:	WORD	; CTCSS DSP decoder sample address
+ctcss_idle_sample: BYTE	; stays 0: "no signal" while banked
 
 #ifdef C_MODULES
 C_BSS_SIZE = 64

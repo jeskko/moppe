@@ -7,11 +7,12 @@ Run from the repository root:
     make -C firmware && make -C firmware C=1 && make -C emu
     python3 -m unittest discover -s emu/tests -v
 
-The candidate defaults to `firmware/build-c/r58.bin`/`.map`, built by
-`make -C firmware C=1` (squelch and the FSK packet-CRC routines in C via
-SDCC); override with R58_CAND_ROM/R58_CAND_LST to diff any other build
-(e.g. a later hybrid-plan phase) against the same stock baseline. The
-whole module is skipped if the candidate files are not present.
+The reference is the released v3_Z ALs firmware as built by `make -C
+firmware verify` (`firmware/build-release/`, byte-identical to the
+release); override with R58_REF_ROM/R58_REF_LST. The candidate defaults to
+the current source, `firmware/build/`; set R58_CAND_ROM/R58_CAND_LST for
+another build, e.g. `firmware/build-c/r58.{bin,map}` (`make -C firmware
+C=1`). The module is skipped if either build is missing.
 
 NV starting images come from test_radio.make_sane_nv(), which always
 builds from the *stock* firmware (it is cached per card/cu/synth_card,
@@ -27,22 +28,24 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "emu", "python"))
 
 from r58emu import P8E, P8N, CU53AN, CU58AF, AD_SQL  # noqa: E402
-from test_radio import make_sane_nv, ROM as STOCK_ROM, LST as STOCK_LST  # noqa: E402
+from test_radio import make_sane_nv  # noqa: E402
 from difftest import run_diff  # noqa: E402
 
+STOCK_ROM = os.environ.get("R58_REF_ROM", os.path.join(ROOT, "firmware", "build-release", "r58.bin"))
+STOCK_LST = os.environ.get("R58_REF_LST", os.path.join(ROOT, "firmware", "build-release", "r58.map"))
 STOCK = (STOCK_ROM, STOCK_LST)
 
-CAND_ROM = os.environ.get("R58_CAND_ROM", os.path.join(ROOT, "firmware", "build-c", "r58.bin"))
-CAND_LST = os.environ.get("R58_CAND_LST", os.path.join(ROOT, "firmware", "build-c", "r58.map"))
+CAND_ROM = os.environ.get("R58_CAND_ROM", os.path.join(ROOT, "firmware", "build", "r58.bin"))
+CAND_LST = os.environ.get("R58_CAND_LST", os.path.join(ROOT, "firmware", "build", "r58.map"))
 CAND = (CAND_ROM, CAND_LST)
 
 
 def setUpModule():
-    if not (os.path.exists(CAND_ROM) and os.path.exists(CAND_LST)):
-        raise unittest.SkipTest(
-            "candidate build not found (%s / %s); build it with "
-            "`make -C firmware C=1`, or point R58_CAND_ROM/R58_CAND_LST "
-            "at another build to diff" % (CAND_ROM, CAND_LST))
+    for rom, lst, how in ((STOCK_ROM, STOCK_LST, "make -C firmware verify"),
+                          (CAND_ROM, CAND_LST, "make -C firmware")):
+        if not (os.path.exists(rom) and os.path.exists(lst)):
+            raise unittest.SkipTest("build not found (%s / %s); run `%s`"
+                                    % (rom, lst, how))
 
 
 # --------------------------------------------------------------- scenarios

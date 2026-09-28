@@ -111,31 +111,38 @@ decided otherwise):
   checked by `make verify` via `build-as80/`. Retire it (and tools/as80)
   once the user agrees; after the first real edit to r58.s the two diverge.
 
-### Phase 2: OUT2 shadow and bank infrastructure (still 32 KB)
-- Add `out2_shadow` (RAM) and route **every** OUT2 write through it,
-  preserving the bank bits (RS, RA14, RA15, bit 3). Today's writers use
-  absolute constants: `start`, `keypad`, `display_cu53an`/`display_group`/
-  `display_bit*`, `i2c_scl_low/high`, and the three NV copy loops. The
-  handset bus code must OR the current bank bits into CS/CLK/DP values
-  without adding jitter that matters (the CU53 and I²C timing is loose).
-- **Important:** `keypad` and `display` run from the sir soft interrupt
-  (`dosir`), which can interrupt banked mainline code. So OUT2 writes from
-  them must keep the bank bits. That is why the shadow comes before any
-  banked code.
-- Bank-select API (asm): `bank_select(n)` writes the page bits from a
-  per-card table (P8E/P8N) and `cpu_is_P8E`; `bank_call` trampolines in
-  fixed ROM save and restore the previous bank.
-- The CTCSS DSP decoder reads the multiboard at 0x80xx **from the ISR**.
-  If code is banked in the window, that read returns ROM. Either
-  (a) the ISR saves the shadow, selects RS=0, reads, and restores (a few
-  cycles in a constant-time path; the slack must be checked), or (b) the
-  DSP CTCSS decoder is unavailable while the window holds code, or (c) only
-  in multiboard-less builds. Decide in this phase; (b) plus a build option
-  is likely simplest, since multiboards are uncommon. The DTMF decoder read
-  runs in systick (ISR), same issue.
-- Tests: emulator banking tests (`emu/tests/test_banking.py`) plus a
-  firmware test that runs code from the window while the soft interrupt
-  redraws the display.
+### Phase 2: OUT2 shadow and bank infrastructure (still 32 KB) — done 2026-09-28
+- **Space first.** The fixed ROM had 47 bytes free, too few for this
+  phase: `tools/jp2jr.py` turned 318 `jp` into `jr` outside the timing-
+  critical code (its exclusion list is the "stays in assembler" table),
+  freeing 318 bytes. After Phase 2: 142 bytes free in the stock build
+  (0x7F72), more in `C=1`. Watch page-aligned tables: 12 bytes added before
+  `crctbls` once cost ~250 bytes of padding (`slack_at_this_xxx_hole`).
+- `out2_bank` holds the bank bits (O2_BANK = SMEM/RA16, RS, RA15, RA14);
+  every OUT2 writer ORs them in (`LD_A_OUT2(bus)`): keypad, display,
+  I²C SCL, NV copy loops (P8N builds). Each bus routine records its final
+  bus state in `out2_last`, which `set_bank` merges with the new bank bits.
+  Only a routine's *last* OUT2 write matters for banked code (an interrupt
+  returns into it only after the routine has finished); the test checks it.
+- API (fixed ROM): `get_bank` (A = bank), `set_bank` (A → bank; destroys
+  A, F), per-card bit tables. Bank 0 = power-on state (EPROM1 socket /
+  multiboard), bank 1 = EPROM0 0xC000-0xFFFF (RS|RA14). Calls go through
+  SDCC's library trampolines, which use exactly these two helpers:
+  `ld e, #bank / ld hl, #fn / call ___sdcc_bcall_ehl` (A, DE, HL come back,
+  BC is destroyed); C `__banked` functions use the same path.
+- Multiboard readers decided: the DTMF decoder (systick) skips its sample
+  while `cur_bank` ≠ 0; the CTCSS DSP decoder reads through
+  `ctcss_dec_src`, which `set_bank` points at 0x8000 or at a RAM zero byte
+  ("no signal"). Still constant-time, +20 T per PIO tick (1969 Hz, ~1 % of
+  a P8N) while the DSP decoder runs. Order in `set_bank`: readers off
+  before leaving bank 0, back on after returning to it.
+- Tests: `test_banking.BankedFirmware` builds a 64 KB image with a routine
+  in bank 1, enters it from `mainloop` through `___sdcc_bcall_ehl` (P8E and
+  P8N), and checks: bank bits in OUT2 while it runs, display redrawn and
+  keypad scanned by the soft interrupt meanwhile, A returned, bank 0 and
+  the readers restored, no DTMF input taken from ROM, no watchdog reset.
+  A mutated display routine that drops the bank bits fails it. The
+  differential tests show no behaviour change against the release.
 
 ### Phase 3: banked EPROM0 (48 KB)
 - **Portable page:** OUT2 = RS|RA14 (bit 3 kept at 1) maps EPROM0 chip

@@ -64,14 +64,17 @@ def main():
     a = ap.parse_args()
 
     syms = rel_symbols(a.asm)
-    cmd = ["sdldz80", "-m", "-w", "-i"]
+    if "rom_end" not in syms:
+        sys.exit("link.py: %s does not define rom_end" % a.asm)
+    # the SDCC library is always searched: assembler code uses its
+    # banked-call trampolines too
+    cmd = ["sdldz80", "-m", "-w", "-i", "-b", "_CODE=0x%04X" % syms["rom_end"],
+           "-k", sdcc_libdir(), "-l", "z80"]
     if a.cmods:
-        for s in ("rom_end", "c_bss", "c_bss_end"):
+        for s in ("c_bss", "c_bss_end"):
             if s not in syms:
                 sys.exit("link.py: %s does not define %s (built without -DC_MODULES?)" % (a.asm, s))
-        cmd += ["-b", "_CODE=0x%04X" % syms["rom_end"],
-                "-b", "_DATA=0x%04X" % syms["c_bss"],
-                "-k", sdcc_libdir(), "-l", "z80"]
+        cmd += ["-b", "_DATA=0x%04X" % syms["c_bss"]]
     cmd += [a.o + ".ihx", a.asm] + a.cmods
     r = subprocess.run(cmd, capture_output=True, text=True)
     out = r.stdout + r.stderr
@@ -87,7 +90,7 @@ def main():
         if name == "_CODE":
             if addr + size > ROM_END:
                 bad.append("_CODE 0x%04X-0x%04X passes 0x%04X" % (addr, addr + size, ROM_END))
-        elif name == "_DATA":
+        elif name == "_DATA" and "c_bss_end" in syms:
             if addr + size > syms["c_bss_end"]:
                 bad.append("_DATA needs %d bytes, c_bss has %d"
                            % (size, syms["c_bss_end"] - syms["c_bss"]))

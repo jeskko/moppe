@@ -10,9 +10,12 @@ r58.s --cpp -traditional--> --tools/asmpp.py--> r58.pp.s --sdasz80--> r58.rel
       --tools/link.py (sdldz80)--> r58.ihx, r58.map --tools/ihx2bin.py--> r58.bin
 ```
 
-`make verify` checks that `build/r58.bin` **and** the as80 build of the old
-source (`build-as80/`, from `r58.asm`) are byte-identical to the released
-v3_Z ALs binary. `r58.s` was produced from `r58.asm` by
+`make verify` checks the toolchain against the released v3_Z ALs binary
+twice: `build-release/` (`r58.asm` converted afresh by as80tosdas.py and
+built with this toolchain) and `build-as80/` (`r58.asm` with as80). Both
+must be byte-identical. `build-release` is also the reference build of the
+differential tests. `r58.s` itself differs from the release since Phase 2
+(notes/hybrid-plan.md). `r58.s` was produced from `r58.asm` by
 `tools/as80tosdas.py` (one-shot converter, kept for re-running on other
 as80 sources such as the ALr variant), then the `C_MODULES` blocks were
 edited by hand for the linked C objects; `r58.asm` is now reference only.
@@ -58,6 +61,11 @@ gives 5C 08), so the converter writes special bytes as `.db`; sdas macro
 arguments are split at spaces even inside quotes, which is why cpp stays
 the macro processor; `.bndry` does not fill; makebin/ihx2bin gaps are 0xFF.
 
+`make SRC=... BUILD=...` builds another source into another directory.
+asmpp also writes `build/r58.labels` (label names) and `build/r58.linemap`
+(listing line → source file:line) for tools; `tools/jp2jr.py` uses the
+listing, `r58.sym` and the line map to shorten `jp` to `jr` in r58.s.
+
 ### C modules (`make C=1`)
 
 `c/*.c` → `sdcc -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size -c` →
@@ -69,7 +77,8 @@ the macro processor; `.bndry` does not fill; makebin/ihx2bin gaps are 0xFF.
   link.py fails if `_CODE` passes 0x8000, `_DATA` overflows `c_bss`, or any
   other relocatable area is non-empty (no initialised C data: nothing copies
   `_INITIALIZER`).
-- SDCC runtime helpers come from SDCC's `z80.lib`.
+- SDCC runtime helpers come from SDCC's `z80.lib`, searched in every build
+  (the assembler uses its banked-call trampoline `___sdcc_bcall_ehl`).
 - C → firmware names: C `x` is `_x`; `tools/cglue.py` emits `_x = x` for
   every `_x` the C objects reference (`build-c/cglue.inc`, included by
   r58.s).

@@ -553,7 +553,8 @@ class Converter:
                 if text(b).replace(" ", "") != ".cksum(0,.)":
                     raise SyntaxError("only .cksum(0, .) is supported")
                 return [lab + lab_sep + "rom_cksum:",
-                        ".db" + gap + "0\t; ROM checksum: 256 - sum(ROM[0 .. rom_cksum - 1]), set by ihx2bin.py"]
+                        ".db" + gap + "0\t; ROM checksum: 256 - sum(ROM[0 .. rom_cksum - 1]), set by ihx2bin.py",
+                        "rom_end:\t\t; linked code (C modules, SDCC library) follows (tools/link.py)"]
             if hl == ".byte" or hl == ".word":
                 d = ".db" if hl == ".byte" else ".dw"
                 args = [conv_expr(a, size_label) for a in split_commas(body)]

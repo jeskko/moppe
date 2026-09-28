@@ -46,6 +46,8 @@ class PP:
         self.want_org = None    # area waiting for its first .org
         self.labels = set()
         self.out = []
+        self.linemap = []       # per output line: (source file, line)
+        self.src = ("", 1)
         self.lineno = 0
 
     def err(self, msg):
@@ -122,8 +124,18 @@ class PP:
         return lines
 
     def line(self, line):
-        if re.match(r"#\s*\d+\s", line) or line.startswith("# "):
-            return                  # cpp line marker
+        m = re.match(r'#\s*(\d+)\s+"([^"]*)"', line)
+        if m:                       # cpp line marker
+            self.src = (m.group(2), int(m.group(1)))
+            return
+        if line.startswith("# "):
+            return
+        n0 = len(self.out)
+        self._line(line)
+        self.linemap.extend([self.src] * (len(self.out) - n0))
+        self.src = (self.src[0], self.src[1] + 1)
+
+    def _line(self, line):
         indent = re.match(r"[ \t]*", line).group() or "\t"
         stmts, cur, comment = [], [], ""
         for m in SCAN.finditer(line):
@@ -160,15 +172,28 @@ class PP:
 
 
 def main():
-    """asmpp.py [--labels FILE] < in > out; FILE gets the label names (the
-    emulator harness uses them to tell code labels from equates)."""
+    """asmpp.py [--labels FILE] [--linemap FILE] < in > out
+
+    --labels:  the label names (the emulator harness uses them to tell code
+               labels from equates)
+    --linemap: 'outline file:line' for every output line (the listing's
+               line numbers are output lines)"""
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--labels")
+    ap.add_argument("--linemap")
+    a = ap.parse_args()
     src = sys.stdin.buffer.read().decode("latin-1")
     pp = PP()
     sys.stdout.buffer.write(pp.run(src).encode("latin-1"))
-    if len(sys.argv) == 3 and sys.argv[1] == "--labels":
-        with open(sys.argv[2], "w") as f:
+    if a.labels:
+        with open(a.labels, "w") as f:
             f.write("".join(n + "\n" for n in sorted(pp.labels)
                             if not n.startswith("__L")))
+    if a.linemap:
+        with open(a.linemap, "w") as f:
+            for i, (fn, n) in enumerate(pp.linemap, 1):
+                f.write("%d %s:%d\n" % (i, fn, n))
 
 
 if __name__ == "__main__":

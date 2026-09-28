@@ -1,6 +1,7 @@
 """
 ROM window decode at 0x8000-0xBFFF, the basis of the banked-EPROM plan
-(notes/hybrid-plan.md).  Uses synthetic ROM images, not the firmware.
+(notes/hybrid-plan.md): synthetic ROM images (Window), and the firmware's
+bank switching with code running from bank 1 (BankedFirmware).
 
 P8E (schematic): RS=1 -> EPROM0 chip 0xC000-0xFFFF; RS=0 -> EPROM1 page
   (A14,A15,A16 = OUT2 bits 0,1,3).
@@ -73,6 +74,93 @@ class Window(unittest.TestCase):
         r = self.radio(P8N, rom1=0x10000)
         for page in range(4):
             self.assertEqual(self.window(r, page | BIT3)[0], 0x40 + page)
+
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+FW = os.path.join(ROOT, "firmware", "build")
+
+# Bank 1 test routine at 0x8000 (EPROM0 file offset 0xC000): spin ~0.3 s
+# kicking the watchdog, store a mark in junk, return 0x5A in A.
+def bank1_code(junk, loops=60000):
+    code = bytes([0x01, loops & 0xFF, loops >> 8,       # ld bc, #loops
+                  0xD3, 0x90,                           # 1: out (WD), a
+                  0x0B,                                 # dec bc
+                  0x78, 0xB1,                           # ld a, b / or c
+                  0x20, 0xF9,                           # jr nz, 1b
+                  0x3E, 0xA5,                           # ld a, #0xA5
+                  0x32, junk & 0xFF, junk >> 8,         # ld (junk), a
+                  0x3E, 0x5A,                           # ld a, #0x5A
+                  0xC9])                                # ret
+    return code + b"\xff" * (0x4000 - len(code))
+
+
+class BankedFirmware(unittest.TestCase):
+    """Phase 2: set_bank / SDCC's ___sdcc_bcall_ehl run code in bank 1
+    while the interrupts keep redrawing the display and scanning keys."""
+
+    def radio(self, card):
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        fw = open(os.path.join(FW, "r58.bin"), "rb").read()
+        lst = os.path.join(FW, "r58.map")
+        sym = Radio(os.path.join(FW, "r58.bin"), lst).sym
+        img = fw.ljust(0xC000, b"\xff") + bank1_code(sym["junk"])
+        d = tempfile.mkdtemp()
+        rom = os.path.join(d, "rom64.bin")
+        with open(rom, "wb") as f:
+            f.write(img)
+        r = Radio(rom, lst, card=card, nv=make_sane_nv(card))
+        r.multiboard(0)                 # a multiboard with no DTMF tone
+        r.run(2.5)
+        r.type("433500")
+        r.press("#")
+        r.run(0.3)
+        return r
+
+    def check_bank_call(self, card):
+        r = self.radio(card)
+        up0, lo0 = r.display()
+        hist0 = r.peek("dtmf_hist_idx")
+        r.breakpoint("mainloop")
+        self.assertEqual(r.run(1.0), "break")
+        r.breakpoint("mainloop", False)
+        ret = r.call("___sdcc_bcall_ehl", de=0x0001, hl=0x8000)
+
+        r.run(0.1)                      # inside the banked loop
+        self.assertEqual(r.peek("cur_bank"), 1)
+        self.assertEqual(r.latches()["out2"] & 0x0F, 0x0D)    # RS|RA14|bit3
+        self.assertEqual(r.peek16("ctcss_dec_src"), r.sym["ctcss_idle_sample"])
+        # the soft interrupt redraws the display (here on request, as the
+        # hook/light code in systick does) and scans the keypad meanwhile
+        r.poke("segments", bytes(64))
+        r.poke("sir", r.peek("sir") | 1 << r.sym["DPYSIR"])
+        r.key_down("5")
+        r.run(0.1)
+        self.assertEqual(r.display_raw()[:16], bytes(16))
+        self.assertEqual(r.latches()["out2"] & 0x0F, 0x0D)
+        self.assertNotEqual(r.peek("junk"), 0xA5)  # still looping
+        r.key_up()
+
+        r.breakpoint(ret)
+        self.assertEqual(r.run(1.0), "break")      # returned to the caller
+        c = r.cpu()
+        self.assertEqual(c["af"] >> 8, 0x5A)        # A comes back
+        self.assertEqual(r.peek("junk"), 0xA5)
+        self.assertEqual(r.peek("cur_bank"), 0)
+        self.assertEqual(r.latches()["out2"] & 0x0F, 0x08)
+        self.assertEqual(r.peek16("ctcss_dec_src"), 0x8000)
+        # ROM bytes in the window were not taken for DTMF input
+        self.assertEqual(r.peek("dtmf_hist_idx"), hist0)
+        r.breakpoint(ret, False)
+        r.run(0.5)                                  # and the radio goes on:
+        self.assertEqual(r.display()[1], "5_        ")   # the key typed meanwhile
+        self.assertEqual([e for e in r.events if e[1] == "WDRESET"], [])
+
+    def test_bank_call_p8e(self):
+        self.check_bank_call(P8E)
+
+    def test_bank_call_p8n(self):
+        self.check_bank_call(P8N)
 
 
 if __name__ == "__main__":

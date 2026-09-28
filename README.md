@@ -10,11 +10,11 @@ without burning an EPROM for every change.
 |---|---|
 | Toolchain | SDCC's **sdasz80 + sdldz80** (with cpp and a small preprocessor). The source was converted from the original as80 dialect and rebuilds **byte-identical** to the released ALs binary (`make -C firmware verify`, which also checks the as80 build of the old source). |
 | Emulator | Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. |
-| Tests | Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK/MPRS packet CRC; ROM-window decode. **Differential tests** (`emu/tests/test_diff.py`) run the stock and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
+| Tests | 84 tests. Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK/MPRS packet CRC; scanner, repeater access and CW ID, every menu record type, low battery, TOT, typematic; ROM-window decode and code running from bank 1. **Differential tests** (`emu/tests/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
 | C in firmware | `make C=1` links C modules (squelch, packet CRCs) as normal SDCC objects. All tests pass; the differential tests show no behaviour difference to the stock build. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
-| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md). Phase 1 (toolchain) done; Phase 0 test widening in progress; then Phase 2 (OUT2 shadow, bank infrastructure). |
+| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md). Phases 1 (toolchain) and 2 (OUT2 shadow, bank switching API) done, Phase 0 tests mostly done; next Phase 3: code in bank 1 (48 KB), and a bench test of the ROM window on real P8E/P8N boards. |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).
@@ -60,6 +60,7 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `firmware/r58.asm` | The original as80 source (from `reference/r58.asm.als`), reference only |
 | `firmware/c/` | C modules for `make C=1` |
 | `tools/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py` | Build steps around sdasz80/sdldz80 |
+| `tools/jp2jr.py` | Size optimiser: `jp` → `jr` outside timing-critical code |
 | `tools/as80tosdas.py` | One-shot as80 → sdasz80 source converter |
 | `tools/as80/` | The original assembler (patched), for reference builds |
 | `emu/` | Emulator in C: `z80.c` core, `pio/sio/pit/daisy.c` Zilog/Intel chips, `cu53an.c`, `cu58af.c` handsets, `r58.c` board, `api.c` flat API |
