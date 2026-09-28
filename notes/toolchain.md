@@ -66,6 +66,14 @@ asmpp also writes `build/r58.labels` (label names) and `build/r58.linemap`
 (listing line → source file:line) for tools; `tools/jp2jr.py` uses the
 listing, `r58.sym` and the line map to shorten `jp` to `jr` in r58.s.
 
+### Bank 1
+
+`.area BANK1 (ABS)` / `.org 0x8000` in r58.s (after the fixed ROM) is
+absolutized by asmpp like ROM. ihx2bin maps ihx 0x8000-0xBFFF to file
+0xC000-0xFFFF and pads the image to 64 KB. Assembler calls into it go
+through `far_*` stubs (`call bank1_call / .dw fn`), C `__banked` calls
+through SDCC's `___sdcc_bcall_ehl`; both use `set_bank`.
+
 ### C modules (`make C=1`)
 
 `c/*.c` → `sdcc -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size -c` →

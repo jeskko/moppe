@@ -79,8 +79,12 @@ class Window(unittest.TestCase):
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware", "build")
 
-# Bank 1 test routine at 0x8000 (EPROM0 file offset 0xC000): spin ~0.3 s
-# kicking the watchdog, store a mark in junk, return 0x5A in A.
+# Bank 1 test routine, put in the unused top of bank 1 (window 0xBF00 =
+# EPROM0 file offset 0xFF00): spin ~0.3 s kicking the watchdog, store a
+# mark in junk, return 0x5A in A.
+TEST_AT = 0xBF00
+
+
 def bank1_code(junk, loops=60000):
     code = bytes([0x01, loops & 0xFF, loops >> 8,       # ld bc, #loops
                   0xD3, 0x90,                           # 1: out (WD), a
@@ -91,7 +95,7 @@ def bank1_code(junk, loops=60000):
                   0x32, junk & 0xFF, junk >> 8,         # ld (junk), a
                   0x3E, 0x5A,                           # ld a, #0x5A
                   0xC9])                                # ret
-    return code + b"\xff" * (0x4000 - len(code))
+    return code + b"\xff" * (0x100 - len(code))
 
 
 class BankedFirmware(unittest.TestCase):
@@ -104,7 +108,9 @@ class BankedFirmware(unittest.TestCase):
         fw = open(os.path.join(FW, "r58.bin"), "rb").read()
         lst = os.path.join(FW, "r58.map")
         sym = Radio(os.path.join(FW, "r58.bin"), lst).sym
-        img = fw.ljust(0xC000, b"\xff") + bank1_code(sym["junk"])
+        img = fw.ljust(0x10000, b"\xff")
+        assert img[0xFF00:] == b"\xff" * 0x100, "bank 1 top is not free"
+        img = img[:0xFF00] + bank1_code(sym["junk"])
         d = tempfile.mkdtemp()
         rom = os.path.join(d, "rom64.bin")
         with open(rom, "wb") as f:
@@ -124,7 +130,7 @@ class BankedFirmware(unittest.TestCase):
         r.breakpoint("mainloop")
         self.assertEqual(r.run(1.0), "break")
         r.breakpoint("mainloop", False)
-        ret = r.call("___sdcc_bcall_ehl", de=0x0001, hl=0x8000)
+        ret = r.call("___sdcc_bcall_ehl", de=0x0001, hl=TEST_AT)
 
         r.run(0.1)                      # inside the banked loop
         self.assertEqual(r.peek("cur_bank"), 1)
@@ -196,18 +202,23 @@ class BenchTestRom(unittest.TestCase):
                 # (on the CU53AN's 7-segment digits S and 5 look the same)
                 self.assertIn(r.display()[1].strip().upper(), ("B1  PASS", "B1  PA55"), (card, cu))
 
-    def test_wrong_page_shows_address_and_value(self):
-        # as if RS|RA14 picked chip 0x8000 (0x00 there) instead of 0xC000
+    def test_wrong_page_shows_its_sum(self):
+        # as if RS|RA14 picked the P8N-only page (zeros) instead of 0xC000
         img = self.image()
         img = img[:0xC000] + img[0x8000:0xC000]
         r = self.boot(P8E, image=img)
-        self.assertEqual(r.display()[1], "b1 8010 00")
+        self.assertEqual(r.display()[1], "b1 0000 00")
 
     def test_routine_result_shown(self):
         img = bytearray(self.image())
-        img[0xC001] = 0x42                  # ld a, #0x42 / ret
+        sym = Radio(os.path.join(BANKTEST, "r58-banktest.bin"),
+                    os.path.join(BANKTEST, "r58.map")).sym
+        at = sym["bank_test_ping"] + 0x4000 + 1        # ld a, #0xA5
+        self.assertEqual(img[at], 0xA5)
+        img[at] = 0xC3
+        img[0xFFFF] -= 0xC3 - 0xA5              # (0xFF there) keep the sum
         r = self.boot(P8N, image=bytes(img))
-        self.assertEqual(r.display()[1], "b1 CA11 42")
+        self.assertEqual(r.display()[1], "b1 CA11 C3")
 
 
 if __name__ == "__main__":

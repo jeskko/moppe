@@ -14,7 +14,7 @@ without burning an EPROM for every change.
 | C in firmware | `make C=1` links C modules (squelch, packet CRCs) as normal SDCC objects. All tests pass; the differential tests show no behaviour difference to the stock build. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
-| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md). Phases 1 (toolchain) and 2 (OUT2 shadow, bank switching API) done, Phase 0 tests mostly done; next Phase 3: code in bank 1 (48 KB), and a bench test of the ROM window on real P8E/P8N boards. |
+| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md). Phases 1 (toolchain) and 2 (bank switching) done; Phase 3 started: the setup menu runs from bank 1 (64 KB image, ~8 KB free in fixed ROM). Pending: the ROM window bench test on a real board (`make -C firmware banktest`). |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).

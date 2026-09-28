@@ -145,7 +145,24 @@ decided otherwise):
   A mutated display routine that drops the bank bits fails it. The
   differential tests show no behaviour change against the release.
 
-### Phase 3: banked EPROM0 (48 KB)
+### Phase 3: banked EPROM0 (48 KB) — setup menu in bank 1, 2026-09-28
+- **Done: the setup menu** (`init_menu` … band defaults, 1900 source lines:
+  engine, 288 REC records, TAB/STR tables, SAnE resets) is in
+  `.area BANK1 (ABS)` at 0x8000, 8.2 KB. Fixed ROM went from 32.6 KB to
+  24.5 KB (~8 KB free); bank 1 has ~8 KB left. The image is 64 KB now
+  (ihx2bin puts window 0x8000 at file 0xC000; file 0x8000-0xBFFF is 0xFF).
+- Entry from fixed code: 15 stubs `far_X: call bank1_call / .dw X`
+  (all registers and flags pass both ways, previous bank restored, nests).
+  Only mainline code calls them (keys, redraw, FSK config packets, boot).
+  `tab_ax25_digi` stays in fixed ROM because the APRS code reads it; the
+  TAB/STR/REC macros moved ahead of it. `menu_ptr` holds bank addresses,
+  which fixed code only compares or hands back to `far_load_menu_ptr`.
+- All tests pass unchanged, including the differential tests against the
+  release and the menu tests; a breakpoint in `draw_menu_title` stops at
+  0x8009 with bank 1 selected.
+- The bench test now sums the whole bank-1 window against `bank1_sum`
+  (patched by ihx2bin) and calls `bank_test_ping` there, before anything
+  else runs from bank 1; on failure it stays in a redraw loop.
 - **Portable page:** OUT2 = RS|RA14 (bit 3 kept at 1) maps EPROM0 chip
   0xC000-0xFFFF into 0x8000-0xBFFF on **both** P8E (schematic) and P8N
   (manual). Verified in the emulator model only; **confirm on a real board
@@ -154,13 +171,11 @@ decided otherwise):
 - **Bench test ROM — built 2026-09-28, waiting for a real board:**
   `make -C firmware banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
   image for a 27C512 in the EPROM0 socket (EPROM1 socket as usual). It is
-  the normal firmware plus `bank_test` at boot: select bank 1, compare every
-  window byte 0x8010-0xBFFF with LO(a) ^ HI(a) ^ 0x5A, call the routine at
-  0x8000 through `___sdcc_bcall_ehl` (must return 0xA5). The lower row then
-  shows `b1  PASS  ` (on a CU53AN the S look like 5), or `b1 aaaa vv` = first
-  wrong window address and the byte read, or `b1 CA11 vv` = the routine
-  returned vv. File 0x8000-0xBFFF is 0x00, so a mapping of the P8N-only
-  page reads `b1 8010 00`; an empty/absent chip area reads `vv` = FF. The
+  the normal firmware plus `bank_test` early at boot. The lower row shows
+  `b1  PASS  ` (on a CU53AN the S look like 5); `b1 ssss 00` = the window's
+  16-bit byte sum was ssss (`make banktest` prints the right one; 0000 =
+  the P8N-only page, zero-filled on purpose; 3FC0 would be an empty 0xFF
+  page); `b1 CA11 vv` = sum fine but the routine returned vv. The
   emulator shows PASS on P8E/P8N with both handsets
   (`test_banking.BenchTestRom`). The user will burn it when the EPROM
   programmer turns up and expects the service manual's decode to be right,

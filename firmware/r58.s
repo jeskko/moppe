@@ -3388,7 +3388,11 @@ main:
 	call enable_modem
 
 	call set_vola
-	call init_menu
+#ifdef BANK_TEST
+	call bank_test		; before anything runs from bank 1
+	jp nz, bank_test_stop
+#endif
+	call far_init_menu
 	call init_LPF
 	call zero_txpwr
 
@@ -3406,7 +3410,7 @@ main:
 	call light_on_led
 	call resync_squelch_if_forced
 	call repeater_init
-	call update_gpio12_foo
+	call far_update_gpio12_foo
 
 	call gps_configure     ; once and ...
 
@@ -4732,9 +4736,9 @@ dokey_not_menu:
 	cp #0xC
 	jp z, backspace
 	cp #'E'
-	jp z, toggle_or_position_menu
+	jp z, far_toggle_or_position_menu
 	cp #0xE
-	jp z, toggle_or_position_menu
+	jp z, far_toggle_or_position_menu
 	cp #'*'
 	jp z, beep_or_fsk_send
 	cp #'+'
@@ -4792,17 +4796,17 @@ menu_input:
 	cp #0xC
 	jp z, backspace
 	cp #'E'
-	jp z, toggle_or_position_menu
+	jp z, far_toggle_or_position_menu
 	cp #0xE
-	jp z, toggle_or_position_menu
+	jp z, far_toggle_or_position_menu
 	cp #'#'
-	jp z, menu_enter_or_walk
+	jp z, far_menu_enter_or_walk
 	cp #'*'
-	jp z, menu_defval_or_exec
+	jp z, far_menu_defval_or_exec
 	cp #'+'
-	jp z, menu_up_value
+	jp z, far_menu_up_value
 	cp #'-'
-	jp z, menu_dn_value
+	jp z, far_menu_dn_value
 	cp #'B'
 	jp z, monitor_audio
 	cp #0xB
@@ -4830,10 +4834,10 @@ menu_input:
 	jp z, insdig_punct
 
 	cp #'S'
-	jp z, menu_next_group
+	jp z, far_menu_next_group
 
 	cp #'R'
-	jp z, menu_prev
+	jp z, far_menu_prev
 
 	cp #'K'
 	jp z, step_audio_dst
@@ -5143,7 +5147,7 @@ insdig:
 	ret
 
 backspace:
-	call decoder_hist_rewind
+	call far_decoder_hist_rewind
 
 	xor a
 	ld (vip_idx), a
@@ -6591,8 +6595,8 @@ handle_config_packets:
 	push de           ; save ptr
 	push ix
 	pop hl
-	call remote_config_execute         ; Enter: de=ptr, hl=data (wrap page)
-	call leaved_setup
+	call far_remote_config_execute         ; Enter: de=ptr, hl=data (wrap page)
+	call far_leaved_setup
 	pop de
 1:
 	; FSK reply in either case
@@ -9467,7 +9471,7 @@ onesies: .db 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
 
 fill_enter_config_packet:
 
-	call load_menu_ptr       ; variable is specified by RAM address
+	call far_load_menu_ptr       ; variable is specified by RAM address
 	call map_special_ptrs    ; or page 0 pseudoptr
 
 	ld a, l
@@ -9498,7 +9502,7 @@ fill_enter_config_packet:
 
 fill_query_config_packet:
 
-	call load_menu_ptr       ; variable is specified by RAM address
+	call far_load_menu_ptr       ; variable is specified by RAM address
 	call map_special_ptrs
 
 	ld a, l
@@ -11674,7 +11678,7 @@ draw_upper_row:
 
 	ld a, (menu_active)
 	or a
-	jp nz, draw_menu_title
+	jp nz, far_draw_menu_title
 
 	ld a, (call_dpyed)
 	or a
@@ -12028,7 +12032,7 @@ draw_lower_row:
 
 	ld a, (menu_active)
 	or a
-	jp nz, draw_menu_lower_row
+	jp nz, far_draw_menu_lower_row
 
 	ld a, (display_buffer_time)
 	or a
@@ -12736,48 +12740,94 @@ set_bank:
 	pop hl
 	ret
 
+;----------------------------------------------------------------------
+;
+;  Assembler calls into bank 1:  fn_stub:  call bank1_call / .dw fn
+;  All registers pass to fn and back unchanged (flags too); the previous
+;  bank is restored after fn returns, so calls nest.  The RAM temporaries
+;  are only live until fn starts; interrupts never call bank code.
+
+bank1_call:			; stack: [&.dw fn] [caller]
+	ld (bank_hl), hl
+	pop hl
+	push af
+	ld a, (hl)
+	inc hl
+	ld h, (hl)
+	ld l, a
+	ld (bank_fn), hl
+	pop hl
+	ld (bank_af), hl	; caller's AF
+	ld a, (cur_bank)
+	push af			; [old bank] [caller]
+	ld a, #1
+	call set_bank
+	ld hl, #bank1_back
+	push hl
+	ld hl, (bank_fn)
+	push hl			; [fn] [bank1_back] [old bank] [caller]
+	ld hl, (bank_af)
+	push hl
+	pop af
+	ld hl, (bank_hl)
+	ret			; to fn
+
+bank1_back:			; [old bank] [caller]
+	ex (sp), hl
+	push af
+	ld a, h
+	call set_bank
+	pop af
+	pop hl
+	ret
+
 #ifdef BANK_TEST
 ;----------------------------------------------------------------------
 ;
 ;  Bench test of the ROM window on a real board (make banktest, 64 KB
-;  EPROM image from tools/banktest.py).  Bank 1 must show EPROM0 chip
-;  0xC000-0xFFFF: a routine at 0x8000 that returns 0xA5, then from
-;  0x8010 the pattern LO(a) ^ HI(a) ^ 0x5A for window address a.  The
-;  result stays on the lower row:
+;  EPROM image).  Bank 1 must show EPROM0 chip 0xC000-0xFFFF: its 16-bit
+;  byte sum must equal bank1_sum (patched in by ihx2bin.py), and
+;  bank_test_ping there must return 0xA5.  The result stays on the lower
+;  row:
 ;	"b1  PASS  "	window reads and code runs
-;	"b1 aaaa vv"	first wrong byte: window address, value read
-;	"b1 CA11 vv"	pattern fine, but the routine returned vv
+;	"b1 ssss 00"	the window's sum was ssss (0000: the P8N-only page,
+;			which tools/banktest.py fills with zeros)
+;	"b1 CA11 vv"	sum fine, but the routine returned vv
 ;
 bank_test:
 	ld a, #1
 	call set_bank
-	ld hl, #0x8010
+	ld hl, #0x8000
+	ld de, #0
 1:
 	out (WD), a
-	ld a, l
-	xor h
-	xor #0x5A
-	cp (hl)
-	ld a, (hl)
-	jr nz, 3f
+	ld a, e
+	add a, (hl)
+	ld e, a
+	jr nc, 2f
+	inc d
+2:
 	inc hl
 	ld a, h
 	cp #0xC0
 	jr nz, 1b
 	xor a
 	call set_bank
+	ld hl, (bank1_sum)
+	and a
+	sbc hl, de
+	ex de, hl		; HL = sum read
+	jr nz, 3f		; A = 0
 	ld e, #1
-	ld hl, #0x8000
+	ld hl, #bank_test_ping
 	call ___sdcc_bcall_ehl	; the routine in bank 1
 	ld hl, #bank_test_pass
 	cp #0xA5
 	jr z, 4f
 	ld hl, #0xCA11
 3:
-	push af			; value read / returned
+	push af			; value
 	push hl			; where
-	xor a
-	call set_bank
 	ld hl, #bank_test_pass
 	ld de, #bank_test_msg
 	ld bc, #3
@@ -12793,11 +12843,21 @@ bank_test:
 	pop af
 	call bank_test_hex
 	ld hl, #bank_test_msg
+	or #1			; NZ: failed
 4:
 	ld (adj_feedback), hl
 	ld hl, #sir
 	set DPYSIR, (hl)
-	ret
+	ret			; Z: passed
+
+	; the window is wrong: nothing from bank 1 may run, just show why
+bank_test_stop:
+	call cu_now_known
+1:
+	call redraw
+	jr 1b
+
+bank1_sum:	.dw 0	; set by ihx2bin.py --bank1-sum
 
 bank_test_hex:		; A as two hex digits to (DE)+
 	push af
@@ -17589,6 +17649,286 @@ a2i_word:
 
 ;======================================================================
 
+#define TAB(name) 1: name: .db (1f - . - 1) / 8
+#define   STR(s)           2: .ascii s @ FILL(8 - (. - 2b), 0xFF) @ ASSERT_EQ((. - 2b), 8)
+#define ENDTABS          1:
+
+
+#define REC(grp, name, type, ptr, arg, def, help) \
+	1: .ascii grp @ ASSERT_EQ((.-1b), 2) @  \
+	1: .ascii name @ ASSERT_EQ((.-1b), 6) @ \
+	.dw ptr @                               \
+	.dw arg @                               \
+	.dw def @                               \
+	.db type @                              \
+	.db 'Z' @                               \
+	ALIGN(4, 0)
+
+; The setup menu engine and its tables live in bank 1 (search "BANK 1").
+; Fixed code calls it through these stubs (bank1_call); menu_ptr holds
+; bank 1 addresses, which fixed code only compares or passes back.
+
+far_init_menu:	call bank1_call
+	.dw init_menu
+far_update_gpio12_foo:	call bank1_call
+	.dw update_gpio12_foo
+far_toggle_or_position_menu:	call bank1_call
+	.dw toggle_or_position_menu
+far_menu_enter_or_walk:	call bank1_call
+	.dw menu_enter_or_walk
+far_menu_defval_or_exec:	call bank1_call
+	.dw menu_defval_or_exec
+far_menu_up_value:	call bank1_call
+	.dw menu_up_value
+far_menu_dn_value:	call bank1_call
+	.dw menu_dn_value
+far_menu_next_group:	call bank1_call
+	.dw menu_next_group
+far_menu_prev:	call bank1_call
+	.dw menu_prev
+far_decoder_hist_rewind:	call bank1_call
+	.dw decoder_hist_rewind
+far_remote_config_execute:	call bank1_call
+	.dw remote_config_execute
+far_leaved_setup:	call bank1_call
+	.dw leaved_setup
+far_load_menu_ptr:	call bank1_call
+	.dw load_menu_ptr
+far_draw_menu_title:	call bank1_call
+	.dw draw_menu_title
+far_draw_menu_lower_row:	call bank1_call
+	.dw draw_menu_lower_row
+
+; read by the APRS code, so not in the bank with the other menu tables
+	TAB(tab_ax25_digi)      ; must be literal as used in packet, chr by chr
+		STR("nonE")
+		STR("rELAY")
+		STR("WIdE")
+		STR("WIdE2-2")
+		STR("WIdE3-3")
+		STR("WIdE4-4")
+		STR("WIdE5-5")
+		STR("WIdE6-6")
+		STR("trACE")
+		STR("trACE2-2")
+		STR("trACE3-3")
+		STR("trACE4-4")
+		STR("trACE5-5")
+		STR("trACE6-6")
+		STR("AriSS")
+		STR("AStArS")
+						AX25_DIGI_OTHER_IDX = (. - tab_ax25_digi) / 8
+		STR("[othEr]")
+	ENDTABS
+
+;======================================================================
+;
+;  Fill holes (0 values) in rfctab.
+;  It is assumed values never droop when going upwards table.
+;
+;  "Bresenham simplified"
+
+rfc_fill_blanks:
+
+	ld ix, #rfctab
+
+	; make sure index 99 has a barrier, 0 into 255 else
+
+	ld a, (ix+99)
+	or a
+	jr nz, 1f
+	dec a
+	ld (ix+99), a
+1:
+	; find holes in 1...98 range, [0] not hole, [99] barrier
+1:
+	ld a, (ix+1)
+	or a
+	call z, rfc_fill_one_hole
+	inc ix
+	push ix
+	pop hl
+	ld de, #rfctab + 98
+	and a
+	sbc hl, de      ; below end ?
+	jr c, 1b
+	ret             ; after no holes
+
+;
+;  entry:  ix+1 first of hole
+;  return: ix+1 one past hole
+;
+rfc_fill_one_hole:
+	push ix         ; x1
+	pop iy
+1:
+	inc iy
+	ld a, (iy+0)    ; y2 ?
+	or a
+	jr z, 1b        ; find the end of the hole, it is there always (barrier)
+
+	ld e, (ix+0)    ; y1
+	sub e           ; dy
+	ld e, a         ; dy = e
+
+	push iy         ; x2
+	pop hl
+	push ix
+	pop bc          ; x1
+	and a
+	sbc hl, bc      ; x2 - x1
+	ld c, l         ; dx = c
+
+	;
+	;  Fill blanks from ix+1 upto next nonblank
+	;  ix+0 has last y, ix+1 is blank, new y determined,
+	;  ix stepped and new y stored.
+	;
+	ld hl, #0            ; sum = 0
+	ld d, #0
+	ld b, #0             ; dx and dy as words
+	jr 1f               ; start loop
+3:
+	inc a               ; y++
+2:
+	inc ix              ; x++
+	ld (ix+0), a
+1:
+	ld a, (ix+1)
+	or a
+	ret nz              ; at endpoint
+
+	ld a, c
+	cp e                ; dx - dy
+	ld a, (ix+0)        ; y
+	jr c, 1f            ; if (dx < dy) steep way
+
+	; slow rise way
+
+	add hl, de          ; sum += dy
+	sbc hl, bc
+	jr nc, 3b           ; if (sum >= dx)
+	add hl, bc
+	jr 2b
+
+	; steep rise way
+1:
+	inc a               ; y++
+	add hl, bc          ; sum += dx
+	sbc hl, de
+	jr nc, 2b           ; if (sum >= dy)
+	add hl, de
+	jr 1b
+
+;======================================================================
+
+	; @IY - 4 bytes in 1/256 of a second units
+	; @IX - buffer to receive DDDMMmm; degrees, minutes and centiminutes
+
+aisin_seiki_parse_latlon:
+
+	ld a, (iy+0)
+	ld h, (iy+1)
+	ld l, (iy+2)       ; dividend in AHL, max 180 * 60 * 60
+
+	;  calculate degrees
+
+	ld e, #0            ; EBC is divisor for the first digitloop
+	ld bc, #60 * 60 * 10
+	ld d, #-1
+	and a
+1:
+	inc d
+	sbc hl, bc
+	sbc a, e
+	jr nc, 1b
+	add hl, bc         ; fix back. after this dividend fits in HL
+
+	ld a, d
+	ld d, #1
+	sub #10
+	jr nc, 1f          ; jump if result is 10 ... 18
+	dec d              ; result was 0 ... 9
+	add a, #10
+1:
+	ld (ix+0), d
+	ld (ix+1), a       ; hundreds and tens of degrees, HL max 60 * 60 * 10
+
+	ld bc, #60 * 60 * 1
+	sub a
+1:
+	inc a
+	sbc hl, bc
+	jr nc, 1b
+	add hl, bc
+
+	dec a
+	ld (ix+2), a       ; degrees now set 0 ... 180, HL max 60 * 60 * 1
+
+	; calculate minutes
+
+	ld bc, #60 * 10
+	sub a
+1:
+	inc a
+	sbc hl, bc
+	jr nc, 1b
+	add hl, bc
+
+	dec a
+	ld (ix+3), a       ; tens of minutes, HL max 60 * 10
+
+	ld bc, #60 * 1
+	sub a
+1:
+	inc a
+	sbc hl, bc
+	jr nc, 1b
+	add hl, bc         ; L has seconds, 0 ... 59
+
+	dec a
+	ld (ix+4), a       ; minutes now set 0 ... 60
+
+	; calculate centiminutes
+
+	ld h, l            ; finally, do the fractional seconds. 
+	ld l, (iy+3)       ; HL contains 256 * seconds, max 15360
+
+	ld bc, #1536        ; 60 * 256 / 153.6 = 100
+	sub a
+1:
+	inc a
+	sbc hl, bc
+	jr nc, 1b
+	add hl, bc
+
+	dec a
+	ld (ix+5), a       ; tens of centiminutes
+	ld (ix+6), l       ; ones of centiminutes
+
+	ret
+
+;======================================================================
+
+	.ascii "TheEnd"
+	rom_cksum:
+	.db 0	; ROM checksum: 256 - sum(ROM[0 .. rom_cksum - 1]), set by ihx2bin.py
+rom_end:		; linked code (C modules, SDCC library) follows (tools/link.py)
+
+	slack_at_end = 0x8000 - .
+
+	ASSERT_LT(., 0x8000)  ; catch the moment when 32kB overflows
+
+;== BANK 1 ============================================================
+;
+;  EPROM0 0xC000-0xFFFF, mapped at 0x8000 by set_bank(1).  Mainline code
+;  only (never from interrupts or dosir); fixed code enters it through
+;  the far_* stubs.  Code here may call fixed code freely.
+
+	.area BANK1 (ABS)
+	.org 0x8000
+bank1_start:
+
 init_menu:
 	ld ix, #start_menu
 	ld (menu_ptr), ix
@@ -18611,21 +18951,6 @@ reset_menurec_word:
 	; 1 byte          number of selections in table
 	; n * 8 bytes     zero terminated strings, 8 bytes separated
 
-#define TAB(name) 1: name: .db (1f - . - 1) / 8
-#define   STR(s)           2: .ascii s @ FILL(8 - (. - 2b), 0xFF) @ ASSERT_EQ((. - 2b), 8)
-#define ENDTABS          1:
-
-
-#define REC(grp, name, type, ptr, arg, def, help) \
-	1: .ascii grp @ ASSERT_EQ((.-1b), 2) @  \
-	1: .ascii name @ ASSERT_EQ((.-1b), 6) @ \
-	.dw ptr @                               \
-	.dw arg @                               \
-	.dw def @                               \
-	.db type @                              \
-	.db 'Z' @                               \
-	ALIGN(4, 0)
-
 offset_tag   = 0
 offset_title = 2
 offset_ptr   = 8
@@ -19102,25 +19427,6 @@ num_menu = (end_menu - start_menu) / size_menurec
 		STR("ProPr")    ; 0
 		STR("APrS")     ; 1
 		STR("MIC-E")    ; 2
-	TAB(tab_ax25_digi)      ; must be literal as used in packet, chr by chr
-		STR("nonE")
-		STR("rELAY")
-		STR("WIdE")
-		STR("WIdE2-2")
-		STR("WIdE3-3")
-		STR("WIdE4-4")
-		STR("WIdE5-5")
-		STR("WIdE6-6")
-		STR("trACE")
-		STR("trACE2-2")
-		STR("trACE3-3")
-		STR("trACE4-4")
-		STR("trACE5-5")
-		STR("trACE6-6")
-		STR("AriSS")
-		STR("AStArS")
-						AX25_DIGI_OTHER_IDX = (. - tab_ax25_digi) / 8
-		STR("[othEr]")
 	TAB(tab_fsk_silencer)
 		STR("oFF")
 		STR("ALL")
@@ -19508,203 +19814,17 @@ do_reboot:
 	di
 	jp .                  ; watchdog restart.
 
-;======================================================================
-;
-;  Fill holes (0 values) in rfctab.
-;  It is assumed values never droop when going upwards table.
-;
-;  "Bresenham simplified"
 
-rfc_fill_blanks:
-
-	ld ix, #rfctab
-
-	; make sure index 99 has a barrier, 0 into 255 else
-
-	ld a, (ix+99)
-	or a
-	jr nz, 1f
-	dec a
-	ld (ix+99), a
-1:
-	; find holes in 1...98 range, [0] not hole, [99] barrier
-1:
-	ld a, (ix+1)
-	or a
-	call z, rfc_fill_one_hole
-	inc ix
-	push ix
-	pop hl
-	ld de, #rfctab + 98
-	and a
-	sbc hl, de      ; below end ?
-	jr c, 1b
-	ret             ; after no holes
-
-;
-;  entry:  ix+1 first of hole
-;  return: ix+1 one past hole
-;
-rfc_fill_one_hole:
-	push ix         ; x1
-	pop iy
-1:
-	inc iy
-	ld a, (iy+0)    ; y2 ?
-	or a
-	jr z, 1b        ; find the end of the hole, it is there always (barrier)
-
-	ld e, (ix+0)    ; y1
-	sub e           ; dy
-	ld e, a         ; dy = e
-
-	push iy         ; x2
-	pop hl
-	push ix
-	pop bc          ; x1
-	and a
-	sbc hl, bc      ; x2 - x1
-	ld c, l         ; dx = c
-
-	;
-	;  Fill blanks from ix+1 upto next nonblank
-	;  ix+0 has last y, ix+1 is blank, new y determined,
-	;  ix stepped and new y stored.
-	;
-	ld hl, #0            ; sum = 0
-	ld d, #0
-	ld b, #0             ; dx and dy as words
-	jr 1f               ; start loop
-3:
-	inc a               ; y++
-2:
-	inc ix              ; x++
-	ld (ix+0), a
-1:
-	ld a, (ix+1)
-	or a
-	ret nz              ; at endpoint
-
-	ld a, c
-	cp e                ; dx - dy
-	ld a, (ix+0)        ; y
-	jr c, 1f            ; if (dx < dy) steep way
-
-	; slow rise way
-
-	add hl, de          ; sum += dy
-	sbc hl, bc
-	jr nc, 3b           ; if (sum >= dx)
-	add hl, bc
-	jr 2b
-
-	; steep rise way
-1:
-	inc a               ; y++
-	add hl, bc          ; sum += dx
-	sbc hl, de
-	jr nc, 2b           ; if (sum >= dy)
-	add hl, de
-	jr 1b
-
-;======================================================================
-
-	; @IY - 4 bytes in 1/256 of a second units
-	; @IX - buffer to receive DDDMMmm; degrees, minutes and centiminutes
-
-aisin_seiki_parse_latlon:
-
-	ld a, (iy+0)
-	ld h, (iy+1)
-	ld l, (iy+2)       ; dividend in AHL, max 180 * 60 * 60
-
-	;  calculate degrees
-
-	ld e, #0            ; EBC is divisor for the first digitloop
-	ld bc, #60 * 60 * 10
-	ld d, #-1
-	and a
-1:
-	inc d
-	sbc hl, bc
-	sbc a, e
-	jr nc, 1b
-	add hl, bc         ; fix back. after this dividend fits in HL
-
-	ld a, d
-	ld d, #1
-	sub #10
-	jr nc, 1f          ; jump if result is 10 ... 18
-	dec d              ; result was 0 ... 9
-	add a, #10
-1:
-	ld (ix+0), d
-	ld (ix+1), a       ; hundreds and tens of degrees, HL max 60 * 60 * 10
-
-	ld bc, #60 * 60 * 1
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc
-
-	dec a
-	ld (ix+2), a       ; degrees now set 0 ... 180, HL max 60 * 60 * 1
-
-	; calculate minutes
-
-	ld bc, #60 * 10
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc
-
-	dec a
-	ld (ix+3), a       ; tens of minutes, HL max 60 * 10
-
-	ld bc, #60 * 1
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc         ; L has seconds, 0 ... 59
-
-	dec a
-	ld (ix+4), a       ; minutes now set 0 ... 60
-
-	; calculate centiminutes
-
-	ld h, l            ; finally, do the fractional seconds. 
-	ld l, (iy+3)       ; HL contains 256 * seconds, max 15360
-
-	ld bc, #1536        ; 60 * 256 / 153.6 = 100
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc
-
-	dec a
-	ld (ix+5), a       ; tens of centiminutes
-	ld (ix+6), l       ; ones of centiminutes
-
+#ifdef BANK_TEST
+bank_test_ping:
+	ld a, #0xA5
 	ret
+#endif
 
-;======================================================================
+bank1_end:
+	ASSERT_LE(., 0xC000)
+	slack_in_bank1 = 0xC000 - .
 
-	.ascii "TheEnd"
-	rom_cksum:
-	.db 0	; ROM checksum: 256 - sum(ROM[0 .. rom_cksum - 1]), set by ihx2bin.py
-rom_end:		; linked code (C modules, SDCC library) follows (tools/link.py)
-
-	slack_at_end = 0x8000 - .
-
-	ASSERT_LT(., 0x8000)  ; catch the moment when 32kB overflows
 
 ;======================================================================
 
@@ -20466,6 +20586,9 @@ out2_bank:	BYTE	; its OUT2 bits (O2_BANK)
 out2_last:	BYTE	; last handset bus state written to OUT2
 ctcss_dec_src:	WORD	; CTCSS DSP decoder sample address
 ctcss_idle_sample: BYTE	; stays 0: "no signal" while banked
+bank_hl:	WORD	; bank1_call temporaries
+bank_fn:	WORD
+bank_af:	WORD
 #ifdef BANK_TEST
 bank_test_msg:	BUF(10)
 #endif

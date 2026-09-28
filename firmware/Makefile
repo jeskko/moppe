@@ -51,7 +51,7 @@ $(BUILD)/r58.ihx: $(BUILD)/r58.rel $(CMODS) $(TOOLS)/link.py
 	python3 $(TOOLS)/link.py -o $(BUILD)/r58 $(BUILD)/r58.rel $(CMODS)
 
 $(BUILD)/r58.bin: $(BUILD)/r58.ihx $(TOOLS)/ihx2bin.py
-	python3 $(TOOLS)/ihx2bin.py $< $@ --map $(BUILD)/r58.map --cksum rom_cksum
+	python3 $(TOOLS)/ihx2bin.py $< $@ --map $(BUILD)/r58.map --cksum rom_cksum $(IHXFLAGS)
 
 # sha256 of the released r58p8x3Z.bin (v3_Z ALs 24.09.2018)
 ALS_SHA256 = cdfe7016a991766454f1b3aa49e9a1eac0978f42e9a5638bf8828b1f725d8fb7
@@ -79,7 +79,7 @@ build-as80/r58.bin: r58.asm $(AS80)
 # ROM window bench test for a real board: 64 KB image for a 27C512
 banktest: build-banktest/r58-banktest.bin
 build-banktest/r58-banktest.bin: $(SRC) asm.h $(TOOLS)/banktest.py
-	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" C=
+	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" IHXFLAGS="--bank1-sum bank1_sum" C=
 	python3 $(TOOLS)/banktest.py build-banktest/r58.bin $@
 
 clean:
