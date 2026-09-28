@@ -8742,13 +8742,11 @@ i2c_sda_high:
 i2c_scl_low:
 	LD_A_OUT2(0)
 	out (OUT2), a
-	ld (out2_last), a	; bus state, for set_bank
 	jp i2c_delay
 
 i2c_scl_high:
 	LD_A_OUT2(O2_CLK)
 	out (OUT2), a
-	ld (out2_last), a	; bus state, for set_bank
 	jp i2c_delay
 
 ;
@@ -8757,8 +8755,9 @@ i2c_scl_high:
 i2c_delay:
 
 	out (WD), a
-	out (WD), a
-	out (WD), a		; some delay anyway...
+	out (WD), a		; some delay anyway (v3_Z had three; the third went
+				; to pay for the bank bits in i2c_scl_*: SCL high
+				; stays ~11 us on a P8E, I2C needs 4 us)
 #if 0
 	push af
 	ld a, #20		; delay. We run blind.
@@ -9080,6 +9079,8 @@ i2c_stop:
 	call i2c_sda_low
 
 	call i2c_scl_high	; stop ...
+	ld (out2_last), a	; bus state for set_bank: SCL stays high until the
+				; next transaction, which always ends here too
 	call i2c_sda_high	; ... condition.
 
 	ret

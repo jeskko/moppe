@@ -10,7 +10,9 @@ Phase 3).
 Textual call graph: a routine is a global label up to the next one; its
 edges are call/jp/jr/djnz to global labels, `.dw label` in its body (vector
 and jump tables), and falling through into the next label unless its last
-instruction is an unconditional ret/reti/retn/jp/jr/doreti.  Indirect jumps
+instruction is an unconditional ret/reti/retn/jp/jr/doreti (cpp lines,
+e.g. `#ifndef C_MODULES` or a multi-line #define, are not instructions;
+both sides of an #ifdef count, which errs on the safe side).  Indirect jumps
 through RAM (`jp (hl)`, scanner_state, repeater_state) are not followed;
 they are all mainline today, check new ones by hand.  Roots: the IM2
 handlers (`.dw sio*_ / pio*_`) and dosir.  RST 38 and NMI are left out:
@@ -47,7 +49,12 @@ def parse(path):
         b = start[order[k + 1]] if k + 1 < len(order) else len(src)
         out = set()
         last = ""
+        cont = False                    # inside a multi-line #define
         for l in src[a:b]:
+            raw = l.rstrip()
+            if cont or raw.lstrip().startswith("#"):
+                cont = raw.endswith("\\")   # preprocessor lines are not code
+                continue
             c = LABEL.sub("", code(l)).strip()
             if not c:
                 continue

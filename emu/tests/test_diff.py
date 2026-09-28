@@ -148,6 +148,39 @@ SCN_NV_PERSISTENCE = [
 
 
 
+def _keys(keys, hold=0.15, label=None):
+    out = []
+    for k in keys:
+        out += [("press", k, hold), ("run", 0.3), ("check", label or "key %r %.2f" % (k, hold))]
+    return out
+
+
+# Every key code through the key dispatch (keycheck/dokey/menu_input/
+# handle_key_during_tx, in C with C=1): short keys, long digits (0x80-0x89),
+# the menu's keys, keys while transmitting, and 'K'/'T', which no handset
+# has and only a hook script (script_check -> dokey_not_menu) sends.
+SCN_EVERY_KEY = [
+    ("boot", 2.5),
+    *_enter("433500"),
+    *_keys("*CB+-R"),
+    *_keys("0123456789", hold=0.65),
+    *_enter("433500"),
+    ("keys", "12"), ("press", "R"), ("run", 0.3), ("check", "R with digits"),
+    ("press", "E"), ("run", 0.3), ("check", "menu"),
+    *_keys("1C+-*#SRB"),
+    *_keys("20", hold=0.65),
+    ("press", "E"), ("run", 0.3), ("check", "menu left"),
+    ("ptt", True), ("run", 0.3),
+    *_keys("+-5"),
+    ("ptt", False), ("run", 0.5), ("check", "tx over"),
+    ("poke", "cfg_offhook_script", b"KT" + b"\xff" * 6),
+    ("hook", True), ("run", 0.5), ("check", "offhook script K T"),
+    ("hook", False), ("run", 0.5),
+    ("press", "S"), ("run", 0.5), ("check", "scanning"),
+    ("press", "S"), ("run", 0.3), ("check", "scan key again"),
+    ("press", "#"), ("run", 0.3), ("check", "scan stopped"),
+]
+
 def _fsk_scenarios():
     """FSK receive/send scenarios (packet formats: test_fsk.py). The
     config pointers are NV addresses, the same in both builds (v3_Z NV
@@ -267,6 +300,12 @@ class DiffTest(unittest.TestCase):
 
     def test_nv_persistence_over_power_cycle(self):
         self.diff(SCN_NV_PERSISTENCE)
+
+    def test_every_key(self):
+        self.diff(SCN_EVERY_KEY)
+
+    def test_every_key_cu58af(self):
+        self.diff(SCN_EVERY_KEY, cu=CU58AF)
 
     def test_fsk_receive(self):
         self.diff(_fsk_scenarios()[0])
