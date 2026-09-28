@@ -175,7 +175,8 @@ decided otherwise):
   (manual). Verified in the emulator model only; **confirm on a real board
   early** (a tiny test ROM that checksums the window and shows the result
   on the display).
-- **Bench test ROM — built 2026-09-28, waiting for a real board:**
+- **Bench test ROM — built 2026-09-28, waiting for a real board** (now
+  also checks bank 2, see below):
   `make -C firmware banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
   image for a 27C512 in the EPROM0 socket (EPROM1 socket as usual). It is
   the normal firmware plus `bank_test` early at boot. The lower row shows
@@ -278,11 +279,14 @@ decided otherwise):
 - **Next:** Phase 4 (port to C).
 - Note: MPRS receive takes ~0.2 s on a P8N (QRB/locator maths), all of it
   in bank 1, i.e. with the multiboard DTMF/CTCSS readers off.
-- P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0). The P8E was
-  read as unable to reach it, but the user's 2026-09-28 trace (hardware.md)
-  points to the same RA14 mux on the P8E; if confirmed, both cards have a
-  second 16 KB EPROM0 bank, the natural bank 2 (no EPROM1, no multiboard
-  conflict). Until then, don't depend on it.
+- **Bank 2 = EPROM0 chip 0x8000 (RS=1, RA14=0), on both cards** (2026-09-28):
+  the user's P8E schematic trace shows the same RA14 page select as the
+  P8N (hardware.md), so every radio has a second free 16 KB EPROM0 bank,
+  no EPROM1 and no multiboard conflict. `set_bank` knows it (NUM_BANKS =
+  3); nothing is placed there yet. The bench ROM now checks it too:
+  `tools/banktest.py` fills it with 0x5A (sum 0x8000) and `bank_test` shows
+  `b1b2 PASS`, or `b2 ssss 00` with the sum read (bank 1's sum = RA14 does
+  not select the page). Still assumed: EPROM0 A15 = CPU A15.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused
   (unreachable on P8E); 0xC000-0xFFFF = bank 1. EPROM: 27C512 (or W27C512 /
   27SF512 for electrical erase).
@@ -383,11 +387,11 @@ first, port, differential test against stock, size check, commit.
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The bank-1 modules (menu, APRS/GPS, FSK, repeater/CW) cannot go to C
-    until there is room for C in a bank: bank 1 has 785 bytes free and C
-    is ~1.9× the asm. That needs a second bank (P8N-only EPROM0 page, or
-    EPROM1, which excludes the multiboard): **a user decision**, plus SDCC
-    `--codeseg` + `__banked` wiring.
+  - The bank-1 modules (menu, APRS/GPS, FSK, repeater/CW) need room for C
+    in a bank: bank 1 has 785 bytes free and C is ~1.9× the asm. **Bank 2
+    (EPROM0 chip 0x8000, both cards) provides it**: next is the wiring
+    (`.area BANK2`, `bank2_call` stubs, SDCC `--codeseg` for banked C) and
+    the bench test on a real board.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
 
 ### Future: EPROM1

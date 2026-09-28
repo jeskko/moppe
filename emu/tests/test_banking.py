@@ -57,9 +57,12 @@ class Window(unittest.TestCase):
             self.assertEqual((r.peek(0x0000), r.peek(0x4000), r.peek(0x7FFF)),
                              (0x10, 0x11, 0x11))
 
-    def test_p8n_extra_page(self):
-        r = self.radio(P8N)
-        self.assertEqual(self.window(r, RS | BIT3), (0x12, 0x12))
+    def test_second_eprom0_page(self):
+        """RS with RA14=0: EPROM0 chip 0x8000, on both cards (the P8E per
+        the user's schematic trace, 2026-09-28)."""
+        for card in (P8E, P8N):
+            r = self.radio(card)
+            self.assertEqual(self.window(r, RS | BIT3), (0x12, 0x12), card)
 
     def test_multiboard_when_socket_holds_it(self):
         for card in (P8E, P8N):
@@ -200,14 +203,23 @@ class BenchTestRom(unittest.TestCase):
             for cu in (CU53AN, CU58AF):
                 r = self.boot(card, cu)
                 # (on the CU53AN's 7-segment digits S and 5 look the same)
-                self.assertIn(r.display()[1].strip().upper(), ("B1  PASS", "B1  PA55"), (card, cu))
+                self.assertIn(r.display()[1].strip().upper(), ("B1B2 PASS", "B1B2 PA55"), (card, cu))
 
     def test_wrong_page_shows_its_sum(self):
-        # as if RS|RA14 picked the P8N-only page (zeros) instead of 0xC000
+        # as if RS|RA14 picked the other page (0x5A bytes) instead of 0xC000
         img = self.image()
         img = img[:0xC000] + img[0x8000:0xC000]
         r = self.boot(P8E, image=img)
-        self.assertEqual(r.display()[1], "b1 0000 00")
+        self.assertEqual(r.display()[1], "b1 8000 00")
+
+    def test_bank2_wrong_page_shows_its_sum(self):
+        # as if RS alone showed chip 0xC000 again (RA14 ignored): bank 2
+        # reads bank 1's sum
+        img = self.image()
+        s1 = sum(img[0xC000:]) & 0xFFFF
+        img = img[:0x8000] + img[0xC000:] + img[0xC000:]
+        r = self.boot(P8N, image=img)
+        self.assertEqual(r.display()[1], "b2 %04X 00" % s1)
 
     def test_routine_result_shown(self):
         img = bytearray(self.image())

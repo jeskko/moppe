@@ -8836,11 +8836,11 @@ i2c_delay:
 ;  get_bank: A = current bank; keeps the other registers.
 ;  set_bank: select bank A (0..NUM_BANKS-1); destroys A and F only.
 
-NUM_BANKS = 2
+NUM_BANKS = 3
 	.globl ___sdcc_bcall_ehl	; link the trampoline from the SDCC library
 
-bank_bits_p8e:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14
-bank_bits_p8n:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14
+bank_bits_p8e:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14, O2_XXX | O2_RS
+bank_bits_p8n:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14, O2_XXX | O2_RS
 
 bank_init:
 	ld a, #O2_XXX			; bank 0 (cur_bank is 0), as set at reset
@@ -8957,23 +8957,7 @@ bank1_back:			; [old bank] [caller]
 ;
 bank_test:
 	ld a, #1
-	call set_bank
-	ld hl, #0x8000
-	ld de, #0
-1:
-	out (WD), a
-	ld a, e
-	add a, (hl)
-	ld e, a
-	jr nc, 2f
-	inc d
-2:
-	inc hl
-	ld a, h
-	cp #0xC0
-	jr nz, 1b
-	xor a
-	call set_bank
+	call bank_test_sum
 	ld hl, (bank1_sum)
 	and a
 	sbc hl, de
@@ -8982,14 +8966,31 @@ bank_test:
 	ld e, #1
 	ld hl, #bank_test_ping
 	call ___sdcc_bcall_ehl	; the routine in bank 1
-	ld hl, #bank_test_pass
 	cp #0xA5
-	jr z, 4f
 	ld hl, #0xCA11
+	jr nz, 3f
+	; bank 1 fine: bank 2 = EPROM0 chip 0x8000 (tools/banktest.py fills it
+	; with 0x5A, sum 0x8000)
+	ld a, #2
+	call bank_test_sum
+	ld hl, #BANK2_SUM
+	and a
+	sbc hl, de		; Z: as expected
+	ex de, hl		; HL = sum read (flags kept)
+	jr nz, 5f
+	ld hl, #bank_test_pass
+	jr 4f
+5:
+	xor a
+	ld bc, #bank_test_b2
+	jr 6f
 3:
+	ld bc, #bank_test_b1
+6:
 	push af			; value
 	push hl			; where
-	ld hl, #bank_test_pass
+	ld l, c
+	ld h, b
 	ld de, #bank_test_msg
 	ld bc, #3
 	ldir
@@ -9010,6 +9011,27 @@ bank_test:
 	ld hl, #sir
 	set DPYSIR, (hl)
 	ret			; Z: passed
+
+BANK2_SUM = 0x8000		; 0x4000 bytes of 0x5A
+
+bank_test_sum:			; DE = 16-bit byte sum of bank A's window
+	call set_bank
+	ld hl, #0x8000
+	ld de, #0
+1:
+	out (WD), a
+	ld a, e
+	add a, (hl)
+	ld e, a
+	jr nc, 2f
+	inc d
+2:
+	inc hl
+	ld a, h
+	cp #0xC0
+	jr nz, 1b
+	xor a
+	jp set_bank
 
 	; the window is wrong: nothing from bank 1 may run, just show why
 bank_test_stop:
@@ -9039,7 +9061,9 @@ bank_test_hex:		; A as two hex digits to (DE)+
 	inc de
 	ret
 
-bank_test_pass:	.ascii "b1  PASS  "
+bank_test_pass:	.ascii "b1b2 PASS "
+bank_test_b1:	.ascii "b1 "
+bank_test_b2:	.ascii "b2 "
 #endif
 
 	; OUT2 = bus state | D.  An interrupt between the two writes uses the
