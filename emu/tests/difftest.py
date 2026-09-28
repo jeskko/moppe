@@ -267,20 +267,33 @@ def _event_key(radio, ev):
 
 
 def _diff_events(label, events_a, events_b, radio_a, radio_b, tolerance_s):
+    """Per event type: the same sequence, each event within the timing
+    tolerance.  Types are compared apart because independent outputs (two
+    serial ports sending at once, MBUS and GPS) interleave differently when
+    one build is a fraction of a millisecond later; the timestamps still tie
+    them together."""
     diffs = []
-    keys_a = [_event_key(radio_a, e) for e in events_a]
-    keys_b = [_event_key(radio_b, e) for e in events_b]
-    if keys_a != keys_b:
-        diffs.append("%s: event sequence differs: stock=%r cand=%r" %
-                      (label, keys_a, keys_b))
-        return diffs  # timestamps are meaningless once the sequence itself differs
-    for (ta, _, _), (tb, _, _), key in zip(events_a, events_b, keys_a):
-        dt = tb - ta
-        if abs(dt) > tolerance_s:
-            diffs.append(
-                "%s: event %r timing differs: stock=%.4fs cand=%.4fs "
-                "(delta %.1fms > tolerance %.1fms)" %
-                (label, key, ta, tb, dt * 1000, tolerance_s * 1000))
+    types = []
+    for e in events_a + events_b:
+        if e[1] not in types:
+            types.append(e[1])
+    for ty in types:
+        ea = [e for e in events_a if e[1] == ty]
+        eb = [e for e in events_b if e[1] == ty]
+        keys_a = [_event_key(radio_a, e) for e in ea]
+        keys_b = [_event_key(radio_b, e) for e in eb]
+        if keys_a != keys_b:
+            diffs.append("%s: %s event sequence differs: stock=%r cand=%r" %
+                         (label, ty, keys_a, keys_b))
+            continue  # timestamps are meaningless once the sequence differs
+        for (ta, _, _), (tb, _, _), key in zip(ea, eb, keys_a):
+            dt = tb - ta
+            if abs(dt) > tolerance_s:
+                diffs.append(
+                    "%s: event %r timing differs: stock=%.4fs cand=%.4fs "
+                    "(delta %.1fms > tolerance %.1fms)" %
+                    (label, key, ta, tb, dt * 1000, tolerance_s * 1000))
+                break
     return diffs
 
 
