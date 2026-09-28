@@ -9,6 +9,63 @@ so its socket is normally free.
 Background: notes/rewrite-evaluation.md (measurements, constraints, proof of
 concept), notes/hardware.md (memory decode), notes/emulator.md.
 
+## Start here (next session, written 2026-09-28)
+
+**State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
+1 = EPROM0 chip 0xC000 (menu, APRS/GPS, FSK packets, repeater/CW; **785
+bytes free**), 2 = EPROM0 chip 0x8000 (**empty, 16 KB**, both cards; known
+to `set_bank`, checked by the bench ROM, no code yet). Phase 4 in `make C=1`:
+`c/squelch_crc.c`, `timers.c`, `keys.c`, `display.c`, `freq.c`; fixed ROM
+ends at ~0x46C1 (~14.7 KB free). 149 tests pass on both builds;
+`make -C firmware verify` still byte-identical for the release reference.
+
+**Next task: wire bank 2 for code**, then use it.
+1. Placement: bank 1 is `.area BANK1 (ABS)` / `.org 0x8000`, and ihx2bin
+   moves window addresses to file 0xC000. Bank 2 needs the same window
+   address but file 0x8000: two ABS areas at 0x8000 would collide in the
+   .ihx, so link bank 2 at a distinct virtual address (ihx2bin already
+   reads extended linear address records, `upper`) and map it in ihx2bin
+   (e.g. virtual 0x28000 → file 0x8000). Check how sdld/SDCC's `__banked`
+   and `--codeseg` want banked code placed before choosing the numbers.
+2. Calls: `bank1_call` takes its bank from `bank_to`; add `bank2_call`
+   (same body, `ld hl, #2`) and `far2_X` stubs. SDCC's
+   `___sdcc_bcall_ehl` already takes the bank in E.
+3. Tests: extend `test_banking.BankedFirmware` (code running from bank 2,
+   bank bits in OUT2, return to the caller's bank, nesting 1↔2), keep
+   `BankDuty` (it runs `isrreach` over bank 1; add bank 2), bench ROM
+   calls a ping routine in bank 2 as it does in bank 1.
+4. Then: banked C (`--codeseg BANK2`, `__banked` entry points) and port the
+   bank-1 modules, moving what no longer fits to bank 2. Or move fixed-ROM
+   asm to bank 2 first if space in fixed ROM is wanted.
+Other open items: scanner to C (coroutine → state machine); the real-board
+bench test (EPROM programmer); `notes/hardware.md` open questions (IC27,
+EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
+
+**Rules learned this session (details in Phase 3/4 below):**
+- Moving code to a bank: `tools/bankxref.py` (external users),
+  `tools/isrreach.py` (must say "none"; it skips cpp lines), no stored bank
+  addresses used by fixed code, block edges end in ret/jp.
+- **Bank duty:** anything polled on every mainloop pass enters a bank only
+  when it has work (see `far_repeater_run`: once per systick), and long
+  busy-waits run in bank 0 (`bank0_call`); a bank hides the multiboard.
+  `test_banking.BankDuty` measures it.
+- C: no stack frames where asm callees may clobber IX (statics instead);
+  interrupt-context C: no IX/IY at all; asm results in flags need a value in
+  A (or a shim); keep the asm's evaluation order for volatile/hardware
+  reads; copy constant expressions, not comments; `sir |= bit` in mainline
+  is not atomic (keep such writes in asm); layout constants C hard-codes
+  get an ASSERT in r58.s under C_MODULES. Check generated asm for
+  `ix`/`iy`/`exx`.
+- Safety net per module: tests first (they must pass on the release);
+  differential scenarios for what the handset/synth/NV show
+  (`test_diff.py`), release-vs-build RAM comparison for state they cannot
+  see (`test_freq.Pair`), a mutation check that the new tests catch an
+  off-by-one. Differential tests only cover what their scenarios drive
+  (the CU58AF I2C slowdown from Phase 2 hid for a whole phase).
+- Obvious firmware bugs may be fixed (user, 2026-09-28): with a test that
+  fails on the release, noted under "Firmware behaviour the tests pinned
+  down".
+
 ## Ground rules
 
 - **The emulator test suite is the safety net.** Every phase ends with
