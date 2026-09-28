@@ -18,6 +18,15 @@
 #define handle_key_during_tx	_handle_key_during_tx
 #define draw_upper_row		_draw_upper_row
 #define draw_lower_row		_draw_lower_row
+#define changed_frequency		_changed_frequency
+#define changed_frequency_duplex_okay		_changed_frequency_duplex_okay
+#define temporary_change_rx_freq		_temporary_change_rx_freq
+#define locate_band		_locate_band
+#define set_duplex_from_tx_rx		_set_duplex_from_tx_rx
+#define step_duplex_state		_step_duplex_state
+#define step_channel_up		_step_channel_up
+#define step_channel_down		_step_channel_down
+#define update_tx_vco_band		_update_tx_vco_band
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -9187,6 +9196,7 @@ i2c_recv:
 ;	2560, 12800 / 2560  quot  5 rem 0, 5 too small, use /= 10 shift 1
 ;
 
+#ifndef C_MODULES
 changed_frequency:
 	call parameters_from_band
 	call changed_frequency_duplex_okay
@@ -9211,6 +9221,8 @@ parameters_from_band:
 	call locate_band
 	call set_channel_step      ; input: bandx logical step
 	ret
+
+#endif /* C_MODULES */
 
 locate_tx_band:
 
@@ -9242,6 +9254,7 @@ locate_tx_band:
 3:
 	ret
 
+#ifndef C_MODULES
 locate_band:
 	ld a, #DPX_DUPLEX
 	ld (duplex_state), a     ; assume duplex
@@ -9355,6 +9368,8 @@ determine_tx_div:
 3:
 	; fallthru
 
+#endif /* C_MODULES */
+
 determine_tx_div_split:
 
 	load_ahl(tx_freq)
@@ -9403,6 +9418,7 @@ get_scan_patience:
 	ld a, (band_sclisten)
 	ret
 
+#ifndef C_MODULES
 set_legal_tx_flag:
 	load_ahl(cfg_tx_band_start)
 	sub_ahl_de(tx_freq)
@@ -9469,6 +9485,8 @@ step_duplex_state:
 1:
 	jp changed_frequency_duplex_okay
 
+#endif /* C_MODULES */
+
 	; set duplex shift temporarily
 
 set_duplex_shift_neg:
@@ -9511,6 +9529,7 @@ set_tx_freq:
 
 ; Some contortions to handle stepping up _TO_ a slice end
 
+#ifndef C_MODULES
 step_channel_up:
 	ld de, (band_step_hz)
 	inc de                 ; rounding up, to land on the proper slice.
@@ -9546,6 +9565,8 @@ step_channel_down:
 
 	jp changed_frequency
 
+
+#endif /* C_MODULES */
 
 set_channel_step:
 
@@ -9676,6 +9697,7 @@ check_and_clamp_divisor:
 	imm_ahl(0xFFFF)
 	ret
 
+#ifndef C_MODULES
 determine_qsy_kHz:
 	load_ahl(rx_freq)             ; current rx freq
 	sub_ahl_de(rx_freq_previous)  ; -= previous rx freq
@@ -9726,6 +9748,8 @@ update_tx_vco_band:
 	ld a, c
 	ld (synth_ctrl), a
 	ret
+
+#endif /* C_MODULES */
 
 halt_txsynth:
 	ld a, (synth_ctrl)
@@ -20173,6 +20197,16 @@ num_bandrecs = 6
 	cfg_other_start:       FREQ     ; unused, now "other" looks ...
 	cfg_other_end:         FREQ     ; ... like previous bandrecords
 	cfg_other_duplex:      FREQ     ; CFG_DPX (includes sign)
+#ifdef C_MODULES
+	; c/freq.c hard-codes the band record layout
+	ASSERT_EQ(num_bandrecs, 6)
+	ASSERT_EQ(size_bandrec, 14)
+	ASSERT_EQ(cfg_band1_duplex - cfg_band1_start, 6)
+	ASSERT_EQ(cfg_band1_step - cfg_band1_start, 9)
+	ASSERT_EQ(cfg_band1_autoreject - cfg_band1_start, 12)
+	ASSERT_EQ(cfg_other_duplex - cfg_band1_start, 6 * 14 + 6)
+	ASSERT_EQ(DPX_SPLIT, 3)
+#endif
 	cfg_other_step:        BYTE     ; TAB (STEP_xx)
 	cfg_other_sctail:      BYTE     ; seconds of lingering after LOS
 	cfg_other_sclisten:    BYTE     ; seconds of stay at one location

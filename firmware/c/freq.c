@@ -1,0 +1,252 @@
+/*
+ * Frequency, band and duplex logic in C (Phase 4, notes/hybrid-plan.md).
+ * Built with `make C=1`; replaces changed_frequency and its chain,
+ * locate_band, the duplex logic, the TX-legality check, channel stepping,
+ * the QSY size check and the VCO band bits of r58.s (see the C_MODULES
+ * blocks there).
+ *
+ * Frequencies are 24-bit little-endian values in kHz; duplex shifts are
+ * 24-bit two's complement, so sums wrap at 24 bits as in the assembler.
+ * The arithmetic kernel stays in assembler (freq2div/div2freq and their
+ * rounding quirks, via determine_rx_div, determine_tx_div_split and
+ * set_channel_step), as do the helpers whose results asm callers take
+ * from registers (locate_tx_band, channel_step_parms).
+ *
+ * The routines called here do not preserve IX, so no stack frames.
+ * Mainline only.
+ */
+#include <stdint.h>
+
+#define DPX_SIMPLEX	0
+#define DPX_DUPLEX	1
+#define DPX_REVERSE	2
+#define DPX_SPLIT	3
+
+#define NUM_BANDRECS	6		/* asserted in r58.s */
+#define SIZE_BANDREC	14
+#define BR_START	0
+#define BR_END		3
+#define BR_DUPLEX	6
+#define BR_STEP		9
+#define BR_SCTAIL	10
+#define BR_SCLISTEN	11
+#define BR_AUTOREJECT	12
+
+#define MASK24		0xFFFFFFUL
+
+extern uint8_t rx_freq[3], tx_freq[3], duplex_shift[3], rx_freq_previous[3],
+	last_qsy_kHz[3];
+extern const uint8_t cfg_band1_start[], cfg_other_duplex[3],
+	cfg_tx_band_start[3], cfg_tx_band_end[3], cfg_tx_oob_0[3],
+	cfg_tx_oob_1[3], cfg_tx_oob_2[3], cfg_tx_oob_3[3], cfg_tx_oob_4[3],
+	cfg_rx_vco_center[3], cfg_tx_vco_center[3], cfg_scan_large_qsy[3];
+extern uint8_t duplex_state, band, band_step, band_sctail, band_sclisten,
+	band_autoreject, tx_is_legal, local_mode, synth_ctrl,
+	scan_settling_time, cfg_scan_rate_kvik, cfg_scan_rate_slow;
+extern uint16_t band_step_hz;
+
+/* firmware routines (assembler) */
+extern void close_squelch(void), lookup_rfc(void), determine_rx_div(void),
+	load_rxsynth(void), determine_tx_div_split(void), set_channel_step(void);
+extern uint16_t channel_step_parms(uint8_t step);	/* user step, in DE */
+
+/* ---- 24-bit values */
+
+/* byte access through a static union: SDCC's 32-bit shifts are slow and
+ * large, and a static avoids a stack frame */
+static union {
+	uint32_t l;
+	uint8_t b[4];
+} t24;
+
+static uint32_t get24(const uint8_t *p)
+{
+	t24.b[0] = p[0];
+	t24.b[1] = p[1];
+	t24.b[2] = p[2];
+	t24.b[3] = 0;
+	return t24.l;
+}
+
+static void put24(uint8_t *p, uint32_t v)
+{
+	t24.l = v;
+	p[0] = t24.b[0];
+	p[1] = t24.b[1];
+	p[2] = t24.b[2];
+}
+
+static uint32_t f, g;			/* static: no stack frame */
+static const uint8_t *rec;
+static uint8_t k;
+
+/* ---- bands */
+
+/* Band record of rx_freq (start <= rx < end) into band, band_step, ...;
+ * outside the six bands: band 0, simplex, the "other" record. */
+void locate_band(void)
+{
+	duplex_state = DPX_DUPLEX;		/* assume duplex */
+	f = get24(rx_freq);
+	rec = cfg_band1_start;
+	for (k = 0; k < NUM_BANDRECS; k++, rec += SIZE_BANDREC)
+		if (f >= get24(rec + BR_START) && f < get24(rec + BR_END))
+			break;
+	if (k == NUM_BANDRECS) {
+		duplex_state = DPX_SIMPLEX;
+		band = 0;
+	} else
+		band = k + 1;
+
+	/* a band without its own shift is simplex with the "other" shift
+	 * ("other" does not imply autoduplex) */
+	put24(duplex_shift, get24(rec + BR_DUPLEX));
+	if (!get24(duplex_shift)) {
+		put24(duplex_shift, get24(cfg_other_duplex));
+		duplex_state = DPX_SIMPLEX;
+	}
+	band_step = rec[BR_STEP];
+	band_sctail = rec[BR_SCTAIL];
+	band_sclisten = rec[BR_SCLISTEN];
+	band_autoreject = rec[BR_AUTOREJECT];
+}
+
+static void parameters_from_band(void)
+{
+	locate_band();
+	set_channel_step();
+}
+
+/* ---- duplex */
+
+/* from a memory's rx/tx pair */
+void set_duplex_from_tx_rx(void)
+{
+	f = (get24(tx_freq) - get24(rx_freq)) & MASK24;
+	if (f) {
+		put24(duplex_shift, f);
+		duplex_state = DPX_DUPLEX;
+	} else {
+		put24(duplex_shift, get24(cfg_other_duplex));
+		duplex_state = DPX_SIMPLEX;
+	}
+}
+
+/* duplex 0: tx = rx; 1: rx + shift; 2: rx - shift (shift has its sign);
+ * 3 (split): tx_freq as it is.  Then the tx divisor and aligned tx_freq. */
+static void determine_tx_div(void)
+{
+	f = get24(rx_freq);
+	switch (duplex_state) {
+	case DPX_DUPLEX:
+		put24(tx_freq, f + get24(duplex_shift));
+		break;
+	case DPX_REVERSE:
+		put24(tx_freq, f - get24(duplex_shift));
+		break;
+	case DPX_SPLIT:
+		break;
+	default:
+		put24(tx_freq, f);
+	}
+	determine_tx_div_split();
+}
+
+/* TX allowed: start < tx < end, or one of the five out-of-band spots,
+ * or anything while /LOCAL is grounded */
+static void set_legal_tx_flag(void)
+{
+	f = get24(tx_freq);
+	if ((get24(cfg_tx_band_start) < f && f < get24(cfg_tx_band_end)) ||
+	    f == get24(cfg_tx_oob_0) || f == get24(cfg_tx_oob_1) ||
+	    f == get24(cfg_tx_oob_2) || f == get24(cfg_tx_oob_3) ||
+	    f == get24(cfg_tx_oob_4))
+		tx_is_legal = 1;
+	else
+		tx_is_legal = local_mode;
+}
+
+/* ---- the frequency changed */
+
+void update_rx_vco_band(void)
+{
+	if (get24(rx_freq) < get24(cfg_rx_vco_center))
+		synth_ctrl |= 0x01;		/* "1" = low band */
+	else
+		synth_ctrl &= ~0x01;
+}
+
+void update_tx_vco_band(void)
+{
+	if (get24(tx_freq) < get24(cfg_tx_vco_center))
+		synth_ctrl |= 0x02;
+	else
+		synth_ctrl &= ~0x02;
+}
+
+/* how far the last QSY went: sets the scanner's settling time */
+static void determine_qsy_kHz(void)
+{
+	f = get24(rx_freq);
+	g = get24(rx_freq_previous);
+	put24(last_qsy_kHz, f >= g ? f - g : g - f);
+	scan_settling_time = get24(last_qsy_kHz) < get24(cfg_scan_large_qsy) ?
+		cfg_scan_rate_kvik : cfg_scan_rate_slow;
+	put24(rx_freq_previous, f);
+}
+
+void temporary_change_rx_freq(void)
+{
+	close_squelch();
+	lookup_rfc();
+	update_rx_vco_band();
+	update_tx_vco_band();
+	determine_rx_div();
+	load_rxsynth();
+	determine_qsy_kHz();
+}
+
+void changed_frequency_duplex_okay(void)
+{
+	temporary_change_rx_freq();
+	determine_tx_div();
+	set_legal_tx_flag();
+}
+
+void changed_frequency(void)
+{
+	parameters_from_band();
+	changed_frequency_duplex_okay();
+}
+
+/* simplex -> duplex -> reverse -> simplex; forgets split and temporary
+ * shifts.  Entering reverse and leaving it swap rx and tx. */
+void step_duplex_state(void)
+{
+	if (++duplex_state >= DPX_SPLIT)
+		duplex_state = DPX_SIMPLEX;
+	if (duplex_state != DPX_DUPLEX) {
+		f = get24(rx_freq);
+		put24(rx_freq, get24(tx_freq));
+		put24(tx_freq, f);
+	}
+	changed_frequency_duplex_okay();
+}
+
+/* ---- channel steps (rx_freq is aligned to the grid afterwards) */
+
+void step_channel_up(void)
+{
+	/* one more, to land on the right slice when stepping to its end */
+	put24(rx_freq, get24(rx_freq) + band_step_hz + 1);
+	changed_frequency();
+}
+
+void step_channel_down(void)
+{
+	/* step from 1 below, with the step of the slice we land in */
+	put24(rx_freq, get24(rx_freq) - 1);
+	locate_band();
+	put24(rx_freq, get24(rx_freq) - (uint16_t)(channel_step_parms(band_step) - 1));
+	changed_frequency();
+}
