@@ -13,30 +13,26 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 **State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
 1 = EPROM0 chip 0xC000 (menu, APRS/GPS, FSK packets, repeater/CW; **785
-bytes free**), 2 = EPROM0 chip 0x8000 (**empty, 16 KB**, both cards; known
-to `set_bank`, checked by the bench ROM, no code yet). Phase 4 in `make C=1`:
-`c/squelch_crc.c`, `timers.c`, `keys.c`, `display.c`, `freq.c`; fixed ROM
-ends at ~0x46C1 (~14.7 KB free). 149 tests pass on both builds;
-`make -C firmware verify` still byte-identical for the release reference.
+bytes free**), 2 = EPROM0 chip 0x8000 (**wired for code, still empty,
+16 KB**, both cards; see "Bank 2 wiring" under Phase 3). Phase 4 in
+`make C=1`: `c/squelch_crc.c`, `timers.c`, `keys.c`, `display.c`,
+`freq.c`; fixed ROM ends at ~0x46CB (~14.6 KB free). 153 tests pass on
+both builds; `make -C firmware verify` still byte-identical for the
+release reference.
 
-**Next task: wire bank 2 for code**, then use it.
-1. Placement: bank 1 is `.area BANK1 (ABS)` / `.org 0x8000`, and ihx2bin
-   moves window addresses to file 0xC000. Bank 2 needs the same window
-   address but file 0x8000: two ABS areas at 0x8000 would collide in the
-   .ihx, so link bank 2 at a distinct virtual address (ihx2bin already
-   reads extended linear address records, `upper`) and map it in ihx2bin
-   (e.g. virtual 0x28000 → file 0x8000). Check how sdld/SDCC's `__banked`
-   and `--codeseg` want banked code placed before choosing the numbers.
-2. Calls: `bank1_call` takes its bank from `bank_to`; add `bank2_call`
-   (same body, `ld hl, #2`) and `far2_X` stubs. SDCC's
-   `___sdcc_bcall_ehl` already takes the bank in E.
-3. Tests: extend `test_banking.BankedFirmware` (code running from bank 2,
-   bank bits in OUT2, return to the caller's bank, nesting 1↔2), keep
-   `BankDuty` (it runs `isrreach` over bank 1; add bank 2), bench ROM
-   calls a ping routine in bank 2 as it does in bank 1.
-4. Then: banked C (`--codeseg BANK2`, `__banked` entry points) and port the
-   bank-1 modules, moving what no longer fits to bank 2. Or move fixed-ROM
-   asm to bank 2 first if space in fixed ROM is wanted.
+**Next task: use bank 2.** Either
+- banked C: a module with `#pragma bank 2` and `__banked` entry points
+  (SDCC puts it in `_CODE_2`, link.py places it after `bank2_end`; fixed
+  C calls it through `___sdcc_bcall_ehl`, asm through a `far2_X` stub or
+  `ld e, #2 / ld hl, #fn / call ___sdcc_bcall_ehl`). Port the bank-1
+  modules to C this way, moving what no longer fits in bank 1; or
+- asm: move a block into the BANK2 section (same procedure as bank 1,
+  stubs `far2_X: call bank2_call / .dw X`) if fixed-ROM space is wanted
+  first. Watch for arithmetic on bank-2 labels that is not a plain 16-bit
+  use: they are 0x28000 + offset (e.g. `x - 0x8000` is wrong there).
+Check `__banked` argument passing before the first port: a banked
+function takes its arguments on the stack (the bank byte sits between),
+not in registers as `--sdcccall 1` otherwise does.
 Other open items: scanner to C (coroutine → state machine); the real-board
 bench test (EPROM programmer); `notes/hardware.md` open questions (IC27,
 EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
@@ -237,12 +233,14 @@ decided otherwise):
   `make -C firmware banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
   image for a 27C512 in the EPROM0 socket (EPROM1 socket as usual). It is
   the normal firmware plus `bank_test` early at boot. The lower row shows
-  `b1b2 PASS` (on a CU53AN the S look like 5) when both window pages are
-  right; `b1 ssss 00` = bank 1's 16-bit byte sum was ssss (`make banktest`
-  prints the right one; 8000 = it showed the bank-2 page, which is filled
-  with 0x5A; C000 = an empty 0xFF page); `b1 CA11 vv` = sum fine but the
-  routine returned vv; `b2 ssss 00` = bank 1 fine but bank 2's sum was ssss
-  instead of 8000 (bank 1's sum = RA14 does not select the page). The
+  `b1b2 PASS` (on a CU53AN the S look like 5, B like b) when both window
+  pages are right; `b1 ssss 00` = bank 1's 16-bit byte sum was ssss
+  (`make banktest` prints both pages' sums, currently bank 1 FB75, bank 2
+  BE64; C000 = an erased page); `b1 CA11 vv` = sum fine but
+  `bank_test_ping` returned vv; `b2 ssss 00` = bank 1 fine but bank 2's
+  sum was ssss (bank 1's sum = RA14 does not select the page); `b2 CA11
+  vv` = bank 2's sum fine but `bank_test_ping2`, called through a far2
+  stub (`bank2_call`), returned vv. The
   emulator shows PASS on P8E/P8N with both handsets
   (`test_banking.BenchTestRom`). The user will burn it when the EPROM
   programmer turns up and expects the service manual's decode to be right,
@@ -342,12 +340,30 @@ decided otherwise):
   the user's P8E schematic trace shows the same RA14 page select as the
   P8N (hardware.md), so every radio has a second free 16 KB EPROM0 bank,
   no EPROM1 and no multiboard conflict. `set_bank` knows it (NUM_BANKS =
-  3); nothing is placed there yet. The bench ROM now checks it too:
-  `tools/banktest.py` fills it with 0x5A (sum 0x8000) and `bank_test` shows
-  `b1b2 PASS`, or `b2 ssss 00` with the sum read (bank 1's sum = RA14 does
-  not select the page). Still assumed: EPROM0 A15 = CPU A15.
-- Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused
-  (unreachable on P8E); 0xC000-0xFFFF = bank 1. EPROM: 27C512 (or W27C512 /
+  3). (The first bench ROM filled it with 0x5A and checked sum 0x8000;
+  replaced by the ping check below.) Still assumed: EPROM0 A15 = CPU A15.
+- **Bank 2 wiring** (2026-09-28): asm `.area BANK2 (ABS)` / `.org 0x28000`
+  after bank 1 (`bank2_start` … `bank2_end`), a virtual address so that
+  it does not collide with bank 1's window addresses in the .ihx. asmpp
+  absolutizes it like the other ABS areas; labels are 0x28000 + offset and
+  every 16-bit use (`ld`, `jp`, `.dw`, `>> 8`, `& 0xFF`, relative `jr`)
+  gets the window address (checked in a listing: sdld truncates silently).
+  ihx2bin maps 0x28000-0x2BFFF to file 0x8000 and refuses other addresses
+  above 0xFFFF. SDCC's `#pragma bank N` code is in area `_CODE_N` with
+  `b_fn = N`; link.py places `_CODE_1` at `bank1_end` and `_CODE_2` at
+  `bank2_end` (only when some module has the area; sdld refuses `-b` for
+  an unknown one) and checks the bank ends. Verified with a throwaway
+  `#pragma bank 2` module: `_ping` at 0x28000, `b_ping = 2`, the code at
+  file 0x8000. `bank2_call` = `bank1_call` with bank 2 (stubs `far2_X:
+  call bank2_call / .dw X`). The emulator (`r58emu._map_symbols`) masks
+  bank-2 symbols to their window address. Tests: `test_banking`
+  `test_bank2_call_p8e/p8n` (code in bank 2, OUT2 low nibble 0xC,
+  display/keys go on, bank 0 back), `test_nested_bank1_to_bank2` (bank 1
+  → far2 stub → bank 2, returns to bank 1 then 0), `BankDuty` runs
+  isrreach over bank 2 too; a mutation (`bank2_call` selecting bank 1)
+  fails the nesting and bench tests.
+- Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF = bank 2;
+  0xC000-0xFFFF = bank 1. EPROM: 27C512 (or W27C512 /
   27SF512 for electrical erase).
 - What goes in the bank: mainline-only, non-ISR code with its data. Good
   first candidates: setup menu engine + 288 records (~7.4 KB), APRS/MPRS/
@@ -448,9 +464,9 @@ first, port, differential test against stock, size check, commit.
     functions.
   - The bank-1 modules (menu, APRS/GPS, FSK, repeater/CW) need room for C
     in a bank: bank 1 has 785 bytes free and C is ~1.9× the asm. **Bank 2
-    (EPROM0 chip 0x8000, both cards) provides it**: next is the wiring
-    (`.area BANK2`, `bank2_call` stubs, SDCC `--codeseg` for banked C) and
-    the bench test on a real board.
+    (EPROM0 chip 0x8000, both cards) provides it**; it is wired (Phase 3,
+    "Bank 2 wiring": `#pragma bank 2`, `bank2_call` stubs). Still gated
+    on the bench test on a real board.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
 
 ### Future: EPROM1

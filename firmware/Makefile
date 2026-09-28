@@ -79,7 +79,7 @@ build-as80/r58.bin: r58.asm $(AS80)
 # ROM window bench test for a real board: 64 KB image for a 27C512
 banktest: build-banktest/r58-banktest.bin
 build-banktest/r58-banktest.bin: $(SRC) asm.h $(TOOLS)/banktest.py
-	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" IHXFLAGS="--bank1-sum bank1_sum" C=
+	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" IHXFLAGS="--bank1-sum bank1_sum --bank2-sum bank2_sum" C=
 	python3 $(TOOLS)/banktest.py build-banktest/r58.bin $@
 
 clean:

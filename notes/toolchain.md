@@ -74,6 +74,15 @@ absolutized by asmpp like ROM. ihx2bin maps ihx 0x8000-0xBFFF to file
 through `far_*` stubs (`call bank1_call / .dw fn`), C `__banked` calls
 through SDCC's `___sdcc_bcall_ehl`; both use `set_bank`.
 
+### Bank 2
+
+`.area BANK2 (ABS)` / `.org 0x28000`: a virtual address, so it does not
+overlap bank 1 in the .ihx (extended linear address records). Labels are
+0x28000 + offset; 16-bit uses of them truncate to the window address.
+ihx2bin maps 0x28000-0x2BFFF to file 0x8000-0xBFFF. Stubs: `far2_X: call
+bank2_call / .dw X`. Banked C (`#pragma bank N`, area `_CODE_N`) is placed
+by link.py after `bankN_end`; the emulator masks bank-2 symbols to 16 bits.
+
 ### C modules (`make C=1`)
 
 `c/*.c` → `sdcc -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size -c` →

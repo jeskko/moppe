@@ -1,7 +1,7 @@
 """
 ROM window decode at 0x8000-0xBFFF, the basis of the banked-EPROM plan
 (notes/hybrid-plan.md): synthetic ROM images (Window), and the firmware's
-bank switching with code running from bank 1 (BankedFirmware).
+bank switching with code running from banks 1 and 2 (BankedFirmware).
 
 P8E (schematic): RS=1 -> EPROM0 chip 0xC000-0xFFFF; RS=0 -> EPROM1 page
   (A14,A15,A16 = OUT2 bits 0,1,3).
@@ -82,14 +82,18 @@ class Window(unittest.TestCase):
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware", "build")
 
-# Bank 1 test routine, put in the unused top of bank 1 (window 0xBF00 =
-# EPROM0 file offset 0xFF00): spin ~0.3 s kicking the watchdog, store a
-# mark in junk, return 0x5A in A.
+# Test routines, put in the unused tops of bank 1 (window 0xBF00 = EPROM0
+# file offset 0xFF00) and bank 2 (window 0xBF00 = file 0xBF00).
 TEST_AT = 0xBF00
+NEST_AT = 0xBF80
+PAGE = {1: 0xC000, 2: 0x8000}           # file offset of each bank's page
+OUT2_BANK = {0: 0x08, 1: 0x0D, 2: 0x0C}  # OUT2 bits 3..0: bit3, RS, RA14
 
 
-def bank1_code(junk, loops=60000):
-    code = bytes([0x01, loops & 0xFF, loops >> 8,       # ld bc, #loops
+def spin_code(junk, loops=60000):
+    """Spin ~0.3 s kicking the watchdog, store a mark in junk, return 0x5A
+    in A."""
+    return bytes([0x01, loops & 0xFF, loops >> 8,       # ld bc, #loops
                   0xD3, 0x90,                           # 1: out (WD), a
                   0x0B,                                 # dec bc
                   0x78, 0xB1,                           # ld a, b / or c
@@ -98,12 +102,24 @@ def bank1_code(junk, loops=60000):
                   0x32, junk & 0xFF, junk >> 8,         # ld (junk), a
                   0x3E, 0x5A,                           # ld a, #0x5A
                   0xC9])                                # ret
-    return code + b"\xff" * (0x100 - len(code))
+
+
+def nest_code(sym):
+    """Bank 1: call the bank 2 spin routine through a far2_ stub (here in
+    bank 1 too), then return A = 0x10 + the bank it came back to."""
+    b2, cb, stub = sym["bank2_call"], sym["cur_bank"], NEST_AT + 9
+    return bytes([0xCD, stub & 0xFF, stub >> 8,         # call stub
+                  0x3A, cb & 0xFF, cb >> 8,             # ld a, (cur_bank)
+                  0xC6, 0x10,                           # add a, #0x10
+                  0xC9,                                 # ret
+                  0xCD, b2 & 0xFF, b2 >> 8,             # stub: call bank2_call
+                  TEST_AT & 0xFF, TEST_AT >> 8])        # .dw TEST_AT
 
 
 class BankedFirmware(unittest.TestCase):
-    """Phase 2: set_bank / SDCC's ___sdcc_bcall_ehl run code in bank 1
-    while the interrupts keep redrawing the display and scanning keys."""
+    """set_bank / SDCC's ___sdcc_bcall_ehl / bank2_call run code in banks 1
+    and 2 while the interrupts keep redrawing the display and scanning
+    keys; calls nest and return to the caller's bank."""
 
     def radio(self, card):
         sys.path.insert(0, os.path.dirname(__file__))
@@ -111,9 +127,12 @@ class BankedFirmware(unittest.TestCase):
         fw = open(os.path.join(FW, "r58.bin"), "rb").read()
         lst = os.path.join(FW, "r58.map")
         sym = Radio(os.path.join(FW, "r58.bin"), lst).sym
-        img = fw.ljust(0x10000, b"\xff")
-        assert img[0xFF00:] == b"\xff" * 0x100, "bank 1 top is not free"
-        img = img[:0xFF00] + bank1_code(sym["junk"])
+        img = bytearray(fw.ljust(0x10000, b"\xff"))
+        for at, code in ((PAGE[1] + 0x3F00, spin_code(sym["junk"])),
+                         (PAGE[1] + 0x3F80, nest_code(sym)),
+                         (PAGE[2] + 0x3F00, spin_code(sym["junk"]))):
+            assert img[at:at + 0x80] == b"\xff" * 0x80, "bank top 0x%X is not free" % at
+            img[at:at + len(code)] = code
         d = tempfile.mkdtemp()
         rom = os.path.join(d, "rom64.bin")
         with open(rom, "wb") as f:
@@ -126,18 +145,19 @@ class BankedFirmware(unittest.TestCase):
         r.run(0.3)
         return r
 
-    def check_bank_call(self, card):
+    def check_bank_call(self, card, bank, at=TEST_AT, spin_bank=None, a_back=0x5A):
+        """Call bank:at from mainloop; the spin routine runs in spin_bank."""
+        spin_bank = spin_bank or bank
         r = self.radio(card)
-        up0, lo0 = r.display()
         hist0 = r.peek("dtmf_hist_idx")
         r.breakpoint("mainloop")
         self.assertEqual(r.run(1.0), "break")
         r.breakpoint("mainloop", False)
-        ret = r.call("___sdcc_bcall_ehl", de=0x0001, hl=TEST_AT)
+        ret = r.call("___sdcc_bcall_ehl", de=bank, hl=at)
 
         r.run(0.1)                      # inside the banked loop
-        self.assertEqual(r.peek("cur_bank"), 1)
-        self.assertEqual(r.latches()["out2"] & 0x0F, 0x0D)    # RS|RA14|bit3
+        self.assertEqual(r.peek("cur_bank"), spin_bank)
+        self.assertEqual(r.latches()["out2"] & 0x0F, OUT2_BANK[spin_bank])
         self.assertEqual(r.peek16("ctcss_dec_src"), r.sym["ctcss_idle_sample"])
         # the soft interrupt redraws the display (here on request, as the
         # hook/light code in systick does) and scans the keypad meanwhile
@@ -146,17 +166,17 @@ class BankedFirmware(unittest.TestCase):
         r.key_down("5")
         r.run(0.1)
         self.assertEqual(r.display_raw()[:16], bytes(16))
-        self.assertEqual(r.latches()["out2"] & 0x0F, 0x0D)
+        self.assertEqual(r.latches()["out2"] & 0x0F, OUT2_BANK[spin_bank])
         self.assertNotEqual(r.peek("junk"), 0xA5)  # still looping
         r.key_up()
 
         r.breakpoint(ret)
         self.assertEqual(r.run(1.0), "break")      # returned to the caller
         c = r.cpu()
-        self.assertEqual(c["af"] >> 8, 0x5A)        # A comes back
+        self.assertEqual(c["af"] >> 8, a_back)      # A comes back
         self.assertEqual(r.peek("junk"), 0xA5)
         self.assertEqual(r.peek("cur_bank"), 0)
-        self.assertEqual(r.latches()["out2"] & 0x0F, 0x08)
+        self.assertEqual(r.latches()["out2"] & 0x0F, OUT2_BANK[0])
         self.assertEqual(r.peek16("ctcss_dec_src"), 0x8000)
         # ROM bytes in the window were not taken for DTMF input
         self.assertEqual(r.peek("dtmf_hist_idx"), hist0)
@@ -166,10 +186,21 @@ class BankedFirmware(unittest.TestCase):
         self.assertEqual([e for e in r.events if e[1] == "WDRESET"], [])
 
     def test_bank_call_p8e(self):
-        self.check_bank_call(P8E)
+        self.check_bank_call(P8E, 1)
 
     def test_bank_call_p8n(self):
-        self.check_bank_call(P8N)
+        self.check_bank_call(P8N, 1)
+
+    def test_bank2_call_p8e(self):
+        self.check_bank_call(P8E, 2)
+
+    def test_bank2_call_p8n(self):
+        self.check_bank_call(P8N, 2)
+
+    def test_nested_bank1_to_bank2(self):
+        # bank 1 calls bank 2 through bank2_call and gets bank 1 back
+        for card in (P8E, P8N):
+            self.check_bank_call(card, 1, at=NEST_AT, spin_bank=2, a_back=0x11)
 
 
 BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
@@ -206,11 +237,12 @@ class BenchTestRom(unittest.TestCase):
                 self.assertIn(r.display()[1].strip().upper(), ("B1B2 PASS", "B1B2 PA55"), (card, cu))
 
     def test_wrong_page_shows_its_sum(self):
-        # as if RS|RA14 picked the other page (0x5A bytes) instead of 0xC000
+        # as if RS|RA14 picked the other page (bank 2) instead of 0xC000
         img = self.image()
+        s2 = sum(img[0x8000:0xC000]) & 0xFFFF
         img = img[:0xC000] + img[0x8000:0xC000]
         r = self.boot(P8E, image=img)
-        self.assertEqual(r.display()[1], "b1 8000 00")
+        self.assertEqual(r.display()[1].upper(), "B1 %04X 00" % s2)
 
     def test_bank2_wrong_page_shows_its_sum(self):
         # as if RS alone showed chip 0xC000 again (RA14 ignored): bank 2
@@ -219,7 +251,7 @@ class BenchTestRom(unittest.TestCase):
         s1 = sum(img[0xC000:]) & 0xFFFF
         img = img[:0x8000] + img[0xC000:] + img[0xC000:]
         r = self.boot(P8N, image=img)
-        self.assertEqual(r.display()[1], "b2 %04X 00" % s1)
+        self.assertEqual(r.display()[1].upper(), "B2 %04X 00" % s1)
 
     def test_routine_result_shown(self):
         img = bytearray(self.image())
@@ -232,6 +264,17 @@ class BenchTestRom(unittest.TestCase):
         r = self.boot(P8N, image=bytes(img))
         self.assertEqual(r.display()[1], "b1 CA11 C3")
 
+    def test_bank2_routine_result_shown(self):
+        img = bytearray(self.image())
+        sym = Radio(os.path.join(BANKTEST, "r58-banktest.bin"),
+                    os.path.join(BANKTEST, "r58.map")).sym
+        at = sym["bank_test_ping2"] + 1                # ld a, #0x5A (file = window)
+        self.assertEqual(img[at], 0x5A)
+        img[at] = 0xC3
+        img[0xBFFF] -= 0xC3 - 0x5A              # (0xFF there) keep the sum
+        r = self.boot(P8E, image=bytes(img))
+        self.assertEqual(r.display()[1], "b2 CA11 C3")
+
 
 class BankDuty(unittest.TestCase):
     """Bank 1 hides the multiboard (DTMF decoder, CTCSS DSP decoder skip
@@ -239,13 +282,14 @@ class BankDuty(unittest.TestCase):
     bank 1: guards like far_repeater_run's once-per-systick check keep the
     share small. And nothing in bank 1 may be reachable from interrupts."""
 
-    def test_nothing_in_bank1_reachable_from_interrupts(self):
+    def test_nothing_in_banks_reachable_from_interrupts(self):
         import subprocess
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        res = subprocess.run([sys.executable, os.path.join(root, "tools", "isrreach.py"),
-                              os.path.join(root, "firmware", "r58.s"), "bank1_start", "bank1_end"],
-                             capture_output=True, text=True)
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        for first, after in (("bank1_start", "bank1_end"), ("bank2_start", "bank2_end")):
+            res = subprocess.run([sys.executable, os.path.join(root, "tools", "isrreach.py"),
+                                  os.path.join(root, "firmware", "r58.s"), first, after],
+                                 capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, first + ": " + res.stdout + res.stderr)
 
     def share_in_bank1(self, r, seconds, step=0.0007):
         n = [0, 0]

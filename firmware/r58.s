@@ -8822,6 +8822,7 @@ i2c_delay:
 ;    0  power-on state: the EPROM1 socket (the DTMF/CTCSS multiboard when
 ;       fitted), OUT2 bits 3..0 = 1000
 ;    1  EPROM0 chip 0xC000-0xFFFF (OUT2 RS|RA14), on P8E and P8N
+;    2  EPROM0 chip 0x8000-0xBFFF (OUT2 RS), on P8E and P8N
 ;  Banked code runs from mainline only.  The interrupt code keeps the bank
 ;  bits in its OUT2 writes (out2_bank) and does not read the multiboard
 ;  while a bank is selected (dtmf_decoder, ctcss_dec_src).
@@ -8892,6 +8893,7 @@ set_bank:
 ;----------------------------------------------------------------------
 ;
 ;  Assembler calls into bank 1:  fn_stub:  call bank1_call / .dw fn
+;  (bank 2: far2_fn:  call bank2_call / .dw fn)
 ;  All registers pass to fn and back unchanged (flags too); the previous
 ;  bank is restored after fn returns, so calls nest.  The RAM temporaries
 ;  are only live until fn starts; interrupts never call bank code.
@@ -8903,6 +8905,11 @@ set_bank:
 bank0_call:			; stack: [&.dw fn] [caller]
 	ld (bank_hl), hl
 	ld hl, #0
+	jr 1f
+
+bank2_call:			; stack: [&.dw fn] [caller]
+	ld (bank_hl), hl
+	ld hl, #2
 	jr 1f
 
 bank1_call:			; stack: [&.dw fn] [caller]
@@ -8948,12 +8955,15 @@ bank1_back:			; [old bank] [caller]
 ;  Bench test of the ROM window on a real board (make banktest, 64 KB
 ;  EPROM image).  Bank 1 must show EPROM0 chip 0xC000-0xFFFF: its 16-bit
 ;  byte sum must equal bank1_sum (patched in by ihx2bin.py), and
-;  bank_test_ping there must return 0xA5.  The result stays on the lower
-;  row:
-;	"b1  PASS  "	window reads and code runs
-;	"b1 ssss 00"	the window's sum was ssss (0000: the P8N-only page,
-;			which tools/banktest.py fills with zeros)
+;  bank_test_ping there must return 0xA5.  Then the same for bank 2
+;  (EPROM0 chip 0x8000-0xBFFF): bank2_sum, and bank_test_ping2 called
+;  through bank2_call must return 0x5A.  The result stays on the lower row:
+;	"b1b2 PASS "	both windows read and code runs in both
+;	"b1 ssss 00"	bank 1's sum was ssss (make banktest prints what the
+;			pages sum to; 0xC000 would be an erased page)
 ;	"b1 CA11 vv"	sum fine, but the routine returned vv
+;	"b2 ssss 00"	bank 1 fine, bank 2's sum was ssss
+;	"b2 CA11 vv"	bank 2's sum fine, its routine returned vv
 ;
 bank_test:
 	ld a, #1
@@ -8969,19 +8979,21 @@ bank_test:
 	cp #0xA5
 	ld hl, #0xCA11
 	jr nz, 3f
-	; bank 1 fine: bank 2 = EPROM0 chip 0x8000 (tools/banktest.py fills it
-	; with 0x5A, sum 0x8000)
+	; bank 1 fine: bank 2 = EPROM0 chip 0x8000
 	ld a, #2
 	call bank_test_sum
-	ld hl, #BANK2_SUM
+	ld hl, (bank2_sum)
 	and a
 	sbc hl, de		; Z: as expected
 	ex de, hl		; HL = sum read (flags kept)
+	jr nz, 5f		; A = 0
+	call far2_bank_test_ping2	; through bank2_call
+	cp #0x5A
+	ld hl, #0xCA11
 	jr nz, 5f
 	ld hl, #bank_test_pass
 	jr 4f
 5:
-	xor a
 	ld bc, #bank_test_b2
 	jr 6f
 3:
@@ -9012,7 +9024,8 @@ bank_test:
 	set DPYSIR, (hl)
 	ret			; Z: passed
 
-BANK2_SUM = 0x8000		; 0x4000 bytes of 0x5A
+far2_bank_test_ping2:	call bank2_call
+	.dw bank_test_ping2
 
 bank_test_sum:			; DE = 16-bit byte sum of bank A's window
 	call set_bank
@@ -9041,6 +9054,7 @@ bank_test_stop:
 	jr 1b
 
 bank1_sum:	.dw 0	; set by ihx2bin.py --bank1-sum
+bank2_sum:	.dw 0	; set by ihx2bin.py --bank2-sum
 
 bank_test_hex:		; A as two hex digits to (DE)+
 	push af
@@ -20042,6 +20056,30 @@ bank_test_ping:
 bank1_end:
 	ASSERT_LE(., 0xC000)
 	slack_in_bank1 = 0xC000 - .
+
+;== BANK 2 ============================================================
+;
+;  EPROM0 0x8000-0xBFFF, mapped at 0x8000 by set_bank(2); the same rules
+;  as bank 1, entered through far2_* stubs (bank2_call).  Linked at the
+;  virtual address 0x28000 (bank 1 has the window addresses): labels here
+;  are 0x28000 + offset, and every 16-bit use of them (ld, jp, .dw, >> 8,
+;  & 0xFF) gets the window address; tools/ihx2bin.py puts the area at
+;  file 0x8000.  C code with #pragma bank 2 (area _CODE_2) is linked
+;  right after bank2_end (tools/link.py), C with #pragma bank 1 (_CODE_1)
+;  after bank1_end.
+
+	.area BANK2 (ABS)
+	.org 0x28000
+bank2_start:
+
+#ifdef BANK_TEST
+bank_test_ping2:
+	ld a, #0x5A
+	ret
+#endif
+
+bank2_end:
+	ASSERT_LE(., 0x2C000)
 
 
 ;======================================================================
