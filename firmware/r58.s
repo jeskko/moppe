@@ -15744,6 +15744,7 @@ all_config_send:
 
 	ld a, b
 	neg                   ; data+checksum == 0
+	ld c, a               ; putchar sends C (v3_Z sent the last data byte again)
 	call putchar
 
 	ret

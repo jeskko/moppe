@@ -96,11 +96,10 @@ decided otherwise):
   squelch level stays 0 after SAnE although its REC default is 127.
 - cSEC entry drops the last typed digit ("150" stores 15, shown as 150 ms).
 - CFG_EXE (type 10) is defined but no record uses it.
-- CFGSnd sends the last NV byte twice instead of the checksum
-  (`all_config_send` computes it in A, `putchar` sends C), so CFGGEt,
-  which checks the sum, refuses a plain CFGSnd dump. Kept for now;
-  `test_mbus_config.py` pins it. Fixing it is a user decision (host tools
-  may depend on it).
+- CFGSnd sent the last NV byte twice instead of the checksum
+  (`all_config_send` computed it in A, `putchar` sends C), so CFGGEt
+  refused a plain CFGSnd dump. **Fixed 2026-09-28** (user decision);
+  `test_mbus_config.py` checks the sum and the CFGSnd → CFGGEt round trip.
 
 ### Phase 1: one toolchain (SDCC's sdas + sdld) — done 2026-09-28
 - `firmware/r58.s` (sdasz80 syntax, converted by `tools/as80tosdas.py`)

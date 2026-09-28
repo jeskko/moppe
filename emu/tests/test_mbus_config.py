@@ -7,11 +7,9 @@ Wire format: a banner line ending in LF, the NV length as a little-endian
 word (0x1000), the NV image (0xC000-0xCFFF), then a checksum byte meant to
 make the 8-bit sum of data + checksum zero.
 
-v3_Z bug, kept (pinned by test_cfgsnd_checksum_byte_is_last_nv_byte):
-CFGSnd computes the checksum in A but `putchar` sends C, so the byte after
-the data is the last NV byte again. CFGGEt checks the sum properly, so it
-refuses a CFGSnd dump unless the sum happens to work out; a host tool has
-to recompute the checksum.
+v3_Z sent the last NV byte again instead of the checksum (computed in A,
+`putchar` sends C), so CFGGEt refused a plain CFGSnd dump. Fixed
+2026-09-28; test_cfgsnd_dump_loads_back checks the round trip.
 
 MBUS is serial channel 1 (Radio.serial_rx(1, ...), MBUS_TX events). The
 emulator's event ring holds 1024 events, so long transfers are run in
@@ -85,14 +83,23 @@ class MbusConfig(RadioTest):
                 self.assertEqual(body[r.addr("cfg_remote_dpy_secs") - NV_BASE], 42)
                 self.assertLower("dF   666 ?")   # back in the menu
 
-    def test_cfgsnd_checksum_byte_is_last_nv_byte(self):
-        """The v3_Z bug described in the module docstring."""
+    def test_cfgsnd_checksum(self):
         r = self.boot()
+        r.poke("cfg_remote_dpy_secs", 42)     # a sum that the old bug fails
         tx = self.cfgsnd()
         body = tx[-1 - NV_SIZE:-1]
-        self.assertEqual(tx[-1], body[-1])
-        self.assertNotEqual((sum(body) + tx[-1]) & 0xFF, 0,
-                            "this dump would fail CFGGEt's check")
+        self.assertEqual((sum(body) + tx[-1]) & 0xFF, 0)
+
+    def test_cfgsnd_dump_loads_back(self):
+        """CFGSnd from one radio, CFGGEt into another."""
+        r = self.boot()
+        r.poke("cfg_remote_dpy_secs", 42)
+        tx = self.cfgsnd()
+        self.r = None
+        r = self.boot()
+        self.assertEqual(r.peek("cfg_remote_dpy_secs"), 0)
+        self.cfgget(tx)
+        self.assertEqual(r.peek("cfg_remote_dpy_secs"), 42)
 
     def test_cfgsnd_needs_666(self):
         r = self.boot()
