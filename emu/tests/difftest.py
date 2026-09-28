@@ -40,10 +40,37 @@ A scenario is a list of steps, each a tuple `(kind, *args)`:
                                    durations within the timing tolerance;
                                    one-sample runs are folded into the run
                                    before (half-loaded 8254 counts)
-    ("trace", label, fn, seconds)  sample fn(radio) every TRACE_STEP_S for
+    ("trace", label, fn, seconds[, settle[, step_tol]])
+                                   sample fn(radio) every TRACE_STEP_S for
                                    `seconds` and compare the sequences of
                                    values; when each change happens may
-                                   differ by the timing tolerance
+                                   differ by the timing tolerance.  With
+                                   settle = n, values seen for fewer than
+                                   n samples are dropped (a multi-byte
+                                   variable read while it is written).
+                                   With step_tol, the times are compared
+                                   relatively: the time between changes
+                                   within step_tol, and the value sequence
+                                   may end up to 2 changes short (a build
+                                   running a little slower per step, e.g.
+                                   the scanner, drifts over a long trace)
+    ("visits", label, seconds, names, fn[, world[, step_tol]])
+                                   run for `seconds`, recording fn(radio)
+                                   each time the CPU reaches a routine of
+                                   `names`: a list of alternatives, the
+                                   first each build has is used (e.g.
+                                   [("changed_frequency",
+                                   "_changed_frequency"), ("go_mem_a",)]);
+                                   world(radio, side), if given, is called
+                                   every TRACE_STEP_S (a channel-dependent
+                                   signal, say).  The recorded sequences
+                                   are compared with the stock's aligned
+                                   to the candidate's first value (a build
+                                   a little slower per step lags, so its
+                                   window starts earlier and ends some
+                                   values short: up to VISIT_LAG + 20 %);
+                                   with step_tol the
+                                   times between visits must also agree
     ("probe", label, fn)           compare fn(radio) of both sides (state no
                                    display/NV/latch shows, e.g. a state
                                    machine's state resolved per build)
@@ -394,14 +421,81 @@ def _diff_tones(label, a, b, tolerance_s):
 TRACE_STEP_S = 0.005
 
 
-def _trace(radio, fn, seconds):
-    changes = []
+def _trace(radio, fn, seconds, settle=1):
+    runs = []                   # [time, value, samples]
     for i in range(int(round(seconds / TRACE_STEP_S))):
         radio.run(TRACE_STEP_S)
         v = fn(radio)
-        if not changes or changes[-1][1] != v:
-            changes.append(((i + 1) * TRACE_STEP_S, v))
-    return changes
+        if runs and runs[-1][1] == v:
+            runs[-1][2] += 1
+        else:
+            if runs and runs[-1][2] < settle and len(runs) > 1:
+                runs.pop()      # a transient: drop it, merge the neighbours
+                if runs[-1][1] == v:
+                    runs[-1][2] += 1
+                    continue
+            runs.append([(i + 1) * TRACE_STEP_S, v, 1])
+    return [(t, v) for t, v, _ in runs]
+
+
+def _visits(radio, side, seconds, names, fn, world=None):
+    addrs = [next(radio.sym[n] for n in alt if n in radio.sym) for alt in names]
+    for addr in addrs:
+        radio.breakpoint(addr)
+    out = []
+    t_end = radio.time + seconds
+    next_world = radio.time
+    try:
+        while radio.time < t_end - 1e-9:
+            if world and radio.time >= next_world - 1e-9:
+                world(radio, side)
+                next_world += TRACE_STEP_S
+            dt = min(t_end, next_world if world else t_end) - radio.time
+            if radio.run(max(dt, 1e-6)) == "break":
+                # breaks again at once after a timed stop right on the
+                # breakpoint, or an interrupt taken as the run resumes there
+                v = fn(radio)
+                if not (out and out[-1][1] == v and radio.time - out[-1][0] < 0.0005):
+                    out.append((radio.time, v))
+    finally:
+        for addr in addrs:
+            radio.breakpoint(addr, False)
+    return out
+
+
+VISIT_LAG = 8      # values the candidate may lag or lead behind the stock
+
+
+def _diff_visits(label, a, b, step_tol):
+    va, vb = [v for _, v in a], [v for _, v in b]
+    if not va and not vb:
+        return []
+    best = None
+    for shift in range(-VISIT_LAG, VISIT_LAG + 1):   # b[i] == a[i + shift]
+        lo, hi = max(0, -shift), min(len(vb), len(va) - shift)
+        if hi <= lo or hi - lo < max(len(va), len(vb)) * 0.8 - VISIT_LAG:
+            continue
+        if vb[lo:hi] == va[lo + shift:hi + shift]:
+            if step_tol is None or all(
+                    abs((b[i][0] - b[i - 1][0]) - (a[i + shift][0] - a[i + shift - 1][0])) <= step_tol
+                    for i in range(lo + 1, hi)):
+                best = shift
+                break
+    if best is not None:
+        return []
+    fmt = lambda c: " ".join("%.3f:%r" % x for x in c)  # noqa: E731
+    return ["%s: visits differ:\n  stock %s\n  cand  %s" % (label, fmt(a), fmt(b))]
+
+
+def _diff_trace_relative(label, a, b, step_tol):
+    n = min(len(a), len(b))
+    same = abs(len(a) - len(b)) <= 2 and [v for _, v in a[:n]] == [v for _, v in b[:n]] and all(
+        abs((a[i][0] - a[i - 1][0]) - (b[i][0] - b[i - 1][0])) <= step_tol + TRACE_STEP_S
+        for i in range(2, n))       # [0] is the window start, [1] its phase
+    if same:
+        return []
+    fmt = lambda c: " ".join("%.3f:%r" % x for x in c)  # noqa: E731
+    return ["%s: trace differs:\n  stock %s\n  cand  %s" % (label, fmt(a), fmt(b))]
 
 
 def _diff_trace(label, a, b, tolerance_s):
@@ -415,7 +509,7 @@ def _diff_trace(label, a, b, tolerance_s):
 
 
 def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
-             stock_kw=None, cand_kw=None, **radio_kw):
+             stock_kw=None, cand_kw=None, ignore=(), **radio_kw):
     """Run `scenario` against the stock build (`stock = (rom, lst)`) and
     the candidate build (`cand = (rom, lst)`), and return a list of
     human-readable differences (empty list = the two behaved identically
@@ -424,7 +518,9 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
     `radio_kw` (card=, cu=, nv=, prescaler=, if_hz=, ...) is passed to
     both Radio()s; `stock_kw`/`cand_kw` override it per side (e.g. to give
     the candidate a deliberately different starting NV image, for testing
-    the harness itself). The same starting `nv` is normally valid for both
+    the harness itself).  `ignore` names event types and synth keys not to
+    compare (e.g. "SYNTH", "rx_loads" where a build steps at another speed
+    and "visits" compare what it does instead). The same starting `nv` is normally valid for both
     sides: NV layout is v3_Z-compatible and build-independent."""
     stock_kw = dict(radio_kw, **(stock_kw or {}))
     cand_kw = dict(radio_kw, **(cand_kw or {}))
@@ -444,19 +540,31 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
         if kind == "check":
             label = step[1] if len(step) > 1 else "check"
             ev = {side: radios[side].take_events() for side in radios}
+            ev = {side: [e for e in ev[side] if e[1] not in ignore] for side in ev}
             diffs += _diff_events(label, ev["stock"], ev["cand"],
                                    radios["stock"], radios["cand"], tolerance_s)
             snap = {side: observe(radios[side]) for side in radios}
-            diffs += _diff_snapshot(label, snap["stock"], snap["cand"],
-                                     lst["stock"], lst["cand"])
+            diffs += [d for d in _diff_snapshot(label, snap["stock"], snap["cand"],
+                                                 lst["stock"], lst["cand"])
+                      if not any("synth %s:" % k in d for k in ignore)]
             continue
         if kind == "tones":
             runs = {side: _tone_runs(radios[side], step[2]) for side in radios}
             diffs += _diff_tones(step[1], runs["stock"], runs["cand"], tolerance_s)
             continue
         if kind == "trace":
-            tr = {side: _trace(radios[side], step[2], step[3]) for side in radios}
-            diffs += _diff_trace(step[1], tr["stock"], tr["cand"], tolerance_s)
+            tr = {side: _trace(radios[side], *step[2:5]) for side in radios}
+            if len(step) > 5:
+                diffs += _diff_trace_relative(step[1], tr["stock"], tr["cand"], step[5])
+            else:
+                diffs += _diff_trace(step[1], tr["stock"], tr["cand"], tolerance_s)
+            continue
+        if kind == "visits":
+            _, lbl, seconds, names, fn = step[:5]
+            world = step[5] if len(step) > 5 else None
+            tol = step[6] if len(step) > 6 else None
+            vs = {side: _visits(radios[side], side, seconds, names, fn, world) for side in radios}
+            diffs += _diff_visits(lbl, vs["stock"], vs["cand"], tol)
             continue
         if kind == "probe":
             v = {side: step[2](radios[side]) for side in radios}
