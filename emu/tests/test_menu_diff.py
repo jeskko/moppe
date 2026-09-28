@@ -229,7 +229,7 @@ class MenuDiff(unittest.TestCase):
 
     def test_dpx(self):
         self.edit(rec("b1", "duPL"), ["600#", "+", "600#", "-", "-", "0#", "+", "1600#", "*",
-                                      "8388608#", "+"])
+                                      "8388608#", "+", "4194304#", "600#", "-"])
 
     def test_tab(self):
         self.edit(rec("Pr", "ObJECt"), ["-", "-", "+", "+", "15#", "+", "20#", "3#", "-", "*"])
@@ -293,6 +293,7 @@ class MenuDiff(unittest.TestCase):
             if r["type"] == "RST" and r["title"] != "rFcFIL":
                 steps += goto(r) + keys("#", "%s no digits" % r["title"])
                 steps += goto(r) + keys("665#", "%s 665" % r["title"])
+                steps += goto(r) + keys("66202#", "%s 66202" % r["title"])   # 666 + 65536
                 steps += goto(r) + keys("*", "%s *" % r["title"]) + keys("+") + keys("-")
         self.diff(steps)
 
@@ -313,7 +314,8 @@ class MenuDiff(unittest.TestCase):
     def test_positioning(self):
         steps = [("boot", 2.5)]
         for d in ("5", "57", "0", "00", "09", "90", "123", "824", "999", "9999", "99999", "4999",
-                  "12345678", "10", "1"):
+                  "12345678", "10", "1", "9%02d" % sum(r["group"] == 9 for r in RECS),
+                  "9%02d" % (sum(r["group"] == 9 for r in RECS) - 1)):
             steps += keys(d + "E", "pos %s" % d)
         steps += keys("E", "toggle off") + keys("E", "toggle on") + keys("E", "toggle off")
         steps += keys("3E", "pos from normal")
@@ -330,17 +332,22 @@ class MenuDiff(unittest.TestCase):
         self.diff(steps)
 
     def test_enter_safety_delay(self):
+        """cfg_enter_time is in seconds (key_time counts ~1/s): ENT must be
+        held past it ("Hold It"), then "ALLrIGHt" until released; the limit
+        is clamped at 10.  Checks fall half a second from each count."""
         steps = [("boot", 2.5)]
-        for t in (3, 15):
+        for t, early, late in ((2, 2.6, 3.6), (12, 10.8, 11.8)):
             steps += [("poke", "cfg_enter_time", t)]
             steps += keys("E", "short E %d" % t)
-            steps += [("key_down", "E"), ("run", 0.3)] + at("holding %d" % t)
-            steps += [("run", 1.5)] + at("held %d" % t)
+            steps += [("key_down", "E"), ("run", 0.6)] + at("holding %d" % t)
+            steps += [("run", early - 0.6)] + at("not yet %d" % t)
+            steps += [("run", late - early)] + at("long enough %d" % t)
+            steps += [("run", 1.0)] + at("still held %d" % t)
             steps += [("key_up",), ("run", 0.3)] + at("released %d" % t)
             steps += keys("824E", "position in menu %d" % t)
             steps += keys("E", "leave %d" % t)
-            steps += [("keys", "5"), ("key_down", "E"), ("run", 2.0), ("key_up",), ("run", 0.3)]
-            steps += at("digits + long E %d" % t)
+            steps += [("keys", "5"), ("key_down", "E"), ("run", late + 0.5), ("key_up",),
+                      ("run", 0.3)] + at("digits + long E %d" % t)
             steps += keys("E", "leave again %d" % t)
         self.diff(steps)
 
@@ -352,7 +359,7 @@ class MenuDiff(unittest.TestCase):
                  ("keys", "12"), ("run", 0.5)] + at("recalled")
         for title in ("CtCSSt", "CtCSSr"):
             steps += goto(rec("GE", title))
-            for op in ("+", "+", "5#", "-", "*"):
+            for op in ("+", "+", "5#", "-", "*", "7#"):
                 steps += keys(op, "%s %s" % (title, op))
         steps += keys("E", "left") + keys("433500#", "vfo") + keys("12", "recalled again")
         steps += goto(rec("GE", "CtCSSt")) + keys("E", "left again")
@@ -364,7 +371,7 @@ class MenuDiff(unittest.TestCase):
         steps = [("boot", 2.5)] + seeded_pokes(5)
         steps += [("keys", "433525"), ("press", "#"), ("run", 0.3), ("keys", "3"),
                   ("press", "#", 1.5), ("run", 0.3), ("keys", "433500"), ("press", "#"),
-                  ("run", 0.3), ("poke", "rfctab", bytes([0, 40, 0, 0, 50] + [0] * 95))]
+                  ("run", 0.3), ("poke", "rfctab", bytes([0, 40, 0, 0, 50] + [0] * 94 + [77]))]
         steps += goto(rec("dF", title))
         steps += [("keys", digits), ("press", "#"), ("run", after)] + at("%s done" % title)
         return steps
@@ -377,7 +384,10 @@ class MenuDiff(unittest.TestCase):
             self.diff(steps)
 
     def test_allrst(self):
-        self.diff(self.rst("ALLrSt") + [("reboot", 0.5, 2.5)] + at("after reboot"))
+        for card in (0, 1, 2):          # the synth card survives the wipe
+            steps = self.rst("ALLrSt") + [("reboot", 0.5, 2.5)] + at("after reboot")
+            steps[1:1] = [("poke", "cfg_synth_card", card)]
+            self.diff(steps)
 
     def test_wipes(self):
         for title in ("CH rSt", "rFcrSt", "rFcFIL"):
@@ -475,7 +485,7 @@ class MenuDiff(unittest.TestCase):
         steps = [("boot", 2.5), ("poke", "cfg_remote_id", REMOTE_ID),
                  ("poke", "cfg_remote_passwd", PASSWD), ("poke", "cfg_remote_dpy_secs", 5),
                  ("keys", "433500"), ("press", "#"), ("run", 0.3)]
-        cases = [("cfg_remote_dpy_secs", [1, 2]), ("cfg_mprs_seconds", [6, 0, 0]),
+        cases = [("cfg_txpwr", [2]), ("cfg_remote_dpy_secs", [1, 2]), ("cfg_mprs_seconds", [6, 0, 0]),
                  ("cfg_mprs_seconds", [7, 0, 0, 0, 0]), ("cfg_band1_start", [4, 3, 3, 4, 5, 0]),
                  ("cfg_mprs_symbol", [3]), ("cfg_mprs_symbol", [9, 9]),
                  ("cfg_gpio1_state", [1]), ("cfg_mycall_1", [1, 2, 3]),

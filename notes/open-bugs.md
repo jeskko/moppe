@@ -68,6 +68,34 @@ deliberate difference in `c/aprs.c`).
 
 ## Menu
 
+**CtCSSt on a memory channel edits the VFO's tone, not the memory's**
+(`load_menu_ptr`, C `value_ptr` in `c/menu.c`): on a memory
+(`mem_flags` MEM_VALID) the CTCSS records are meant to edit
+`mem_ctcss_tx/rx_hz`, which `leaved_setup` saves into the memory. The
+special case only applies to CFG_BYTE records, and GE:CtCSSt is a CFG_TAB
+record, so its half of the check never matches: `+` there changes
+`cfg_ctcss_tx_hz` (shown as the tone), and the memory keeps its old one.
+GE:CtCSSr (a BYTE record) works. Verified 2026-09-28 in the emulator on
+the release. Fix candidate: accept CFG_TAB too (asm and C).
+
+**Remote config while a DC reply is shown writes the reply buffer**
+(`remote_config_execute` → `menu_new_value` → `load_menu_ptr`): while
+`display_buffer_time` runs, the value pointer of every record is
+`remote_display_buffer`, so an Enter-config packet from a third radio
+stores its value there instead of in the variable (verified: 12 sent,
+variable stays 7, buffer byte 0 becomes 12), and on a DYN or RST record
+the engine would call into that RAM buffer as code. Keys cannot reach
+this: every key press clears `display_buffer_time` (`cu_manipulated`)
+before the menu handler runs.
+
+**Remote config search also matches the slot after the last record**
+(`remote_config_execute`): the loop compares a record's pointer before
+it checks for `end_menu`, so the 16 bytes after the records (the first
+TAB table: pointer field 0x43FF in both builds) count as a record. An
+Enter-config packet for 0x43FF sets `menu_ptr = end_menu` (a type 0xFF
+"record", no value stored), and walking on from there never meets
+`end_menu` again. Needs the password; harmless otherwise.
+
 **cSEC entry drops the last typed digit**: "150" stores 15 (shown as 150 ms).
 
 **SAnE does not reset CFG_DYN records** (`reset_menurec`), so the squelch

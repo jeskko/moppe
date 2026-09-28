@@ -1,32 +1,71 @@
 #!/usr/bin/env python3
 """
 Mutation check for a C port (notes/hybrid-plan.md, "Safety net"): apply
-each mutant (a source replacement) to a C module in turn, build `make C=1`
-into firmware/build-mut, run the given tests against that build, and
-report which mutants no test caught.  The module is restored afterwards,
-also on errors or ^C.  Run from the repository root:
+each mutant (a source replacement) to a C module, build `make C=1` in a
+temporary copy of the firmware tree, run the given tests against that
+build, and report which mutants no test caught.  The module in the
+repository is never modified.  Run from the repository root:
 
     python3 tools/mutate.py firmware/c/aprs.c mutants.py test_aprs_diff test_fsk.FskRx
     python3 tools/mutate.py firmware/c/aprs.c mutants.py test_aprs_diff --only 3 7
+    python3 tools/mutate.py firmware/c/menu.c mutants.py test_menu_diff --jobs 12
 
 mutants.py defines MUTANTS = [(old, new), ...]; each `old` must occur
 exactly once in the module.  The mutated build is passed to the tests as
 the candidate/default ROM through every env variable the tests read
-(R58_ROM/LST, R58_CAND_*, R58_RPTR_CAND_*, R58_GPS_CAND_*, R58_APRS_CAND_*),
-so differential tests compare the asm build (reference) with the mutant.
-A test that fails without any mutant makes every result meaningless:
-run the tests on the unmutated build first.
+(R58_ROM/LST, R58_CAND_*, R58_RPTR_CAND_*, R58_GPS_CAND_*, R58_APRS_CAND_*,
+R58_MENU_CAND_*), so differential tests compare the asm build (reference)
+with the mutant.  --jobs N runs N mutants at once.  A test that fails
+without any mutant makes every result meaningless: run the tests on the
+unmutated build first.
 """
 import argparse
+import concurrent.futures
 import os
 import runpy
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BUILD = "build-mut"
-ENV_PREFIXES = ("R58", "R58_CAND", "R58_RPTR_CAND", "R58_GPS_CAND", "R58_APRS_CAND")
+ENV_PREFIXES = ("R58", "R58_CAND", "R58_RPTR_CAND", "R58_GPS_CAND", "R58_APRS_CAND",
+                "R58_MENU_CAND")
+# what `make C=1` needs, copied per mutant (tools/ is shared, read only)
+FIRMWARE_FILES = ("Makefile", "asm.h", "r58.s", "c")
+
+
+def run_mutant(i, old, new, rel, orig, tests):
+    tmp = tempfile.mkdtemp(prefix="r58mut%d-" % i)
+    try:
+        fw = os.path.join(tmp, "firmware")
+        os.mkdir(fw)
+        for f in FIRMWARE_FILES:
+            src = os.path.join(ROOT, "firmware", f)
+            (shutil.copytree if os.path.isdir(src) else shutil.copy)(src, os.path.join(fw, f))
+        os.symlink(os.path.join(ROOT, "tools"), os.path.join(tmp, "tools"))
+        with open(os.path.join(tmp, rel), "w") as f:
+            f.write(orig.replace(old, new))
+        label = (new.strip() or "(deleted) " + old.strip()).replace("\n", " ")[:50]
+        r = subprocess.run(["make", "-s", "-C", fw, "C=1", "BUILD=" + BUILD],
+                           capture_output=True, text=True)
+        if r.returncode:
+            return i, None, "%d BUILD FAILED %s" % (i, r.stderr[-200:])
+        env = dict(os.environ, R58_NV_CACHE=os.path.join(tmp, "nv-cache"))
+        for p in ENV_PREFIXES:
+            env[p + "_ROM"] = os.path.join(fw, BUILD, "r58.bin")
+            env[p + "_LST"] = os.path.join(fw, BUILD, "r58.map")
+        t = subprocess.run([sys.executable, "-m", "unittest"] + tests,
+                           cwd=os.path.join(ROOT, "emu", "tests"), env=env,
+                           capture_output=True, text=True)
+        fails = sorted({l.split("(")[0].split(":")[1].strip()
+                        for l in t.stderr.splitlines() if l.startswith(("FAIL:", "ERROR:"))})
+        caught = t.returncode != 0
+        return i, caught, "%d %s %s | %s" % (i, "caught" if caught else "SURVIVED", label,
+                                             ", ".join(fails)[:100])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main():
@@ -35,45 +74,29 @@ def main():
     ap.add_argument("mutants", help="python file defining MUTANTS")
     ap.add_argument("tests", nargs="+", help="unittest names (run in emu/tests)")
     ap.add_argument("--only", type=int, nargs="*", help="mutant indexes to run")
+    ap.add_argument("--jobs", type=int, default=1, help="mutants run at once")
     a = ap.parse_args()
 
-    path = os.path.join(ROOT, a.module)
-    orig = open(path).read()
+    rel = os.path.relpath(os.path.join(ROOT, a.module), ROOT)
+    orig = open(os.path.join(ROOT, rel)).read()
     mutants = runpy.run_path(a.mutants)["MUTANTS"]
-    rom = os.path.join(ROOT, "firmware", BUILD, "r58.bin")
-    lst = os.path.join(ROOT, "firmware", BUILD, "r58.map")
-    env = dict(os.environ)
-    for p in ENV_PREFIXES:
-        env[p + "_ROM"] = rom
-        env[p + "_LST"] = lst
+    todo = []
+    for i, (old, new) in enumerate(mutants):
+        if a.only and i not in a.only:
+            continue
+        if orig.count(old) != 1:
+            print("%d: `%s` occurs %d times, skipped" % (i, old[:40], orig.count(old)))
+            continue
+        todo.append((i, old, new))
     survived = []
-    try:
-        for i, (old, new) in enumerate(mutants):
-            if a.only and i not in a.only:
-                continue
-            if orig.count(old) != 1:
-                print("%d: `%s` occurs %d times, skipped" % (i, old[:40], orig.count(old)))
-                continue
-            open(path, "w").write(orig.replace(old, new))
-            r = subprocess.run(["make", "-s", "-C", os.path.join(ROOT, "firmware"), "C=1",
-                                "BUILD=" + BUILD], capture_output=True, text=True)
-            label = (new.strip() or "(deleted) " + old.strip()).replace("\n", " ")[:50]
-            if r.returncode:
-                print("%d BUILD FAILED %s" % (i, r.stderr[-200:]))
-                continue
-            t = subprocess.run([sys.executable, "-m", "unittest"] + a.tests,
-                               cwd=os.path.join(ROOT, "emu", "tests"), env=env,
-                               capture_output=True, text=True)
-            fails = sorted({l.split("(")[0].split(":")[1].strip()
-                            for l in t.stderr.splitlines() if l.startswith(("FAIL:", "ERROR:"))})
-            print("%d %s %s | %s" % (i, "caught" if t.returncode else "SURVIVED", label,
-                                     ", ".join(fails)[:100]), flush=True)
-            if not t.returncode:
+    with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
+        futs = [ex.submit(run_mutant, i, old, new, rel, orig, a.tests) for i, old, new in todo]
+        for fut in concurrent.futures.as_completed(futs):
+            i, caught, line = fut.result()
+            print(line, flush=True)
+            if caught is False:
                 survived.append(i)
-    finally:
-        open(path, "w").write(orig)
-        shutil.rmtree(os.path.join(ROOT, "firmware", BUILD), ignore_errors=True)
-    print("survived:", survived)
+    print("survived:", sorted(survived))
 
 
 if __name__ == "__main__":

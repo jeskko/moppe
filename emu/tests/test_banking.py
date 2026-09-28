@@ -288,6 +288,37 @@ class BankedC(unittest.TestCase):
         self.assertEqual(r.peek("cur_bank"), 0)
 
 
+    def test_menu_runs_in_bank1(self):
+        """c/menu.c (#pragma bank 1): ENT and the menu drawers run with
+        bank 1 selected (the first banked C in bank 1), bank 0 after."""
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        for card in (P8E, P8N):
+            r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
+                      card=card, nv=make_sane_nv(card))
+            r.run(2.5)
+            for fn in ("_toggle_or_position_menu", "_draw_menu_lower_row", "_menu_up_value"):
+                self.assertGreaterEqual(r.sym[fn], 0x8000)
+                self.assertLess(r.sym[fn], 0xC000)
+            r.breakpoint("_toggle_or_position_menu")
+            r.key_down("E")
+            self.assertEqual(r.run(0.3), "break")
+            self.assertEqual(r.peek("cur_bank"), 1)
+            self.assertEqual(r.latches()["out2"] & 0x0F, OUT2_BANK[1])
+            r.breakpoint("_toggle_or_position_menu", False)
+            r.breakpoint("_draw_menu_lower_row")
+            self.assertEqual(r.run(0.3), "break")
+            self.assertEqual(r.peek("cur_bank"), 1)
+            r.breakpoint("_draw_menu_lower_row", False)
+            r.key_up()
+            r.run(0.3)
+            self.assertEqual(r.peek("cur_bank"), 0)
+            self.assertEqual(r.display(), ("tPc   ", "GE       0"))
+            r.press("+")
+            r.run(0.3)
+            self.assertEqual(r.display()[1], "GE       1")
+
+
 BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
 
 

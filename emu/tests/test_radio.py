@@ -20,7 +20,7 @@ from r58emu import Radio, P8E, P8N, CU53AN, CU58AF, AD_SQL  # noqa: E402
 
 ROM = os.environ.get("R58_ROM", os.path.join(ROOT, "firmware", "build", "r58.bin"))
 LST = os.environ.get("R58_LST", os.path.join(ROOT, "firmware", "build", "r58.map"))
-CACHE = os.path.join(os.path.dirname(__file__), ".cache")
+CACHE = os.environ.get("R58_NV_CACHE", os.path.join(os.path.dirname(__file__), ".cache"))
 
 
 def make_sane_nv(card=P8E, cu=CU53AN, synth_card=None):
@@ -49,8 +49,9 @@ def make_sane_nv(card=P8E, cu=CU53AN, synth_card=None):
     r.run(0.1)
     os.makedirs(CACHE, exist_ok=True)
     nv = r.nv()
-    with open(path, "wb") as f:
+    with open(path + ".%d" % os.getpid(), "wb") as f:
         f.write(nv)
+    os.replace(path + ".%d" % os.getpid(), path)    # atomic for parallel runs
     return nv
 
 

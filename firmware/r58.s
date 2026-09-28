@@ -27,6 +27,41 @@
 #define step_channel_up		_step_channel_up
 #define step_channel_down		_step_channel_down
 #define update_tx_vco_band		_update_tx_vco_band
+/* c/menu.c (bank 1): the stub targets and the DYN/RST record routines */
+#define init_menu		_init_menu
+#define update_gpio12_foo		_update_gpio12_foo
+#define toggle_or_position_menu		_toggle_or_position_menu
+#define menu_enter_or_walk		_menu_enter_or_walk
+#define menu_defval_or_exec		_menu_defval_or_exec
+#define menu_up_value		_menu_up_value
+#define menu_dn_value		_menu_dn_value
+#define menu_next_group		_menu_next_group
+#define menu_prev		_menu_prev
+#define decoder_hist_rewind		_decoder_hist_rewind
+#define leaved_setup		_leaved_setup
+#define draw_menu_title		_draw_menu_title
+#define draw_menu_lower_row		_draw_menu_lower_row
+#define menu_rfc_change		_menu_rfc_change
+#define menu_sql_change		_menu_sql_change
+#define menu_sqB_change		_menu_sqB_change
+#define draw_rfc_dpy		_draw_rfc_dpy
+#define draw_sql_dpy		_draw_sql_dpy
+#define draw_sqB_dpy		_draw_sqB_dpy
+#define ccir_hist_walk		_ccir_hist_walk
+#define dtmf_hist_walk		_dtmf_hist_walk
+#define fsk_hist_walk		_fsk_hist_walk
+#define gps_hist_walk		_gps_hist_walk
+#define draw_ccir_hist		_draw_ccir_hist
+#define draw_dtmf_hist		_draw_dtmf_hist
+#define draw_fsk_hist		_draw_fsk_hist
+#define draw_gps_hist		_draw_gps_hist
+#define all_config_get		_all_config_get
+#define all_config_send		_all_config_send
+#define disaster		_disaster
+#define wipe_memories		_wipe_memories
+#define sane_defaults		_sane_defaults
+#define wipe_rfctab		_wipe_rfctab
+#define do_reboot		_do_reboot
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -5751,13 +5786,11 @@ fsk_mprs_not_yet:		; A = 0xFF if check_for_mprs_timer says not yet
 	sbc a, a
 	ret
 fsk_menu_ptr:			; DE = value pointer of the current menu record
-	ld ix, (menu_ptr)
-	call far_load_menu_ptr
-	ex de, hl
-	ret
-fsk_remote_config_execute:	; HL = ptr, DE = data; it takes them swapped
-	ex de, hl
-	jp far_remote_config_execute
+	call bank1_call
+	.dw _menu_value_ptr
+fsk_remote_config_execute:	; HL = ptr, DE = data, as c/menu.c takes them
+	call bank1_call
+	.dw _remote_config_execute
 #else
 far_packet_for_whom:	call bank1_call
 	.dw packet_for_whom
@@ -12714,8 +12747,17 @@ name: @ ld de, (dpy_cursor) @ call fn @ ld (dpy_cursor), de @ ret
 	DPY_SHIM(dpy_div99, dpydiv99)
 	DPY_SHIM(dpy_val99, dpyval99)
 	DPY_SHIM(dpy_squelch_ind, draw_squelch_ind)
-	DPY_SHIM(dpy_menu_title, far_draw_menu_title)
-	DPY_SHIM(dpy_menu_lower_row, far_draw_menu_lower_row)
+	DPY_SHIM(dpy_val255, dpyval255)
+	DPY_SHIM(dpy_word, draw_word)
+	DPY_SHIM(dpy_str_rj, draw_string_rightjust)
+	DPY_SHIM(dpy_str_rj_scores, draw_string_rightjust_scores)
+	DPY_SHIM(dpy_history, draw_decoder_history)
+
+; c/menu.c keeps the cursor in dpy_cursor itself
+dpy_menu_title:	call bank1_call
+	.dw _draw_menu_title
+dpy_menu_lower_row:	call bank1_call
+	.dw _draw_menu_lower_row
 
 dpy_freq:			; HL -> 24-bit value: draw_long of it
 	ld e, (hl)
@@ -12727,6 +12769,30 @@ dpy_freq:			; HL -> 24-bit value: draw_long of it
 	ld de, (dpy_cursor)
 	call draw_long
 	ld (dpy_cursor), de
+	ret
+
+dpy_freq_signed:		; HL -> 24-bit value: draw_long_signed of it
+	ld e, (hl)
+	inc hl
+	ld d, (hl)
+	inc hl
+	ld a, (hl)
+	ex de, hl		; AHL
+	ld de, (dpy_cursor)
+	call draw_long_signed
+	ld (dpy_cursor), de
+	ret
+
+;  c/menu.c: a2i results as --sdcccall 1 returns them
+menu_a2i:			; AHL -> HLDE (32 bits)
+	call a2i
+	ex de, hl
+	ld l, a
+	ld h, #0
+	ret
+menu_a2i_word:			; HL -> DE
+	call a2i_word
+	ex de, hl
 	ret
 #endif /* C_MODULES */
 
@@ -12842,12 +12908,23 @@ far_menu_prev:	call bank1_call
 	.dw menu_prev
 far_decoder_hist_rewind:	call bank1_call
 	.dw decoder_hist_rewind
+#ifdef C_MODULES
+; c/menu.c: remote_config_execute takes the pointer in HL, the data in DE;
+; load_menu_ptr is menu_value_ptr (menu_ptr's value, in DE), fsk_menu_ptr
+far_remote_config_execute:	; DE = ptr, HL = data
+	ex de, hl
+	call bank1_call
+	.dw _remote_config_execute
+far_leaved_setup:	call bank1_call
+	.dw leaved_setup
+#else
 far_remote_config_execute:	call bank1_call
 	.dw remote_config_execute
 far_leaved_setup:	call bank1_call
 	.dw leaved_setup
 far_load_menu_ptr:	call bank1_call
 	.dw load_menu_ptr
+#endif
 far_draw_menu_title:	call bank1_call
 	.dw draw_menu_title
 far_draw_menu_lower_row:	call bank1_call
@@ -13083,6 +13160,8 @@ rom_end:		; linked code (C modules, SDCC library) follows (tools/link.py)
 	.org 0x8000
 bank1_start:
 
+#ifndef C_MODULES	/* c/menu.c, bank 1: the engine; the records, tables and
+			   band defaults below stay */
 init_menu:
 	ld ix, #start_menu
 	ld (menu_ptr), ix
@@ -14098,6 +14177,8 @@ reset_menurec_word:
 	ld (hl), a
 	ret
 
+#endif /* C_MODULES */
+
 ;----------------------------------------------------------------------
 ;
 ;  SETUP GUNK MACROS
@@ -14113,6 +14194,33 @@ offset_def   = 12
 offset_type  = 14
 
 size_menurec = 16
+
+#ifdef C_MODULES
+;  c/menu.c: struct rec, the record types and constants it hard-codes
+	ASSERT_EQ(offset_tag, 0)
+	ASSERT_EQ(offset_title, 2)
+	ASSERT_EQ(offset_ptr, 8)
+	ASSERT_EQ(offset_arg, 10)
+	ASSERT_EQ(offset_def, 12)
+	ASSERT_EQ(offset_type, 14)
+	ASSERT_EQ(size_menurec, 16)
+	ASSERT_EQ(CFG_BYTE, 1)
+	ASSERT_EQ(CFG_WORD, 2)
+	ASSERT_EQ(CFG_FREQ, 3)
+	ASSERT_EQ(CFG_TAB, 4)
+	ASSERT_EQ(CFG_DYN, 5)
+	ASSERT_EQ(CFG_RST, 6)
+	ASSERT_EQ(CFG_STR, 7)
+	ASSERT_EQ(CFG_DPX, 8)
+	ASSERT_EQ(CFG_cSEC, 9)
+	ASSERT_EQ(CFG_EXE, 10)
+	ASSERT_EQ(S8C, 1)
+	ASSERT_EQ(S8B, 2)
+	ASSERT_EQ(SIZE_STR, 8)
+	ASSERT_EQ(MEM_VALID, 1)
+	ASSERT_EQ(DA_RFC, 0x30)
+	ASSERT_EQ(EOS, 0xFF)
+#endif
 
 	ALIGN(4, 0)
 
@@ -14698,6 +14806,7 @@ defaults_6m:
 
 #undef X
 
+#ifndef C_MODULES	/* c/menu.c, bank 1 */
 set_defaults_band:
 	ld a, (cfg_synth_card)
 	push af
@@ -14970,6 +15079,8 @@ do_reboot:
 	jp .                  ; watchdog restart.
 
 
+
+#endif /* C_MODULES */
 
 ;----- GPS sentence processing (was fixed ROM) -----
 
@@ -21032,6 +21143,7 @@ c_bss_end:
 #endif
 
 _end:
+cfg_image_buffer:		; all_config_get receives the NV image here (up to the stack)
 
 chk_size_stack = 0x10000 - _end
 slack_for_stack = chk_size_stack

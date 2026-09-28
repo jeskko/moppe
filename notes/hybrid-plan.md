@@ -11,56 +11,35 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 ## Start here (next session, written 2026-09-28)
 
-**State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
+**State.** Phases 0-3 done; Phase 4 has the setup menu engine in C now
+(`c/menu.c`, bank 1). Banks: 0 = power-on (EPROM1 socket / multiboard),
 1 = EPROM0 chip 0xC000 (the menu; in the asm build also APRS/MPRS, GPS,
-FSK packets and repeater/CW; `C=1`: **8180 bytes free**, asm build 834),
-2 = EPROM0 chip 0x8000 (`C=1`: `c/fsk.c`, `rptr.c`, `gps.c`, `aprs.c`,
-12054 bytes; **~4.3 KB free**). Phase 4 in `make C=1`: `c/squelch_crc.c`,
-`timers.c`, `keys.c`, `display.c`, `freq.c` in fixed ROM, the four bank-2
-modules (see "Done: ... bank 2" under Phase 4); fixed ROM ends at ~0x493D
-(~13.7 KB free, `_HOME` included). 186 tests pass on both builds; `make
--C firmware verify` still byte-identical for the release reference.
+FSK packets and repeater/CW, 834 bytes free; `C=1`: REC records, TAB/STR
+tables and band defaults as asm data 0x8000-0x97E7, then `c/menu.c`,
+3074 bytes; **7191 bytes free**), 2 = EPROM0 chip 0x8000 (`C=1`:
+`c/fsk.c`, `rptr.c`, `gps.c`, `aprs.c`, 11832 bytes; **~4.4 KB free**).
+Fixed ROM (`C=1`: squelch/CRC, timers, keys, display, freq in C, the
+shims and stubs, `_HOME`) ends at 0x4A0A (**~13.5 KB free**). 222 tests
+pass on both builds; `make -C firmware verify` still byte-identical, and
+the asm build is unchanged by the menu port.
 
-**Next task: the setup menu engine to C, in bank 1** (`#pragma bank 1`).
-In `make C=1` bank 1 holds only the menu (`bank1_start` … the GPS section
-marker, ~1890 lines: engine + 288 `REC` records, `TAB`/`STR` tables,
-SAnE/band defaults, CFGSnd/CFGGEt `all_config_send/get`, wipe/reboot).
-Bank 2 has only ~4.3 KB left, bank 1 ~8 KB, so the engine goes to C in
-bank 1 next to the tables, which stay asm data (`REC` layout: offset_tag 0,
-title 2, ptr 8, arg 10, def 12, type 14; types CFG_BYTE 1 … CFG_EXE 10).
-What to know before starting:
-- Entry points (fixed-ROM `far_*` stubs, `bank1_call`): `init_menu`,
-  `update_gpio12_foo`, `toggle_or_position_menu`, `menu_enter_or_walk`,
-  `menu_defval_or_exec`, `menu_up_value`, `menu_dn_value`,
-  `menu_next_group`, `menu_prev`, `decoder_hist_rewind`,
-  `remote_config_execute` (DE ptr, HL data), `leaved_setup`,
-  `load_menu_ptr` (IX record → HL value ptr), `draw_menu_title`,
-  `draw_menu_lower_row` (DE display cursor). Callers: keys.c, display.c
-  (`DPY_SHIM`s), fsk.c (`fsk_menu_ptr`, `fsk_remote_config_execute`),
-  asm. Check each for register interfaces.
-- `menu_ptr` holds a record address; fixed code only compares it or hands
-  it back. The records are data in bank 1, so C in bank 1 can read them;
-  nothing outside bank 1 may dereference them (link.py's cross-bank check
-  covers C).
-- `_CODE_1` placement (after `bank1_end`, link.py) and `#pragma bank 1`
-  are wired but **never exercised**: first build a tiny bank-1 C function
-  and check the map, the image offset (window 0x8000 → file 0xC000) and a
-  `BankedC` breakpoint, as was done for bank 2.
-- Tests to widen first: `test_menu_power.py` (27), `test_mbus_config.py`
-  (7), `test_remote_config.py` (7). Needed: every record type's up/down/
-  enter/default and value display, every group walked (the whole menu
-  drawn on both handsets, differential against the asm build), SAnE and
-  band defaults (NV compared), CFGSnd/CFGGEt, remote config per type. The
-  known menu bugs (cSEC last digit, SAnE and CFG_DYN) are in
-  notes/open-bugs.md: keep them unless decided.
-- Tools: `tools/mutate.py` for the mutation run (a `MUTANTS` list of
-  replacements; tests read the mutant through the env variables),
-  `tools/bankxref.py`, `tools/isrreach.py`; difftest steps `probe`,
-  `trace`, `tones`.
-Other open items: the scanner to C (coroutine → state machine); the
-real-board bench test (EPROM programmer); `notes/hardware.md` open
-questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency);
-the bugs left in place: **notes/open-bugs.md**.
+**Next task: the scanner to C** (1.2 KB of fixed-ROM asm, a coroutine
+through `scanner_state`: needs an explicit state machine). Simplest in
+fixed ROM (room enough, no bank-duty question); in a bank it would need
+the `far_repeater_run` kind of guard, since it runs on every mainloop pass
+while scanning. `load_num_tmp_rejects`/`unreject_timer` stay fixed
+(interrupts). Tests first: the scanner cases in `test_scan_rptr.py` pass
+on the release; a differential scenario set (asm build vs `C=1`) for
+scan rates, listen/tail times, rejects and auto-reject, memory scan
+masks, FSK-carrier skip, stop by key/PTT is still to write. After that:
+memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
+functions (see "What is left" under Phase 4).
+Other open items: the real-board bench test (EPROM programmer);
+`notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
+modem CLK frequency); the bugs left in place: **notes/open-bugs.md** (the
+menu ones found in the port are there; CtCSSt on memories is the one
+with user impact).
+Earlier handoffs: notes/hybrid-plan-history.md.
 
 **Rules learned this session (details in Phase 3/4 below):**
 - Moving code to a bank: `tools/bankxref.py` (external users),
@@ -90,6 +69,17 @@ the bugs left in place: **notes/open-bugs.md**.
 - Obvious firmware bugs may be fixed (user, 2026-09-28): with a test that
   fails on the release, noted under "Firmware behaviour the tests pinned
   down".
+- From the menu port: an assembler equate to a label defined further down
+  (`dpy_menu_title = far_draw_menu_title`) came out 0 with no error; use a
+  stub or label. SDCC `switch` jump tables and `*p = f()` keep a value in
+  an IX frame across the call: dispatch with `if` chains on a static,
+  store call results in a static first. Per-function check:
+  `awk '/^_[a-zA-Z0-9_]+:/{fn=$1} /\(ix\)|enter_ix/{c[fn]++} END{for(f in c) print f, c[f]}' build-c/X.asm`.
+  Byte loops over NV with static pointers are about twice as slow as the
+  asm (ALLrSt powered off 59 ms late): use a leaf with register pointers.
+- `tools/mutate.py --jobs N` builds each mutant in its own temporary copy
+  of the firmware tree (TMPDIR), so mutants run in parallel and the repo
+  is never modified; `R58_NV_CACHE` gives each its own SAnE NV cache.
 
 ## Ground rules
 
@@ -645,13 +635,61 @@ first, port, differential test against stock, size check, commit.
   before the audio). `BankedC` breakpoint in `_handle_mprs_packets`.
   `test_rptr_diff`: the probe no longer compares raw second timers (edge
   flake as timing moved), `test_boot_minute` traces boot → idle instead.
+- **Done: setup menu engine in C, bank 1** (2026-09-28), `c/menu.c`
+  (`#pragma bank 1`, the first banked C in bank 1): drawing (title, every
+  record type, the DYN drawers, histories), `load_menu_ptr` as
+  `value_ptr`, ENT (toggle, positioning by digits, the safety delay),
+  walking, typed values, +/-, `*` defaults, `remote_config_execute`,
+  `leaved_setup`, the DYN change routines and every RST routine (SAnE and
+  band defaults, ALLrSt, CFGSnd/CFGGEt, CH rSt, rFcrSt, rEboot).
+  Stays asm data in bank 1: the 285 REC records, TAB/STR tables,
+  `menu_quickspots`, `defaults_70cm/2m/6m`; `rfc_fill_blanks` stays fixed
+  asm. The DYN/RST records point at the C routines through the renames at
+  the top of r58.s (`#define menu_sql_change _menu_sql_change` ...), so the
+  REC lines are the same in both builds. Stubs: the `far_*` ones call C
+  directly, except `far_remote_config_execute` (asm callers pass DE =
+  ptr, HL = data; C takes HL, DE: `ex de, hl` first); `fsk_menu_ptr` and
+  `fsk_remote_config_execute` call `_menu_value_ptr`/
+  `_remote_config_execute` (no more swap); `dpy_menu_title/lower_row`
+  are plain stubs (C keeps the cursor in `dpy_cursor`). New shims:
+  `dpy_val255`, `dpy_word`, `dpy_freq_signed`, `dpy_str_rj(_scores)`,
+  `dpy_history`, `menu_a2i` (AHL → HLDE), `menu_a2i_word`;
+  `cfg_image_buffer` = `_end` (CFGGEt's receive buffer; C cannot name
+  `_end`). Record layout, CFG_* values and constants asserted in r58.s.
+  3074 bytes of C for ~2.1 KB of asm (1.5×); no IX frame except in
+  C-only leaves. As in the asm build, the ENT safety delay, `waitkey`
+  and CFGGEt's `getchar` loop busy-wait with bank 1 selected (multiboard
+  readers off meanwhile); could go through `bank0_call` if that matters.
+  Kept bit for bit: the cSEC digit drop, SAnE not resetting
+  DYN, the search reading the slot at `end_menu`, the remote display
+  buffer taking the place of the variable (open-bugs.md).
+  Safety net first: `test_menu_diff.py` (34 tests, asm build vs `C=1`):
+  the whole menu walked with seeded values of every type on CU53AN,
+  CU58AF and P8N (every record drawn, out-of-range TABs, full strings,
+  wrap and group walking), each type's +/-/#/`*` with edge values, the
+  remote display override, histories and rewind, memory CTCSS, GPIO and
+  external serial side effects, the ENT safety delay (difftest gained
+  `key_down`/`key_up` steps to check mid-hold), positioning, every RST
+  record with and without 666, SAnE per synth card and after a reboot,
+  CFGSnd as one byte stream, CFGGEt good/bad checksum/wrong length,
+  remote config of every type and the special pointers.
+  `test_banking.BankedC.test_menu_runs_in_bank1`: breakpoints in
+  `_toggle_or_position_menu`/`_draw_menu_lower_row` with bank 1 selected
+  (OUT2 0x0D) on P8E and P8N, bank 0 after. Mutation run (`--jobs 12`,
+  ~15 min): 64 mutants, 62 caught, 2 equivalent (`da_rfc = rfc`, which
+  `save_rfc` writes again; the null check of DYN routines, none is null).
+  The first round had 11 survivors, each a scenario gap: ENT held too
+  briefly (EntLen is in **seconds**, `key_time` counts ~1/s, so the long
+  path needs EntLen + 1 s; the limit clamps at 10), no position landing
+  exactly on `end_menu`, no DPX value with bit 22 set, ALLrSt only with
+  synth card 0, `rfctab`'s last byte already 0, no 16-bit alias of 666
+  (66202), the memory CTCSS scenario ending on its original value.
 - **What is left, and what gates it:**
   - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The menu (bank 1) goes to C in bank 1 (see "Start here"). The
-    real-board bench test still has to confirm both window pages.
+  - The real-board bench test still has to confirm both window pages.
 
 ### Future: EPROM1
 - P8E: 27C010, 8 × 16 KB pages, A14/A15/A16 = OUT2 bits 0/1/3. Bit 3 is
