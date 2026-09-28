@@ -147,6 +147,53 @@ SCN_NV_PERSISTENCE = [
 ]
 
 
+
+def _fsk_scenarios():
+    """FSK receive/send scenarios (packet formats: test_fsk.py). The
+    config pointers are NV addresses, the same in both builds (v3_Z NV
+    layout), taken from the stock listing."""
+    from r58emu import load_symbols
+    from test_fsk import with_crc, mprs_packet, REMOTE_ID, PASSWD
+    sym = load_symbols(STOCK_LST)
+    a = sym["cfg_remote_dpy_secs"]
+    ptr = bytes([a & 0xFF, a >> 8])
+    setup = [
+        ("poke", "cfg_mycall_1", bytes([1, 2, 3, 4, 5, 0xFF, 0xFF, 0xFF])),
+        ("poke", "cfg_remote_id", REMOTE_ID),
+        ("poke", "cfg_remote_passwd", PASSWD),
+        ("poke", "cfg_remote_dpy_secs", 5),
+        ("poke", "cfg_mbus_mprs", 1),
+    ]
+    rx = [
+        ("boot", 2.5), *setup, *_enter("433500"),
+        ("modem_rx", with_crc([0xC9, 0x87, 0x65, 0x12, 0x34, 0x5F])), ("run", 0.5),
+        ("check", "call for us"), ("run", 3.0),
+        ("modem_rx", with_crc(b"\xDD" + b"HELLO 42" + b"\xFF" * 4)), ("run", 0.3),
+        ("check", "display data"),
+        ("modem_rx", with_crc(bytes([0xAC]) + REMOTE_ID + ptr + b"\xFF")), ("run", 1.0),
+        ("check", "config query answered"),
+        ("modem_rx", with_crc(bytes([0xEC]) + REMOTE_ID + ptr + bytes([1, 2]) + b"\xFF" * 6, PASSWD)),
+        ("run", 1.0),
+        ("check", "config entered"),
+        ("modem_rx", with_crc([0x51, 0x23, 0x45, 0x67, 0x89, 0xAB])), ("run", 0.5),
+        ("check", "relayed"),
+        ("modem_rx", mprs_packet()), ("run", 0.6),
+        ("check", "mprs shown"), ("run", 6.0),
+        ("check", "mprs timed out"),
+    ]
+    tx = [
+        ("boot", 2.5), *setup, *_enter("433500"),
+        ("keys", "98765"), ("press", "*"), ("run", 1.5),
+        ("check", "call sent"),
+        ("press", "E"), ("run", 0.3),
+        ("ptt", True), ("run", 0.3), ("ptt", False), ("run", 1.0),
+        ("check", "config query sent"),
+        ("keys", "200"), ("run", 0.2),
+        ("ptt", True), ("run", 0.3), ("ptt", False), ("run", 1.0),
+        ("check", "config enter sent"),
+    ]
+    return rx, tx
+
 class DiffTest(unittest.TestCase):
     """Stock (firmware/build) vs. candidate (default firmware/build-c,
     C=1) on the same scenario. An empty `run_diff()` result means the two
@@ -220,6 +267,17 @@ class DiffTest(unittest.TestCase):
 
     def test_nv_persistence_over_power_cycle(self):
         self.diff(SCN_NV_PERSISTENCE)
+
+    def test_fsk_receive(self):
+        self.diff(_fsk_scenarios()[0])
+
+    def test_fsk_send(self):
+        self.diff(_fsk_scenarios()[1])
+
+    def test_fsk_p8n(self):
+        rx, tx = _fsk_scenarios()
+        self.diff(rx, card=P8N)
+        self.diff(tx, card=P8N)
 
     # ---- card/handset variants (kept to a couple of representative
     # scenarios each, to stay well under the runtime budget)
