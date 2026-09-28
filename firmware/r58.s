@@ -2509,11 +2509,16 @@ once_per_minute:
 	ld a, (txon)
 	or a
 	jr z, 1f
+	; tx_tot_timer counts the minute boundaries since TX on, so TX lasts
+	; N..N+1 minutes before a TOT of N powers down.  (v3_Z compared before
+	; counting and allowed N+1..N+2.)  255 = no limit.
 	ld a, (cfg_tx_tot_minutes)
+	cp #255
+	jr z, 1f
 	ld hl, #tx_tot_timer
-	cp (hl)                        ; if cfg is 255, never carry
-	jp c, powerdown_now
 	inc (hl)
+	cp (hl)                        ; carry if more minutes than allowed
+	jp c, powerdown_now
 1:
 
 	;  When idle_timer passes over cfg_idlefn_delay,

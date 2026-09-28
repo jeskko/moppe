@@ -413,31 +413,48 @@ class LowBattery(RadioTest):
 
 
 class TxTimeout(RadioTest):
-    """TOT: once_per_minute (L2451-2462) increments tx_tot_timer once per
-    real minute while txon is set (tx_on zeroes it, L13033-13052), and
-    calls powerdown_now once cfg_tx_tot_minutes < tx_tot_timer.
+    """TOT: once_per_minute counts the firmware clock's minute boundaries
+    while txon is set (tx_on zeroes tx_tot_timer) and powers down when the
+    count exceeds cfg_tx_tot_minutes, so TX lasts N..N+1 minutes.  (v3_Z
+    compared before counting: N+1..N+2 minutes; fixed 2026-09-28.)"""
 
-    NOTE (observed while deriving this test, not obviously intentional):
-    with cfg_tx_tot_minutes == 1 (the smallest value that still allows TX
-    -- 0 disables TX entirely, L13042-13044) the comparison needs THREE
-    minute boundaries, not one, before it trips: minute 1 has timer 0 (1
-    is not < 0), minute 2 has timer 1 (1 is not < 1), minute 3 has timer 2
-    (1 < 2 -> power down). So a "1 minute" TOT actually allows just over
-    2 minutes of continuous TX. Report this as a possible off-by-one for
-    the eventual C port to preserve deliberately or fix."""
-
-    def test_tot_powers_down_after_three_minute_boundaries(self):
+    def tx_with_tot(self, minutes, seconds):
         r = self.boot()
         r.type("433500")
         r.press("#")
         r.run(0.3)
-        r.poke("cfg_tx_tot_minutes", 1)
-        r.poke("seconds", 59)   # align just before the first minute tick
+        r.poke("cfg_tx_tot_minutes", minutes)
+        r.poke("seconds", seconds)      # phase of the next minute boundary
         r.ptt(True)
-        r.run(123)              # a bit over 2 full minute boundaries
+        return r
+
+    def test_not_before_n_minutes(self):
+        # boundary 1 right after TX on, boundary 2 one minute later
+        r = self.tx_with_tot(1, 59)
+        r.run(59)
+        self.assertTrue(r.powered)
+        self.assertTrue(r.transmitting())
+        r.run(4)
         self.assertFalse(r.powered)
         self.assertIn("POWEROFF", [e[1] for e in r.events])
-        self.r = None  # already powered off, tearDown's WDRESET check is moot
+        self.r = None  # powered off, tearDown's WDRESET check is moot
+
+    def test_at_most_n_plus_1_minutes(self):
+        # boundaries 1 and 2 at ~60 s and ~120 s after TX on
+        r = self.tx_with_tot(1, 0)
+        r.run(115)
+        self.assertTrue(r.powered)
+        r.run(8)
+        self.assertFalse(r.powered)
+        self.r = None
+
+    def test_255_is_no_limit(self):
+        r = self.tx_with_tot(255, 59)
+        r.run(185)                      # past 3 boundaries
+        self.assertTrue(r.powered)
+        self.assertTrue(r.transmitting())
+        r.ptt(False)
+        r.run(0.3)
 
 
 # ----------------------------------------------------------------------

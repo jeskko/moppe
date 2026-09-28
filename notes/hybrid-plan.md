@@ -85,10 +85,10 @@ typematic timings.
 
 **Firmware behaviour the tests pinned down** (keep it when porting unless
 decided otherwise):
-- TOT: `cfg_tx_tot_minutes` = N powers down at the (N+2)th minute boundary
-  after TX on (timer starts at 0, strict `<` in `once_per_minute`), i.e.
-  after N+1…N+2 minutes of TX. Verified in r58.asm L2451-2462/L13050. An
-  off-by-one to fix deliberately, or keep.
+- TOT: v3_Z powered down at the (N+2)th minute boundary after TX on
+  (N+1…N+2 minutes of TX; r58.asm L2451-2462/L13050). **Fixed 2026-09-28**
+  (user decision): now N…N+1 minutes (the firmware clock ticks whole
+  minutes, so this is the finest it gets), 255 = no limit, 0 = no TX.
 - Every CW message costs at least 400 ms: `send_cw_prolog` jumps into
   `send_cw_epilog`, and both wait 200 ms (r58.asm L15996/L16009).
 - SAnE does not reset CFG_DYN records (`reset_menurec` L17684), so the
@@ -107,9 +107,10 @@ decided otherwise):
   every label into an absolute symbol; ASSERTs are checked at assembly
   time. Linker areas are used for what is really relocatable: C code/data
   now, bank images in Phase 3.
-- Open: `r58.asm` (as80 source) is still in the tree as reference and is
-  checked by `make verify` via `build-as80/`. Retire it (and tools/as80)
-  once the user agrees; after the first real edit to r58.s the two diverge.
+- `r58.asm` (as80 source) stays as the reference for `make verify` and the
+  differential tests (build-release). User: remove it when it gets in the
+  way (then pin the release reference some other way, e.g. a committed
+  converted copy).
 
 ### Phase 2: OUT2 shadow and bank infrastructure (still 32 KB) — done 2026-09-28
 - **Space first.** The fixed ROM had 47 bytes free, too few for this
@@ -161,8 +162,10 @@ decided otherwise):
   returned vv. File 0x8000-0xBFFF is 0x00, so a mapping of the P8N-only
   page reads `b1 8010 00`; an empty/absent chip area reads `vv` = FF. The
   emulator shows PASS on P8E/P8N with both handsets
-  (`test_banking.BenchTestRom`). Needed from the user: which card (P8E /H
-  or P8N) and the result on the display.
+  (`test_banking.BenchTestRom`). The user will burn it when the EPROM
+  programmer turns up and expects the service manual's decode to be right,
+  so Phase 3 proceeds in the emulator meanwhile. Still to report: which
+  card (P8E /H or P8N) and the display.
 - P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
   it. Don't depend on it, or make it P8N-only.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused
