@@ -15,8 +15,8 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
   `python3 -m unittest discover -s emu/tests` passing on the new build. Add
   tests *before* porting a module whose behaviour is not yet covered.
 - **Keep the stock build reproducible.** `make -C firmware verify` must keep
-  passing, until Phase 1 replaces as80 and moves the byte-identical check
-  to the new toolchain.
+  passing (byte-identical to the release) until a change is meant to alter
+  the binary; from then on the differential tests are the check.
 - **NV layout stays v3_Z compatible** (0xC000-0xCFFF, asserted field offsets)
   so existing radios and CFGSnd images keep working. Reorganise it only
   deliberately, with a migration.
@@ -64,25 +64,31 @@ Gaps today: scanner, repeater states, CW ID, menu editing of each record
 type, CCIR/DTMF *receive* decode, FSK receive/remote config, MBUS CFGSnd/
 CFGGEt, CU58AF keys and display in depth, low-battery/TOT power-down,
 typematic timings.
-- Add **differential testing**: run the stock build and the candidate build
-  side by side on the same scripted inputs and compare observable outputs
-  (display glyphs, synth registers, OUT0/OUT1/DACs, events, NV image) at
-  checkpoints. This catches regressions no hand-written expectation covers.
+- **Differential testing — done** (`emu/tests/difftest.py`, `test_diff.py`):
+  stock and candidate builds run the same scripted inputs; display text and
+  segments, icons, synth registers and load counts, OUT0/OUT1/DACs/CSMEM,
+  power, event sequences (timestamps within 20 ms) and the NV image are
+  compared at checkpoints. OUT2 and the PIO ports are not compared: they are
+  bit-banged buses, so a checkpoint catches them at an arbitrary phase and
+  they differ between two correct builds. Candidate: `R58_CAND_ROM`/`_LST`,
+  default `firmware/build-c`. Stock vs `C=1`: no differences.
 - Grow the emulator where tests need it: FX429 RX bit timing, MBUS
   host-side helpers (CFGSnd/CFGGEt), maybe CTCSS slicer input.
 
-### Phase 1: one toolchain (SDCC's sdas + sdld)
-- Write a converter from as80 syntax to sdasz80 (`[x]`→`(x)`, `#` for
-  immediates, `!` comments, `iv`/`ex af`, `HI()/LO()`, `.rs/.byte/.word/
-  .align/.fill/.cksum`, `1f/1b` local labels → unique names). Keep GNU
-  `cpp -traditional` as the macro stage.
-- **Acceptance: the converted source links byte-identical to
-  r58p8x3Z.bin.als.** Then drop as80 and the `sdcc2as80.py` include hack;
-  C modules become normal linked objects.
-- Replace absolute `.org`/ASSERT layout checks with linker areas and
-  explicit placement of page-aligned tables.
-- Install SDCC system-wide (`pacman -S sdcc`). The session that did the
-  proof of concept used a temporary download of 4.4.0.
+### Phase 1: one toolchain (SDCC's sdas + sdld) — done 2026-09-28
+- `firmware/r58.s` (sdasz80 syntax, converted by `tools/as80tosdas.py`)
+  links **byte-identical** to r58p8x3Z.bin.als; `make verify` checks it.
+  C modules are linked SDCC objects; `sdcc2as80.py` and `crt.inc` are gone.
+  Details and the sdas pitfalls found: notes/toolchain.md.
+- Deviation: the assembler stays **absolute** instead of moving to linker
+  areas. sdas mis-assembles arithmetic on relocatable labels (sometimes
+  silently), and this code relies on address arithmetic, so asmpp turns
+  every label into an absolute symbol; ASSERTs are checked at assembly
+  time. Linker areas are used for what is really relocatable: C code/data
+  now, bank images in Phase 3.
+- Open: `r58.asm` (as80 source) is still in the tree as reference and is
+  checked by `make verify` via `build-as80/`. Retire it (and tools/as80)
+  once the user agrees; after the first real edit to r58.s the two diverge.
 
 ### Phase 2: OUT2 shadow and bank infrastructure (still 32 KB)
 - Add `out2_shadow` (RAM) and route **every** OUT2 write through it,

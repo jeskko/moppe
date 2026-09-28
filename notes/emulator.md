@@ -8,7 +8,7 @@
 | Chips | `pio.c`, `sio.c`, `pit.c`, `daisy.c` | Z80 PIO (mode 3 bit-control interrupts, runtime direction changes), Z80 SIO (async; RR0 status latching and ext/status interrupts, status-affects-vector, TX/RX timing at the programmed baud), Intel 8254 (modes 0, 2, 3, 4; gates tied high), IM2 daisy chain with RETI. |
 | Handsets | `cu53an.c`, `cu58af.c` | CU53AN: HEF4555 chip-select decode, two PCF2111 (34-bit frames, latched on deselect), 8-bit HEF4035 shift chain, HEF40373 LED latch, MM74C923 keypad (DA line). CU58AF: bit-level I²C slave engine with PCF8574 ports (keypad matrix, /INT), PCF8576 LCD RAM, PCD3312 DTMF, LED and audio-control ports. |
 | Board | `r58.c` | Memory map (incl. P8N SMEM NV plane and the P8E banked 0x8000 window), I/O decode, 1968.75 Hz PA0/CLK2 timebase, CLK0/1 = 4.032 MHz, ADC (last-conversion semantics), DACs, latches, watchdog, power switch → NMI, PB7 relay, FX429 (byte level), synthesizer and external serial frame capture, PC trace ring, breakpoints and watchpoints, audio edge capture of the 8254 tone pin. |
-| API | `api.c`, `emu/python/r58emu.py` | Flat C API; Python `Radio` class with symbol lookup from the as80 listing. |
+| API | `api.c`, `emu/python/r58emu.py` | Flat C API; Python `Radio` class with symbol lookup from the linker map (`build/r58.map`). |
 | Front ends | `main.c` (`r58emu`), `r58tui.py` | CLI smoke run; curses TUI with a headless `--script` mode. |
 
 Time is counted in 8.064 MHz crystal periods ("xt"). P8E: 1 T = 1 xt plus one wait state per M1, prefix bytes included. P8N: 1 T = 2 xt, no waits. Peripherals advance after each instruction; I/O happens at instruction granularity.

@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(ROOT, "emu", "python"))
 from r58emu import Radio, P8E, P8N, CU53AN, CU58AF, AD_SQL  # noqa: E402
 
 ROM = os.environ.get("R58_ROM", os.path.join(ROOT, "firmware", "build", "r58.bin"))
-LST = os.environ.get("R58_LST", os.path.join(ROOT, "firmware", "build", "r58.lst"))
+LST = os.environ.get("R58_LST", os.path.join(ROOT, "firmware", "build", "r58.map"))
 CACHE = os.path.join(os.path.dirname(__file__), ".cache")
 
 

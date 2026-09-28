@@ -9,6 +9,7 @@ emu/tests/zex/cpm
 __pycache__/
 emu/tests/.cache/
 firmware/build-c/
+firmware/build-as80/
 experiments/c-density/sample.asm
 experiments/c-density/sample.lst
 experiments/c-density/sample.rel

@@ -8,13 +8,13 @@ without burning an EPROM for every change.
 
 | Area | State |
 |---|---|
-| Toolchain | Original `as80` assembler ported to 64-bit; the ALs and ALr sources rebuild **byte-identical** to the released binaries (`make -C firmware verify`). |
+| Toolchain | SDCC's **sdasz80 + sdldz80** (with cpp and a small preprocessor). The source was converted from the original as80 dialect and rebuilds **byte-identical** to the released ALs binary (`make -C firmware verify`, which also checks the as80 build of the old source). |
 | Emulator | Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. |
-| Tests | 34 tests (29 firmware scenarios + 5 ROM-window decode): first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK/MPRS packet CRC. The DTMF/APRS tests fail if the CPU timing model is wrong. |
-| C in firmware | Proof of concept: `make C=1` builds the firmware with the squelch and packet-CRC routines in C (SDCC). All tests pass and the ROM gets 48 bytes smaller. |
+| Tests | Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK/MPRS packet CRC; ROM-window decode. **Differential tests** (`emu/tests/test_diff.py`) run the stock and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
+| C in firmware | `make C=1` links C modules (squelch, packet CRCs) as normal SDCC objects. All tests pass; the differential tests show no behaviour difference to the stock build. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
-| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md). Start at Phase 0 (more tests, differential testing). |
+| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md). Phase 1 (toolchain) done; Phase 0 test widening in progress; then Phase 2 (OUT2 shadow, bank infrastructure). |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).
@@ -22,10 +22,9 @@ Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).
 ## Quick start
 
 Needs a C compiler, GNU `cpp`, Python 3 (numpy optional, speeds up audio
-decoding). SDCC 4.x only for `make C=1`.
+decoding), SDCC 4.x (sdasz80, sdldz80; tested with 4.6.0).
 
 ```sh
-make -C tools/as80            # assembler
 make -C firmware verify       # build firmware/build/r58.bin, check vs release
 make -C emu                   # emulator (r58emu, libr58.so)
 
@@ -46,7 +45,7 @@ Scripting from Python:
 ```python
 import sys; sys.path.insert(0, "emu/python")
 from r58emu import Radio
-r = Radio("firmware/build/r58.bin", "firmware/build/r58.lst", nv=open("my.nv","rb").read())
+r = Radio("firmware/build/r58.bin", "firmware/build/r58.map", nv=open("my.nv","rb").read())
 r.run(2.5)                    # boot
 r.type("433500"); r.press("#"); r.run(0.3)
 print(r.display(), r.rx_hz())  # ('000012', '    433500') 433500000.0
@@ -57,10 +56,12 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 
 | Path | What |
 |---|---|
-| `firmware/r58.asm` | Working copy of the firmware source (from `reference/r58.asm.als`) |
+| `firmware/r58.s` | Firmware source (sdasz80 syntax, see [notes/toolchain.md](notes/toolchain.md)); `asm.h` helper macros |
+| `firmware/r58.asm` | The original as80 source (from `reference/r58.asm.als`), reference only |
 | `firmware/c/` | C modules for `make C=1` |
-| `tools/as80/` | The assembler (patched, see [notes/toolchain.md](notes/toolchain.md)) |
-| `tools/sdcc2as80.py` | SDCC output → as80 dialect converter |
+| `tools/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py` | Build steps around sdasz80/sdldz80 |
+| `tools/as80tosdas.py` | One-shot as80 → sdasz80 source converter |
+| `tools/as80/` | The original assembler (patched), for reference builds |
 | `emu/` | Emulator in C: `z80.c` core, `pio/sio/pit/daisy.c` Zilog/Intel chips, `cu53an.c`, `cu58af.c` handsets, `r58.c` board, `api.c` flat API |
 | `emu/python/` | `r58emu.py` harness, `r58tui.py` terminal UI, `afsk.py` AX.25 decoder |
 | `emu/tests/` | Scenario tests; `zex/` Z80 exerciser harness |

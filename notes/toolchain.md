@@ -1,6 +1,92 @@
 # Toolchain
 
-## as80 (tools/as80)
+## Build (2026-09-28): cpp + asmpp + sdasz80 + sdldz80
+
+`firmware/r58.s` is the firmware source, in sdasz80 syntax. `make -C
+firmware`:
+
+```
+r58.s --cpp -traditional--> --tools/asmpp.py--> r58.pp.s --sdasz80--> r58.rel
+      --tools/link.py (sdldz80)--> r58.ihx, r58.map --tools/ihx2bin.py--> r58.bin
+```
+
+`make verify` checks that `build/r58.bin` **and** the as80 build of the old
+source (`build-as80/`, from `r58.asm`) are byte-identical to the released
+v3_Z ALs binary. `r58.s` was produced from `r58.asm` by
+`tools/as80tosdas.py` (one-shot converter, kept for re-running on other
+as80 sources such as the ALr variant), then the `C_MODULES` blocks were
+edited by hand for the linked C objects; `r58.asm` is now reference only.
+
+### Source dialect
+
+Plain sdasz80 (`(mem)`, `#imm`, `;` comments, `.db/.dw/.ds/.ascii`) plus:
+
+| Feature | Provided by |
+|---|---|
+| `#define`, `#if`, macros with arguments | GNU `cpp -traditional` (as before; params are substituted inside strings, e.g. `STR("dHz")`) |
+| `@` statement separator (macro bodies, since cpp cannot emit newlines) | asmpp |
+| as80 local labels `1:` … `1b` / `1f` (digits 1-9, nearest before/after, no scoping by other labels) | asmpp |
+| `HI(x)` = `x >> 8` (unmasked, as as80), `LO(x)` = `x & 0xFF` | `firmware/asm.h` |
+| `ALIGN(bits, fill)`, `FILL(n, v)` | asm.h (`.rept`) |
+| `ASSERT_EQ/LT/LE/GT/GE(a, b)`, `ASSERT_NZ(x)` → `.iif ..., .error 1` | asm.h |
+| `name: BYTE` / `WORD` / `FREQ` / `STRING` / `BUF(n)` | `#define`s in r58.s (`.ds n`) |
+| `x_size` equates for as80's `SIZE(x)` (bytes of the statement defining x) | emitted by the converter |
+| ROM checksum byte `rom_cksum` (as80 `.cksum(0, .)`) | patched by ihx2bin.py |
+
+**Absolute symbols (asmpp).** sdas treats every label as relocatable, even
+in an ABS area, and then rejects arithmetic on it (`lbl & 0xFF`, `lbl >> 8`)
+or, worse, **assembles some of it silently wrong**: `.dw lbl >> 8` emits
+`lbl`, and `>lbl + 1` drops the `+ 1` (tested with sdas 4.6.0). This
+firmware does address arithmetic everywhere (page-aligned tables, `LO()`
+compares, layout asserts). So asmpp rewrites an area that begins with
+`.area NAME (ABS)` / `.org N`: every label `x:` becomes the absolute symbol
+`x = N + . - __base_NAME`, every `.` in an expression becomes that value, and
+a later `.org E` becomes `.ds E - .` (0xFF gap, as with as80). Arithmetic on
+labels is then exact. Only symbols of relocatable areas (the C modules) stay
+relocatable: **assembler code may `call`/`ld rr, #` them but must not do
+arithmetic on them** (`HI(_cfun)` would be one of the silent cases).
+
+**Expression precedence.** sdas: `* / %` > `+ -` > `<< >>` > `^` > `&` > `|`
+(not C's order). as80 had `+ -` lowest, then `* / %`, comparisons, shifts,
+and `| & ^` together, tightest. The converter re-parenthesised where the two
+disagree. Four as80 ASSERTs could never fail because of as80's order
+(`ASSERT(a == b + 8)` parsed as `(a == b) + 8`, etc.); they were converted
+as intended and hold.
+
+Other sdas facts found: `.ascii` escape handling is inconsistent (`"\\b"`
+gives 5C 08), so the converter writes special bytes as `.db`; sdas macro
+arguments are split at spaces even inside quotes, which is why cpp stays
+the macro processor; `.bndry` does not fill; makebin/ihx2bin gaps are 0xFF.
+
+### C modules (`make C=1`)
+
+`c/*.c` → `sdcc -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size -c` →
+`.rel`, linked with the firmware by `tools/link.py`:
+
+- `_CODE` is placed at `rom_end` (after the assembler ROM image and its
+  checksum byte), `_DATA` at `c_bss`, a block reserved in firmware RAM
+  (`C_BSS_SIZE`, inside the `_bss`…`_end` range the startup code zeroes).
+  link.py fails if `_CODE` passes 0x8000, `_DATA` overflows `c_bss`, or any
+  other relocatable area is non-empty (no initialised C data: nothing copies
+  `_INITIALIZER`).
+- SDCC runtime helpers come from SDCC's `z80.lib`.
+- C → firmware names: C `x` is `_x`; `tools/cglue.py` emits `_x = x` for
+  every `_x` the C objects reference (`build-c/cglue.inc`, included by
+  r58.s).
+- Firmware → C: a `#define squelch _squelch` block at the top of r58.s
+  under `C_MODULES`, and the assembler version under `#ifndef C_MODULES`.
+
+See notes/rewrite-evaluation.md for the register rules C code must follow.
+
+### Symbols for the emulator
+
+`r58emu.load_symbols()` reads `build/r58.map` (all symbols are global:
+`sdasz80 -a`), and `build/r58.labels` (written by asmpp) to tell code labels
+from equates. A label's size is the distance to the next label. A `.lst`
+path is still accepted (as80 listings; for an sdas listing the `.map` next
+to it is used).
+
+## as80 (tools/as80) — reference only
 
 The original assembler from `reference/old-devkit/as80` ("jas", 1996-97,
 yacc grammar + GNU `cpp -traditional` as macro preprocessor). Dialect:
@@ -36,13 +122,5 @@ OH3TR page. The changelog in the source lists ALi before ALJ…ALs.
 - Listing symbol table now includes `_`-prefixed symbols (only as80's
   internal `_relative_label_*` names are hidden), so C symbols are visible.
 
-## C modules (`make C=1`)
 
-`firmware/c/*.c` → SDCC 4.x (`-mz80 --sdcccall 1 --reserve-regs-iy
---opt-code-size`) → `tools/sdcc2as80.py` → `build-c/<mod>.inc` (code) and
-`<mod>_data.inc` (RAM, included before `_end`), `#include`d by r58.asm under
-`C_MODULES`. `firmware/c/crt.inc` provides `___sdcc_enter_ix`. Converter
-rules: `#imm`→`imm`, `(mem)`→`[mem]`, `d (ix)`→`[ix+d]`, `<(x)`/`>(x)`→
-`LO(x)`/`HI(x)`, implicit-A ALU forms, `n$` labels scoped per function,
-externals `_x` bound to firmware `x`. See notes/rewrite-evaluation.md for
-the register rules C code must follow.
+Superseded: the as80-era C module flow is in toolchain-history.md.
