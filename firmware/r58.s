@@ -8131,16 +8131,33 @@ draw_lower_row:
 	ld de, #CU58AF_segs_bottom_row      ;  Cursor at lower left
 1:
 
+	; Clear the lower colon unless the menu row is next, which lights it
+	; (v3_Z cleared it first, so a frame sent mid-redraw lost it)
+	ld a, (call_dpyed)
+	or a
+	jr nz, 1f
+	ld hl, (adj_feedback)
+	ld a, h
+	or l
+	jr nz, 1f
+	ld a, (digidx)
+	or a
+	jr nz, 1f
+	ld a, (menu_active)
+	or a
+	jr nz, 2f
+1:
 	call clear_lower_colon
+2:
 
 	ld a, (call_dpyed)
 	or a
-	jr nz, draw_call_notice
+	jp nz, draw_call_notice
 
 	ld hl, (adj_feedback)
 	ld a, h
 	or l
-	jr nz, draw_adjust_feedback
+	jp nz, draw_adjust_feedback
 
 	ld a, (digidx)                    ; digit buffer non-empty ?
 	or a
@@ -8152,7 +8169,7 @@ draw_lower_row:
 
 	ld a, (display_buffer_time)
 	or a
-	jr nz, draw_remote_display
+	jp nz, draw_remote_display
 
 	;  Cursor still at lower left, scanner running ?
 
@@ -8166,7 +8183,7 @@ draw_lower_row:
 	or a
 	jr nz, 1f               ; squelch opened, std display
 
-	jr draw_scan_mask       ; else show mask what are being scanned
+	jp draw_scan_mask       ; else show mask what are being scanned
 1:
 
 	;  Cursor still at lower left, now memory number and frequency

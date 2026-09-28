@@ -563,5 +563,25 @@ class CU58AFDepth(RadioTest):
         self.assertEqual(up[0], "0")  # txpwr digit unaffected
 
 
+class MenuColon(RadioTest):
+    def test_lower_colon_steady_while_transmitting_in_menu(self):
+        """The menu row lights the lower colon. v3_Z cleared it at the start
+        of every redraw and the menu drawer set it again, so with the
+        tight redraw loop while transmitting in the menu about 10 % of the
+        frames sent to the handset lacked it. Fixed 2026-09-28."""
+        r = self.boot()
+        self.enter("433500")
+        enter_menu(r, "200")
+        r.ptt(True)
+        r.run(0.1)
+        off = 0
+        for _ in range(300):
+            r.run(0.001)
+            off += "COLON_D" not in r.icons()
+        r.ptt(False)
+        r.run(0.3)
+        self.assertEqual(off, 0, "%d of 300 samples without the colon" % off)
+
+
 if __name__ == "__main__":
     unittest.main()

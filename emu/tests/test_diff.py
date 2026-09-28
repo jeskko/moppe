@@ -181,6 +181,33 @@ SCN_EVERY_KEY = [
     ("press", "#"), ("run", 0.3), ("check", "scan stopped"),
 ]
 
+def _show(label, *pokes):
+    return [*[("poke", k, v) for k, v in pokes], ("poke", "redraw_req", 1),
+            ("run", 0.3), ("check", label)]
+
+
+# Display states of draw_upper_row/draw_lower_row (c/display.c with C=1)
+# that other scenarios do not reach, set up by poking what they display.
+SCN_DISPLAY_STATES = [
+    ("boot", 2.5),
+    *_enter("433525"),
+    ("keys", "7"), ("press", "#", 1.5), ("run", 0.3),
+    *_show("memory, scannable"),
+    *_show("memory, not scannable", ("mem_flags", 0x01)),
+    *_show("memory, hidden", ("mem_flags", 0x03)),
+    *_show("CCIR call notice", ("call_dpyed", 2)),
+    *_show("unknown call notice", ("call_dpyed", 3)),
+    *_show("call timer", ("call_dpyed", 1), ("call_timer_hour", 12),
+           ("call_timer_min", 34), ("call_timer_sec", 57)),
+    *_show("call timer, odd second: colons", ("call_timer_sec", 58)),
+    *_show("no call", ("call_dpyed", 0)),
+    *_show("locator", ("locator_dpyed", 5), ("locator_display_buffer", b"KP11VM")),
+    *_show("remote display", ("locator_dpyed", 0), ("display_buffer_time", 3),
+           ("remote_display_buffer", b"HELLO 42\xff\xff")),
+    *_show("repeater mode", ("display_buffer_time", 0), ("cfg_function", 1)),
+    *_show("normal again", ("cfg_function", 0)),
+]
+
 def _fsk_scenarios():
     """FSK receive/send scenarios (packet formats: test_fsk.py). The
     config pointers are NV addresses, the same in both builds (v3_Z NV
@@ -306,6 +333,12 @@ class DiffTest(unittest.TestCase):
 
     def test_every_key_cu58af(self):
         self.diff(SCN_EVERY_KEY, cu=CU58AF)
+
+    def test_display_states(self):
+        self.diff(SCN_DISPLAY_STATES)
+
+    def test_display_states_cu58af(self):
+        self.diff(SCN_DISPLAY_STATES, cu=CU58AF)
 
     def test_fsk_receive(self):
         self.diff(_fsk_scenarios()[0])
