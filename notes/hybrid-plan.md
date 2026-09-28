@@ -72,8 +72,29 @@ typematic timings.
   bit-banged buses, so a checkpoint catches them at an arbitrary phase and
   they differ between two correct builds. Candidate: `R58_CAND_ROM`/`_LST`,
   default `firmware/build-c`. Stock vs `C=1`: no differences.
+- **Added 2026-09-28:** `test_scan_rptr.py` (scanner: default mask, memory
+  block, stop/resume on signal, mask toggle, perm reject; repeater: menu
+  enable + 60 s boot lockout, access by 1750 Hz / DTMF * / carrier, greet,
+  during and bye CW decoded from the tone pin) and `test_menu_power.py`
+  (menu edit of every record type in use, "???", backspace, low battery
+  warning/power-down, TOT, typematic groups, CU58AF menu/frequency/volume
+  layout). Still open: CCIR/DTMF *receive* decode of digit strings, FSK
+  receive/remote config, MBUS CFGSnd/CFGGEt.
 - Grow the emulator where tests need it: FX429 RX bit timing, MBUS
   host-side helpers (CFGSnd/CFGGEt), maybe CTCSS slicer input.
+
+**Firmware behaviour the tests pinned down** (keep it when porting unless
+decided otherwise):
+- TOT: `cfg_tx_tot_minutes` = N powers down at the (N+2)th minute boundary
+  after TX on (timer starts at 0, strict `<` in `once_per_minute`), i.e.
+  after N+1…N+2 minutes of TX. Verified in r58.asm L2451-2462/L13050. An
+  off-by-one to fix deliberately, or keep.
+- Every CW message costs at least 400 ms: `send_cw_prolog` jumps into
+  `send_cw_epilog`, and both wait 200 ms (r58.asm L15996/L16009).
+- SAnE does not reset CFG_DYN records (`reset_menurec` L17684), so the
+  squelch level stays 0 after SAnE although its REC default is 127.
+- cSEC entry drops the last typed digit ("150" stores 15, shown as 150 ms).
+- CFG_EXE (type 10) is defined but no record uses it.
 
 ### Phase 1: one toolchain (SDCC's sdas + sdld) — done 2026-09-28
 - `firmware/r58.s` (sdasz80 syntax, converted by `tools/as80tosdas.py`)
