@@ -252,6 +252,24 @@ class BankedC(unittest.TestCase):
         self.assertEqual(r.peek("repeater_state"), 1)     # ST_BOOT
 
 
+    def test_gps_runs_in_bank2(self):
+        """c/gps.c: a complete GPRMC sentence is parsed in bank 2."""
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        from test_signalling import nmea
+        r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
+                  card=P8E, nv=make_sane_nv(P8E))
+        r.run(2.5)
+        r.breakpoint("_gps_process_sentence")
+        r.serial_rx(0, nmea("GPRMC,123519,A,6130.12,N,02345.67,E,000.0,000.0,280926,,"))
+        self.assertEqual(r.run(0.5), "break")
+        self.assertEqual(r.peek("cur_bank"), 2)
+        r.breakpoint("_gps_process_sentence", False)
+        r.run(0.3)
+        self.assertEqual(r.peek("cur_bank"), 0)
+        self.assertEqual(r.peek("gps_valid_seconds"), 5)
+
+
 BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
 
 

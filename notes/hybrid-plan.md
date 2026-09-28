@@ -12,18 +12,22 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 ## Start here (next session, written 2026-09-28)
 
 **State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
-1 = EPROM0 chip 0xC000 (menu, APRS/GPS; in the asm build also the FSK
-packets and repeater/CW; `C=1`: **3882 bytes free**, asm build 834), 2 =
-EPROM0 chip 0x8000 (`C=1`: `c/fsk.c` + `c/rptr.c`, 3857 bytes; **~12.5 KB
-free**). Phase 4 in `make C=1`: `c/squelch_crc.c`, `timers.c`, `keys.c`,
-`display.c`, `freq.c` in fixed ROM, `fsk.c`, `rptr.c` in bank 2 (see
-"Done: ... bank 2" under Phase 4); fixed ROM ends at ~0x4756 (~14.5 KB
-free). 173 tests pass on both builds; `make -C firmware verify` still
-byte-identical for the release reference.
+1 = EPROM0 chip 0xC000 (menu, APRS/MPRS; in the asm build also GPS, FSK
+packets and repeater/CW; `C=1`: **4636 bytes free**, asm build 834), 2 =
+EPROM0 chip 0x8000 (`C=1`: `c/fsk.c`, `c/rptr.c`, `c/gps.c`, 5216 bytes;
+**~11 KB free**). Phase 4 in `make C=1`: `c/squelch_crc.c`, `timers.c`,
+`keys.c`, `display.c`, `freq.c` in fixed ROM, `fsk.c`, `rptr.c`, `gps.c`
+in bank 2 (see "Done: ... bank 2" under Phase 4); fixed ROM ends at
+~0x4783 (~14.4 KB free). 178 tests pass on both builds; `make -C firmware
+verify` still byte-identical for the release reference.
 
-**Next task: APRS/MPRS/GPS to C in bank 2** (4 KB asm; `test_fsk.py`
-MPRS receive, `test_signalling.py` GPS/APRS; widen the net first:
-MIC-E, locator maths edge cases, APRS formats), then the menu engine (8 KB,
+**Next task: MPRS/APRS to C in bank 2** (`handle_mprs_packets` …
+`stuffed_8bits`, ~2400 lines: MPRS receive/display, locator and QRB
+maths, the five MBUS output formats, GPS waypoint output, APRS/MIC-E
+encoding, AX.25 framing; `packet_callsign_unpack`/`mprs_degmin_pack` and
+the two symbol tables go with it). Widen the net first: every
+`cfg_mbus_mprs` format, waypoint output, QRB display, APRS/MIC-E packets
+(AFSK decode, `afsk.py`), locator edge cases. Then the menu engine (8 KB,
 mostly REC tables; the tables could stay asm data in bank 1 if the engine
 that reads them stays there too). Per module: tests first (reference =
 the asm build when a fixed bug makes the release differ), `#pragma bank
@@ -553,12 +557,37 @@ first, port, differential test against stock, size check, commit.
   a slot edge where the builds' few ms differ.
   `test_banking.BankedC.test_repeater_runs_in_bank2`: breakpoint in
   `_repeater_run` with bank 2 selected.
+- **Done: GPS sentence processing in C, bank 2** (2026-09-28), `c/gps.c`:
+  NMEA GPRMC (checksum, time, status, lat/lon, speed, course, date) and
+  the Aisin Seiki binary CA CA block. `gps_check` (the per-pass byte
+  gatherer) stays fixed; `far_gps_process_sentence` passes the length
+  (C → A) and `far_gps_process_aisin_seiki` the index (E → A) and keeps
+  DE, which the caller's loop needs. `gps_own_locator` (bank 1, APRS
+  block) through a new `far_gps_own_locator` until that block moves;
+  `aisin_seiki_parse_latlon` (fixed) through a shim (IY, IX). The two
+  APRS symbol tables stay in bank 1 asm. 1359 bytes of C. Kept on purpose
+  (pinned by the tests): number fields reject only characters below '0'
+  (a letter is stored as its value minus '0'), a field that fails leaves
+  the fields before it updated, speed/course wrap at 16 bits, the digit
+  shift register of lat/lon (only the last five digits before the point).
+  Safety net: `test_gps_diff.py` (asm build vs `C=1`: 36 GPRMC cases incl.
+  checksum edge cases and a stale checksum left in the buffer, 10 Aisin
+  Seiki blocks, the menu redraw); mutation run 18/18 caught (after a
+  second round: 4 survivors showed missing cases); `BankedC` breakpoint.
+- **Open question (user): the Aisin Seiki binary GPS path is broken** in
+  v3_Z (`cfg_gps_config` 3; found 2026-09-28, kept as is in the port):
+  course = H + 256 × bit 7 of L of heading × 45 instead of / 128 (90° shows
+  45, 270° shows 390); the centiminutes' ones byte is the low byte of a
+  remainder, not a digit (30.11' shows 30.1 and 0x80); no N/S/E/W letter is
+  written (the byte keeps its old value). Is that GPS still in use? If not,
+  the path could be dropped; if yes, the first two are clear fixes, the
+  hemisphere needs the unit's sign convention.
 - **What is left, and what gates it:**
   - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The remaining bank-1 modules (menu, APRS/GPS) go to C
+  - The remaining bank-1 modules (menu, MPRS/APRS) go to C
     in bank 2 like `fsk.c` (~14.7 KB free there). The real-board bench
     test still has to confirm both window pages.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.

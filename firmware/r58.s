@@ -3782,11 +3782,36 @@ gps_check_aisin_seiki:         ; DE points to first new gps data byte
 
 	ret
 
-; GPS sentence processing lives in bank 1 (search "BANK 1").
+; GPS sentence processing lives in bank 1 (search "BANK 1"), with
+; C_MODULES in c/gps.c, bank 2.
+#ifdef C_MODULES
+far_gps_process_aisin_seiki:	; DE -> after a 0x0D in gps_history, kept
+	push de
+	ld a, e
+	call 1f
+	pop de
+	ret
+1:
+	call bank2_call
+	.dw _gps_process_aisin_seiki
+far_gps_process_sentence:	; C = length
+	ld a, c
+	call bank2_call
+	.dw _gps_process_sentence
+far_gps_own_locator:	call bank1_call
+	.dw gps_own_locator
+gps_latlon:			; c/gps.c: HL -> 1/256", DE -> DDDMMmm
+	push hl
+	pop iy
+	push de
+	pop ix
+	jp aisin_seiki_parse_latlon
+#else
 far_gps_process_aisin_seiki:	call bank1_call
 	.dw gps_process_aisin_seiki
 far_gps_process_sentence:	call bank1_call
 	.dw gps_process_sentence
+#endif
 
 script_check:
 
@@ -14937,6 +14962,7 @@ do_reboot:
 
 ;----- GPS sentence processing (was fixed ROM) -----
 
+#ifndef C_MODULES	/* c/gps.c, bank 2 (the symbol tables stay: APRS) */
 gps_process_aisin_seiki:
 
 	ld a, e
@@ -15211,6 +15237,7 @@ hexchr_to_bin:
 1:
 	add a, #10           ; 0xA...0xF. carry will be clear
 	ret
+#endif /* C_MODULES */
 
 symbol_nibble_to_primary_symbol:
 	.db 'p' ;  0   rover (puppy dog)
@@ -15248,6 +15275,7 @@ ssid_nibble_to_primary_symbol:
 	.db 'k' ;  14 truck
 	.db 'v' ;  15 van
 
+#ifndef C_MODULES	/* c/gps.c */
 str_gprmc: .asciz "GPRMC,"
 
 ; length in c-reg
@@ -15618,6 +15646,7 @@ gps_information_has_been_updated:
 	jp nz, redraw          ; redraw if in menu - in case GPSxxx display
 
 	ret
+#endif /* C_MODULES */
 
 ;======================================================================
 

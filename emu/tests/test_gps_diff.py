@@ -28,7 +28,7 @@ CAND = (os.environ.get("R58_GPS_CAND_ROM", os.path.join(FW, "build-c", "r58.bin"
 def gps_state(r):
     return (r.peek("gps_utc", 8), r.peek("gps_date", 8), r.peek16("gps_knots"),
             r.peek("gps_speed"), r.peek16("gps_course"), r.peek("gps_status", 8),
-            r.peek("gps_valid_seconds") > 0, r.peek("cfg_gps_latitude", 8),
+            r.peek("gps_valid_seconds"), r.peek("cfg_gps_latitude", 8),
             r.peek("cfg_gps_longitude", 8), r.peek("cfg_gps_locator", 8))
 
 
@@ -62,6 +62,10 @@ GPRMC_CASES = [
     ("bad checksum char", nmea_raw(RMC, "G1")),
     ("no checksum", ("$%s\r\n" % RMC).encode()),
     ("one checksum digit", ("$%s*4\r\n" % RMC).encode()),
+    ("plain again", nmea_raw(RMC)),
+    # '*' last: nothing after it is stored, the buffer still holds the
+    # previous sentence's (valid) checksum digits there
+    ("stale checksum", ("$%s*\n" % RMC).encode()),
     ("decimal seconds", nmea_raw("GPRMC,123519.25,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("status V", nmea_raw("GPRMC,123519,V,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("short utc", nmea_raw("GPRMC,1235,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
@@ -79,6 +83,8 @@ GPRMC_CASES = [
     ("138 knots", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,138,0,010100,,")),
     ("137 knots", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,137,0,010100,,")),
     ("huge speed wraps", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,70000,0,010100,,")),
+    ("slash in speed", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1/2,3,010100,,")),
+    ("letter in speed", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1A.0,3,010100,,")),
     ("empty speed/course", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,,,010100,,")),
     ("bad date", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1,2,01x100,,")),
     ("no comma after date", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1,2,010100")),
