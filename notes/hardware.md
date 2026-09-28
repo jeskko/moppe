@@ -70,7 +70,8 @@ Outputs: PB7 power relay off, PB6 EXAL, PB4 /RXON (GPIO).
 | MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled | real radio |
 | CU58AF keypad row 6: manual says PCF8574 P7 (P6 unused), firmware decodes '+ S R' from P6 | follow firmware | real handset |
 | The RS window and EPROM1 banking on real hardware (P8E from schematic, P8N from manual) | modelled, unverified | the bench test ROM: `make -C firmware banktest`, see notes/hybrid-plan.md Phase 3 |
-| FX429 modem: socketed? what its audio pins carry | socketed; RX/TX audio pins carry "raw" RX and TX audio (user's recollection 2026-09-28); mic/speaker would need extra wires | schematic, a real board. Matters for an ESP32 board in the modem socket (see below) |
+| FX429 modem socket | socketed; RX/TX audio pins carry "raw" RX and TX audio; bus pins /CS, R/W, /IRQ, A0, A1, D0-D7 and a CLK input (user, 2026-09-28). Mic/speaker would need extra wires | schematic: how R/W and /CS are made from /RD, /WR, /IORQ (is M1 excluded?), CLK frequency and source. Matters for an ESP32 board in the modem socket (see below) |
+| Logic family on the CPU card bus | P8N: plenty of 74HC (user, 2026-09-28), so a board driving the data bus must give 5 V CMOS levels (74HC VIH = 3.5 V at 5 V) | schematic, per card |
 
 **Idea (2026-09-28): a "next generation" multiboard in the FX429 socket.**
 An ESP32 there would get I/O registers both ways (0xA2/0xA3), an interrupt
@@ -78,7 +79,13 @@ An ESP32 there would get I/O registers both ways (0xA2/0xA3), an interrupt
 visible in every bank, unlike a board in the EPROM1 socket (which bank 1
 hides), and it would leave both EPROM sockets for code. It needs a CPLD or
 latch mailbox between the bus and the ESP32 (the ESP32 cannot meet Z80 I/O
-timing in software), 5 V/3.3 V level handling and more supply current. If
+timing in software), 5 V/3.3 V level handling and more supply current.
+With A0 and A1 the socket decodes four registers (0xA0-0xA3); the firmware
+uses 0xA2 (data) and 0xA3 (control/status), so 0xA0/0xA1 are free for an
+extended interface. R/W + /CS is a Motorola-style bus: latch writes on the
+rising edge of /CS with R/W low, drive the data bus while /CS is low with
+R/W high. Because of the 74HC loads, a 5 V CPLD (ATF1504AS/ATF1508AS)
+fits better than a 3.3 V one (XC9572XL would need a 74HCT245 driver). If
 it keeps the FX429 register behaviour, the stock firmware works unchanged.
 Still to check: the FX429 bus pins and timing on the datasheet; whether
 its RX audio is filtered (CTCSS is below 300 Hz).
