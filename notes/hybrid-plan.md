@@ -154,8 +154,9 @@ decided otherwise):
   `gps_history` bytes that follow it. **Fixed 2026-09-28** (obvious bug:
   `inc l`, in asm and C); `test_fsk.test_relay_across_ring_end`.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
-  southern latitude is sent as northern. Kept (asm and C) until the MPRS
-  format is known; **open question**.
+  southern latitude is sent as northern. Kept as is (asm and C): the
+  radios are used in Finland only, so the southern case never mattered
+  and was likely never tested (user, 2026-09-28). Low priority.
 - CFGSnd sent the last NV byte twice instead of the checksum
   (`all_config_send` computed it in A, `putchar` sends C), so CFGGEt
   refused a plain CFGSnd dump. **Fixed 2026-09-28** (user decision);
