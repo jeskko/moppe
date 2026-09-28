@@ -8,7 +8,12 @@ repository is never modified.  Run from the repository root:
 
     python3 tools/mutate.py firmware/c/aprs.c mutants.py test_aprs_diff test_fsk.FskRx
     python3 tools/mutate.py firmware/c/aprs.c mutants.py test_aprs_diff --only 3 7
-    python3 tools/mutate.py firmware/c/menu.c mutants.py test_menu_diff --jobs 12
+    python3 tools/mutate.py firmware/c/menu.c tools/mutants/menu.py test_menu_diff --jobs 12
+
+tools/mutants/ keeps the lists of the runs quoted in notes/hybrid-plan.md
+(menu: + test_menu_power test_mbus_config test_remote_config
+test_diff.DiffTest.test_fsk_edges_receive; scan: test_scan_diff
+test_scan_rptr.Scanner test_scan_rptr.Rejects).
 
 mutants.py defines MUTANTS = [(old, new), ...]; each `old` must occur
 exactly once in the module.  The mutated build is passed to the tests as
