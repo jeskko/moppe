@@ -174,7 +174,7 @@ decided otherwise):
   the normal firmware plus `bank_test` early at boot. The lower row shows
   `b1  PASS  ` (on a CU53AN the S look like 5); `b1 ssss 00` = the window's
   16-bit byte sum was ssss (`make banktest` prints the right one; 0000 =
-  the P8N-only page, zero-filled on purpose; 3FC0 would be an empty 0xFF
+  the P8N-only page, zero-filled on purpose; C000 would be an empty 0xFF
   page); `b1 CA11 vv` = sum fine but the routine returned vv. The
   emulator shows PASS on P8E/P8N with both handsets
   (`test_banking.BenchTestRom`). The user will burn it when the EPROM
