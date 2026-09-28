@@ -6743,6 +6743,32 @@ ccir_tx_timer_wait:
 
 	ret
 
+; For the repeater/CW code in bank 1: the same waits with bank 0 selected.
+
+b0_ccir_tx_timer_wait:	call bank0_call
+	.dw ccir_tx_timer_wait
+
+b0_cw_wait_tone:	call bank0_call
+	.dw cw_wait_tone
+
+; Wait for the marker tone (or pause) to end: Z.  NZ = carrier came up
+; while repeater_cw_sendit_all is 0, i.e. the sequence must be pre-empted.
+; Destroys A, F.
+
+cw_wait_tone:
+	ld a, (repeater_cw_sendit_all)      ; 0=pre-empt if carrier
+	or a
+	jr nz, 1f
+
+	ld a, (squelch_open)                ; repeater_check_carrier: NZ if carrier
+	or a
+	ret nz
+1:
+	ld a, (mt_timer)
+	or a
+	jr nz, cw_wait_tone
+	ret                                 ; Z
+
 ;----------------------------------------------------------------------
 
 step_txpwr_up:
@@ -8808,9 +8834,21 @@ set_bank:
 ;  All registers pass to fn and back unchanged (flags too); the previous
 ;  bank is restored after fn returns, so calls nest.  The RAM temporaries
 ;  are only live until fn starts; interrupts never call bank code.
+;
+;  bank0_call is the same with bank 0 selected: banked code uses it (via a
+;  stub in fixed ROM) for long waits, so that the multiboard readers
+;  (DTMF, CTCSS DSP decoder) see the multiboard meanwhile.
+
+bank0_call:			; stack: [&.dw fn] [caller]
+	ld (bank_hl), hl
+	ld hl, #0
+	jr 1f
 
 bank1_call:			; stack: [&.dw fn] [caller]
 	ld (bank_hl), hl
+	ld hl, #1
+1:
+	ld (bank_to), hl
 	pop hl
 	push af
 	ld a, (hl)
@@ -8822,7 +8860,7 @@ bank1_call:			; stack: [&.dw fn] [caller]
 	ld (bank_af), hl	; caller's AF
 	ld a, (cur_bank)
 	push af			; [old bank] [caller]
-	ld a, #1
+	ld a, (bank_to)
 	call set_bank
 	ld hl, #bank1_back
 	push hl
@@ -12989,7 +13027,7 @@ send_cw_epilog:
 	ld (nosir), a
 1:
 	ld a, #20
-	call ccir_tx_timer_wait
+	call b0_ccir_tx_timer_wait
 
 	ret
 
@@ -13071,22 +13109,12 @@ cw_slots:
 	call start_marker_tone ; hl pitch, d dur
 
 	; nothing needs to be saved here
-1:
-		ld a, (repeater_cw_sendit_all)      ; 0=pre-empt if carrier
-		or a
-		jr nz, 2f
 
-		call repeater_check_carrier         ; NZ if carrier
-		jr z, 2f
-
-		; pre-empt
-
+	call b0_cw_wait_tone                ; waits in bank 0, NZ = pre-empt
+	jr z, 1f
 		ld sp, (repeater_cw_jmpbuf)
 		ret                                 ; ZAP back.
-	2:
-		ld a, (mt_timer)
-		or a
-		jr nz, 1b
+1:
 
 	; tone or silence ends,
 	; place to open or close relay audio
@@ -13140,23 +13168,10 @@ send_note_chr:
 	ld d, #10                           ; 100msec per tone or pause
 	call start_marker_tone             ; hl pitch, d dur
 
-1:
-		ld a, (repeater_cw_sendit_all)      ; 0=pre-empt if carrier
-		or a
-		jr nz, 2f
-
-		call repeater_check_carrier         ; NZ if carrier
-		jr z, 2f
-
-		; pre-empt
-
+	call b0_cw_wait_tone                ; waits in bank 0, NZ = pre-empt
+	ret z
 		ld sp, (repeater_cw_jmpbuf)
 		ret                                 ; ZAP back.
-	2:
-		ld a, (mt_timer)
-		or a
-		jr nz, 1b
-	ret
 
 ;----------------------------------------------------------------------
 ;----------------------------------------------------------------------
@@ -20628,6 +20643,7 @@ out2_last:	BYTE	; last handset bus state written to OUT2
 ctcss_dec_src:	WORD	; CTCSS DSP decoder sample address
 ctcss_idle_sample: BYTE	; stays 0: "no signal" while banked
 bank_hl:	WORD	; bank1_call temporaries
+bank_to:	WORD	; target bank (low byte)
 bank_fn:	WORD
 bank_af:	WORD
 #ifdef BANK_TEST
