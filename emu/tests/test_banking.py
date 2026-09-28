@@ -221,5 +221,38 @@ class BenchTestRom(unittest.TestCase):
         self.assertEqual(r.display()[1], "b1 CA11 C3")
 
 
+class BankDuty(unittest.TestCase):
+    """Bank 1 hides the multiboard (DTMF decoder, CTCSS DSP decoder skip
+    or read zeros meanwhile), so code polled from mainloop must not sit in
+    bank 1: guards like far_repeater_run's once-per-systick check keep the
+    share small. And nothing in bank 1 may be reachable from interrupts."""
+
+    def test_nothing_in_bank1_reachable_from_interrupts(self):
+        import subprocess
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        res = subprocess.run([sys.executable, os.path.join(root, "tools", "isrreach.py"),
+                              os.path.join(root, "firmware", "r58.s"), "bank1_start", "bank1_end"],
+                             capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def share_in_bank1(self, r, seconds, step=0.0007):
+        n = [0, 0]
+        for _ in range(int(seconds / step)):
+            r.run(step)
+            n[1 if r.peek("cur_bank") else 0] += 1
+        return n[1] / sum(n)
+
+    def test_idle_and_repeater_idle_stay_in_bank0(self):
+        from test_radio import make_sane_nv, ROM, LST
+        r = Radio(ROM, LST, card=P8E, nv=make_sane_nv(P8E))
+        r.run(2.5)
+        self.assertLess(self.share_in_bank1(r, 0.3), 0.05, "normal mode")
+        r.poke("cfg_function", 1)               # repeater
+        r.run(0.2)
+        r.poke("repeater_timer_other", bytes([1, 0]))   # skip the 60 s boot
+        r.run(1.2)
+        self.assertLess(self.share_in_bank1(r, 0.3), 0.05, "repeater idle")
+
+
 if __name__ == "__main__":
     unittest.main()

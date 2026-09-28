@@ -3449,7 +3449,7 @@ mainloop:
 	call idlefn_check
 	call script_check
 	call scanner_run
-	call repeater_run
+	call far_repeater_run
 	call gps_check
 
 	ld a, (cfg_bus_rf_relay)
@@ -6369,7 +6369,7 @@ pttcheck:
 
 	call remember_vip
 
-	call repeater_operator_ptt
+	call far_repeater_operator_ptt
 	ret
 
 tx_error:
@@ -11872,141 +11872,25 @@ repeater_init:
 	ld (repeater_state), hl
 	ret
 
-repeater_halt:
-	call repeater_aoff
-	call repeater_txoff
-	jr repeater_init
-
-repeater_run:
+; Repeater main state machine lives in bank 1 (search "BANK 1").
+; Called on every mainloop pass.  Enter bank 1 only in repeater mode, and
+; at most once per 10 ms systick: what the state machine polls (timers,
+; squelch, CCIR/DTMF decoders) changes at that rate, so the pass right
+; after a tick sees the same inputs as before, and bank 1 no longer takes
+; about half of the idle time from the multiboard readers.
+far_repeater_run:
 	ld a, (cfg_function)
 	dec a                       ; if 1
-	jr nz, repeater_init        ; not repeater, init in case later turned on
-
-	ld a, (cfg_repeater_suspended)
-	or a
-	jr z, 1f
-		ld a, (repeater_is_suspended)
-		or a
-		ret nz                     ; already. normal path during suspension.
-
-		ld a, #1
-		ld (repeater_is_suspended), a ; now going suspended.
-
-		ld a, (txon)
-		or a
-		call z, repeater_txon
-		call repeater_send_qrt
-
-		jr repeater_halt
-1:
-	ld a, (repeater_is_suspended)
-	or a
-	jr z, 1f
-		xor a
-		ld (repeater_is_suspended), a     ; no more suspended.
-
-		jp repeater_open_by_reset        ; back in business immediately.
-1:
-
-	; /LOCAL rising resets repeater into opening state
-
-	ld a, (sio_bctrl_local)
-	and #SB_LOCAL
-	jr nz, 1f                   ; skip if pin was 1, already handled.
-		ld a, (sio_bctrl_mirror)
-		and #SB_LOCAL
-		jr z, 1f                 ; skip if pin is 0 (and was 0).
-		ld (sio_bctrl_local), a  ; remember bit
-
-		jp repeater_open_by_reset
-1:
-
-	; Check any #? DTMF commands
-
-	ld a, (repeater_req)
-	cp #9                        ; #9_, close NOW
-	jr nz, 1f
-		xor a
-		ld (repeater_req), a
-
-		ld a, (cfg_repeater_cmd_9_hidden)
-		or a
-		jr nz, 2f                          ; not allowed, skip
-
-		call repeater_aoff
-		call repeater_send_roger
-		call repeater_txoff
-		jp repeater_idle
-1:
-	cp #0xFF                            ; #0_, restore squelch & power
-	jr nz, 1f
-		xor a
-		ld (repeater_req), a
-		ld (squelch_tightening), a
-		ld (txpwr_increment), a
-		call update_txpwr_if_tx
-		call repeater_send_roger
-		jr 2f
-1:
-	cp #1                              ; #1_, tighten squelch
-	jr nz, 1f
-		xor a
-		ld (repeater_req), a
-		ld a, (repeater_cfg_sqincr)
-		ld (squelch_tightening), a
-		call repeater_send_roger
-		jr 2f
-1:
-	cp #3                                  ; #3_ rise tx power
-	jr nz, 1f
-		xor a
-		ld (repeater_req), a
-		ld a, (repeater_cfg_txincr)
-		ld (txpwr_increment), a
-		call update_txpwr_if_tx
-		call repeater_send_roger
-		jr 2f
-1:
-	cp #5                                  ; #5_ toggle sending of rssi-bongos
-	jr nz, 1f
-		xor a
-		ld (repeater_req), a
-		ld a, (repeater_cfg_rssi_bongos)
-		xor #1
-		ld (repeater_cfg_rssi_bongos), a
-		call repeater_send_roger
-		jr 2f
-1:
-	cp #0xFE                                ; internal - just roger
-	jr nz, 1f
-		xor a
-		ld (repeater_req), a
-		ld a, (txon)
-		or a
-		push af
-		call z, repeater_txon
-		call repeater_send_roger
-		pop af
-		call z, repeater_txoff
-		jr 2f
-1:
-2:
-	ld hl, (repeater_state)
-	jp (hl)
-
-;
-;  No id sent here, operator announce assumed
-;
-repeater_operator_ptt:
-	ld a, (cfg_function)
-	dec a                   ; if 1
-	ret nz
-	call repeater_txon
-	call repeater_aoff
-	call repeater_send_blip
-	call repeater_start_timer_ID
-	call repeater_start_timer_OPEN
-	jp repeater_open
+	jp nz, repeater_init        ; not repeater, init in case later turned on
+	ld a, (sec100)
+	ld hl, #repeater_tick
+	cp (hl)
+	ret z                       ; no systick since the last run
+	ld (hl), a
+	call bank1_call
+	.dw repeater_run
+far_repeater_operator_ptt:	call bank1_call
+	.dw repeater_operator_ptt
 
 ;
 ;  received dtmf string at hl (h fixed, l wraps over)
@@ -12074,146 +11958,6 @@ ccir_repeater_cmd:
 
 ;----------------------------------------------------------------------
 
-repeater_setstate:
-	pop hl
-	ld (repeater_state), hl
-	jp (hl)
-
-;----------------------------------------------------------------------
-
-repeater_check_carrier_access:
-	ld a, (squelch_open)
-	or a
-	ret z                  ; Z, no signal -> no beep
-
-	; squelch is open, do we use access=1=carrier
-
-	ld a, (repeater_cfg_access_method)
-	or a
-	ret z                  ; Z, access=0=beeps
-	cp #2
-	ret z                  ; Z, access=2=none
-
-	ret                    ; NZ, signal -> open, bypass toneaccess
-
-
-repeater_recheck_beep_quickly:
-
-	ld a, (pioa_data)
-	and #PA_CCIR
-	cp #0x80
-	jr nz, 1f
-	or #1                    ; NZ, 1750 Hz on
-	ret
-1:
-	ld a, (dtmf_prevdata)
-	cp #0x80 | (0xB << 3)       ; StD and DTMF * in raw format (shifted up)
-	jr nz, 1f
-	or #1
-	ret                     ; NZ, DTMF * on
-1:
-	sub a                   ; Z, no beep
-	ret
-
-repeater_check_beep:
-
-	call is_ptt_pressed
-	ret nz                  ; PTT is pressed, act as if accesstone.
-
-	ld a, (repeater_cfg_access_method)
-	cp #2
-	ret z                  ; Z, access none -> no beep (2 = none)
-	cp #3
-	ret z                  ; Z, access ctcss(3) -> no beep 
-
-	ld a, (squelch_open)
-	or a
-	ret z                  ; Z, no signal -> no beep
-
-	ld a, (pioa_data)
-	and #PA_CCIR
-	cp #0x80
-	jr nz, 1f
-	ld a, (ccir_tonetime)
-	cp #25
-	jr c, 1f
-	or #1                    ; NZ, 1750 Hz on
-	ret
-1:
-	ld a, (dtmf_prevdata)
-	cp #0x80 | (0xB << 3)       ; StD and DTMF * in raw format (shifted up)
-	jr nz, 1f
-	or #1
-	ret                     ; NZ, DTMF * on
-1:
-	sub a                   ; Z, no beep
-	ret
-
-repeater_check_carrier:
-
-	; just reflect squelch
-
-	ld a, (squelch_open)
-	or a
-	ret                     ; NZ, carrier
-
-
-repeater_check_timer_ID:
-	ld hl, (repeater_timer_ID)
-	ld a, h
-	or l
-	ret
-
-repeater_check_timer:
-	ld hl, (repeater_timer_other)
-	ld a, h
-	or l
-	ret                     ; NZ if timer still running
-
-repeater_check_timer_BLIP:
-	ld a, (repeater_timer_BLIP_state)
-	cp #2
-	ret nz                      ; NZ = stopped (0) or still counting (1)
-	ld a, #0
-	ld (repeater_timer_BLIP_state), a   ; make it idle. Z kept.
-	ret                                 ; Z = counted down.
-
-repeater_start_timer_ID:
-	ld hl, (repeater_cfg_TID)
-	ld (repeater_timer_ID), hl
-	ret
-
-repeater_start_timer_OPEN:
-	ld hl, (repeater_cfg_TOPEN)
-	ld (repeater_timer_other), hl
-	ret
-
-repeater_start_timer_HOG:
-	ld hl, (repeater_cfg_THOG)
-	ld (repeater_timer_other), hl
-	ret
-
-repeater_start_timer_CLS:
-	ld hl, (repeater_cfg_TCLS)
-	ld (repeater_timer_other), hl
-	ret
-
-repeater_start_timer_DEAD:
-	ld hl, (repeater_cfg_TDEAD)
-	ld (repeater_timer_other), hl
-	ret
-
-repeater_start_timer_BLIP:
-	ld a, #0
-	ld (repeater_timer_BLIP_state), a  ; stop
-	ld a, (repeater_cfg_TBLIP)
-	ld (repeater_timer_BLIP), a        ; reload
-	ld a, #1
-	ld (repeater_timer_BLIP_state), a  ; start (1), goes 2 when done.
-	ret
-
-;----------------------------------------------------------------------
-
 repeater_step_1sec:
 
 	ld hl, (repeater_timer_ID)
@@ -12254,1018 +11998,6 @@ repeater_step_10msec:
 ;
 ;  Repeater states
 ;
-
-	;
-	; boot: (no emission)
-	; stick here for a minute (allow std function to be restored)
-	;
-repeater_boot:
-	ld hl, #60
-	ld (repeater_timer_other), hl
-
-	call repeater_setstate
-
-	call repeater_check_timer
-	jr nz, 1f
-		jr repeater_idle
-1:
-	ret
-
-	;
-	; idle: (no emission)
-	; 	beep or (carrier and using carrier access) ?
-	; 		goto opening
-	;
-repeater_idle:
-	xor a
-	ld (squelch_tightening), a
-	ld (txpwr_increment), a
-
-	call repeater_setstate
-	call repeater_check_beep
-	jr z, 1f
-		jr repeater_opening
-1:
-	call repeater_check_carrier_access
-	jr z, 1f
-		jr repeater_opening
-1:
-	ret
-
-	;
-	; opening: (no emission)
-	;   tone/carrier exceeds N seconds ?
-	;       goto idle
-	; 	no carrier?
-	; 		TXON, "ID", TMR0=TOPEN, TMR1=TID, goto open
-	;
-repeater_opening:
-
-	call repeater_bump_open_counter
-
-	ld hl, (repeater_cfg_TBEEPMAX)
-	ld (repeater_timer_other), hl      ; validate tone length
-
-	call repeater_setstate
-
-	call repeater_check_timer
-	jr nz, 1f
-		jr repeater_beep_too_long
-1:
-	call repeater_check_carrier
-	jr nz, 1f
-
-repeater_open_by_reset:                ; from /LOCAL
-
-		call repeater_txon
-		call repeater_send_id_greet
-		call repeater_start_timer_ID
-		call repeater_start_timer_OPEN
-		jr repeater_open
-1:
-	ret
-
-
-repeater_beep_too_long:
-	call repeater_setstate
-
-	call repeater_check_carrier
-	ret nz                               ; still carrier
-	call repeater_recheck_beep_quickly
-	ret nz                               ; still accesstone
-
-	jr repeater_idle                     ; nothing. go idle.
-
-	;
-	; open: (tx on, but audio muted)
-	; 	carrier?
-	;     AND no beeps (quick check, cut off whistles) ?
-	; 		AON, TMR0=THOG, goto active
-	; 	TMR1?
-	; 		"ID", TMR1=TID
-	; 	TMR0?
-	; 		TXOFF, TMR0=TCLS, goto closing
-	;
-repeater_open:
-	call repeater_setstate
-
-	call repeater_check_report_req
-
-	call repeater_check_timer_BLIP
-	jr nz, 1f
-		call repeater_send_blip
-1:
-	call repeater_check_carrier
-	jr z, 1f
-		call repeater_recheck_beep_quickly
-		jr nz, 1f
-			call repeater_aon
-			call repeater_start_timer_HOG
-			jr repeater_active
-1:
-	call is_ptt_pressed
-	jr z, 1f
-		call repeater_aon
-		call repeater_start_timer_HOG
-		jr repeater_active
-1:
-	call repeater_check_timer_ID
-	jr nz, 1f
-		call repeater_send_id_during
-		call repeater_start_timer_ID
-1:
-	call repeater_check_timer
-	jr nz, 1f
-		; end of open time.
-		; either stay in closing state
-		; or fully close now
-
-		ld hl, (repeater_cfg_TCLS)
-		ld a, l
-		or h
-		jr z, 2f
-			call repeater_txoff               ; quiet time
-			call repeater_start_timer_CLS
-			jr repeater_closing
-	2:
-		call repeater_send_id_bye             ; fully close, no closing state
-		call repeater_txoff
-		jp repeater_idle
-1:
-	ret
-
-	;
-	; active: (tx AND audio on (or forced with PTT))
-	; 	no carrier?
-	; 		AOFF, TMR0=TOPEN, "BLIP", goto open
-	; 	TMR1?
-	; 		"ID", TMR1=TID
-	; 	TMR0?
-	; 		AOFF, "TO", TXOFF, TMR0=TLOCKOUT, goto lockout
-	;
-repeater_active:
-	xor a
-	ld (repeater_sig), a         ; determine peak rssi during an over
-
-	call repeater_setstate
-
-	call repeater_check_carrier
-	jr nz, 1f
-
-		call is_ptt_pressed
-		jr nz, 1f                    ; if PTT is pressed, stay active.
-			call repeater_aoff
-			call repeater_start_timer_BLIP
-			call repeater_start_timer_OPEN
-			jr repeater_open
-1:
-
-	; this omission is a crummy fix
-	; for oh5rab letting noise thru if
-	; an over ends during identification
-	; XXX now id will wait until an over ends
-	; XXX still cannot speak over id
-
-#if 0
-	call repeater_check_timer_ID
-	jp nz, 1f
-		call repeater_send_id_during
-		call repeater_start_timer_ID
-1:
-#endif
-
-	call repeater_check_timer
-	jr nz, 1f
-		call repeater_aoff
-		call repeater_send_to
-		call repeater_txoff
-		call repeater_start_timer_DEAD
-		jp repeater_lockout
-1:
-	ret
-
-	;
-	; closing: (no emission)
-	; 	carrier?
-	;     no beeps (quick check) ?
-	; 		TXON, AON, TMR0=THOG, goto active
-	;     else
-	;       goto reopening.
-	; 	TMR0?
-	; 		( TXON, "ID VA", TXOFF ) (if "ID VA" exists). goto idle.
-	;
-repeater_closing:
-	call repeater_setstate
-
-	call repeater_check_carrier
-	jr z, 1f
-		call repeater_recheck_beep_quickly
-		jr nz, repeater_reopening
-
-		call repeater_txon
-		call repeater_aon
-		call repeater_start_timer_HOG
-		jr repeater_active
-1:
-	call is_ptt_pressed
-	jr z, 1f
-		call repeater_txon
-		call repeater_aon
-		call repeater_start_timer_HOG
-		jr repeater_active
-1:
-	call repeater_check_timer
-	jr nz, 1f
-		call repeater_test_id_bye_length
-		jp z, repeater_idle            ; if id bye is empty, 
-
-		call repeater_txon
-		call repeater_send_id_bye
-		call repeater_txoff
-		jp repeater_idle
-1:
-	ret
-
-	;
-	; reopening: (no emission)
-	;   no beeps ?
-	;      still carrier?
-	;         goto active
-	;      else
-	; 		  goto open.
-	; 	TMR0?
-	; 		( TXON, "ID VA", TXOFF ) (if "ID VA" exists). goto idle.
-	;
-repeater_reopening:
-	call repeater_setstate
-
-	call repeater_recheck_beep_quickly
-	jr nz, 1f
-
-		call repeater_check_carrier
-		jr z, 2f
-			call repeater_txon
-			call repeater_aon
-			call repeater_start_timer_HOG
-			jp repeater_active
-	2:
-		call repeater_txon
-		call repeater_start_timer_BLIP
-		call repeater_start_timer_OPEN
-		jp repeater_open
-1:
-	call is_ptt_pressed
-	jr z, 1f
-		call repeater_txon
-		call repeater_aon
-		call repeater_start_timer_HOG
-		jp repeater_active
-1:
-	call repeater_check_timer
-	jr nz, 1f
-		call repeater_test_id_bye_length
-		jp z, repeater_idle            ; if id bye is empty, 
-
-		call repeater_txon
-		call repeater_send_id_bye
-		call repeater_txoff
-		jp repeater_idle
-1:
-	ret
-
-	;
-	; lockout: (no emission)
-	; 		TMR0?
-	; 			TXON, "ID VA", TXOFF
-	; 
-repeater_lockout:
-	call repeater_setstate
-	call repeater_check_timer
-	jr nz, 1f
-		call repeater_txon
-		call repeater_send_id_bye
-		call repeater_txoff
-		jp repeater_idle
-1:
-	ret
-
-;----------------------------------------------------------------------
-
-repeater_bump_open_counter:
-	ld ix, #repeater_cfg_open_counter
-	inc (ix+0)
-	ret nz
-	inc (ix+1)
-	ret nz
-	inc (ix+2)
-	ret
-
-;----------------------------------------------------------------------
-
-repeater_txon:
-	ld a, (cfg_ctcss_output_when)
-	cp #1                          ; CTCSS OUTPUT WHEN = TRANSMITTER
-	call z, ctcss_maybe
-
-	call tx_on
-	jp force_redraw
-
-repeater_txoff:
-	ld a, (cfg_ctcss_output_when)
-	cp #1                          ; CTCSS OUTPUT WHEN = TRANSMITTER
-	call z, ctcss_off
-
-	call tx_off
-	jp force_redraw
-
-ctcss_output_signal_or_cust:
-	ld a, (cfg_ctcss_output_when)
-	cp #2                          ; CTCSS OUTPUT WHEN = SIGNAL
-	ret z
-	cp #4                          ; CTCSS OUTPUT WHEN = CUSTOM
-	ret
-
-repeater_aon:
-
-	call ctcss_output_signal_or_cust
-	call z, ctcss_maybe           ; CTCSS OUTPUT WHEN = SIGNAL or CUSTOM
-
-	ld a, (repeater_cfg_afsrc) ; Selects which way /MIC affects AF relaying
-	cp #2
-	jr z, 1f                    ; 2 = bypassed audio path
-	cp #0
-	jp z, mic_off               ; 0 = reversed MIC control
-	jp mic_on
-1:
-	call is_ptt_pressed         ; bypassed case, MIC just controls handset
-	jp z, mic_off               ; no ptt, no mic
-	jp mic_on
-
-repeater_aoff:
-
-	call ctcss_output_signal_or_cust
-	call z, ctcss_off_nohang      ; CTCSS OUTPUT WHEN = SIGNAL or CUSTOM
-
-	ld a, (repeater_cfg_afsrc) ; Selects which way /MIC affects AF relaying
-	cp #0
-	jp z, mic_on
-	jp mic_off
-
-;----------------------------------------------------------------------
-
-repeater_test_id_bye_length:          ; return Z if no bye message.
-
-	ld a, (repeater_cfg_id_bye1)
-	cp #EOS
-	ret nz                            ; message is not ""
-	ld a, (repeater_cfg_id_bye2)
-	cp #EOS
-	ret nz                            ; message is not ""
-	ld a, (repeater_cfg_id_bye3)
-	cp #EOS
-	ret nz                            ; message is not ""
-
-	ld a, (repeater_cfg_mprs_id)
-	and #0x04
-	ret                               ; zero-flag valid
-
-;----------------------------------------------------------------------
-
-repeater_send_id_greet:
-	call send_cw_prolog
-
-	ld hl, #repeater_cfg_id_greet1
-	call send_cw
-	ld hl, #repeater_cfg_id_greet2
-	call send_cw
-	ld hl, #repeater_cfg_id_greet3
-	call send_cw
-
-	call repeater_append_any_alerts
-	call send_cw_epilog
-
-	ld a, (repeater_cfg_mprs_id)
-	and #0x01
-	call nz, far_send_mprs_report_packet_1
-
-	ret
-
-repeater_send_id_during:
-	call send_cw_prolog
-
-	ld hl, #repeater_cfg_id_during1
-	call send_cw
-	ld hl, #repeater_cfg_id_during2
-	call send_cw
-	ld hl, #repeater_cfg_id_during3
-	call send_cw
-
-	call repeater_append_any_alerts
-	call send_cw_epilog
-
-	ld a, (repeater_cfg_mprs_id)
-	and #0x02
-	call nz, far_send_mprs_report_packet_1
-
-	ret
-
-repeater_send_id_bye:
-	call send_cw_prolog
-
-	ld hl, #repeater_cfg_id_bye1
-	call send_cw
-	ld hl, #repeater_cfg_id_bye2
-	call send_cw
-	ld hl, #repeater_cfg_id_bye3
-	call send_cw
-
-	call repeater_append_any_alerts
-	call send_cw_epilog
-
-	ld a, (repeater_cfg_mprs_id)
-	and #0x04
-	call nz, far_send_mprs_report_packet_1
-
-	ret
-
-repeater_append_any_alerts:
-
-	; temperature outside window ?
-	; NTC resistor to ground, so A/D goes down as temperature rises
-
-	ld a, (ad_tp4)
-	ld hl, #cfg_temperature_limit_hot
-	cp (hl)
-	ld hl, #repeater_cfg_msg_hot_alert
-	call c, send_cw                     ; a/d below limit
-
-	ld a, (cfg_temperature_limit_cold)
-	ld hl, #ad_tp4
-	cp (hl)
-	ld hl, #repeater_cfg_msg_cold_alert
-	call c, send_cw                     ; limit below a/d
-
-	; high swr?
-	; external coupler(s) at appropriate locations
-
-	ld a, (cfg_rpm_limit)
-	ld hl, #ad_rpm
-	cp (hl)                           ; limit - curr
-	ld hl, #repeater_cfg_msg_ant_bad
-	call c, send_cw                   ; if current above limit
-
-	ret
-
-repeater_send_blip:
-	call send_cw_prolog
-
-	xor a
-	ld (repeater_cw_sendit_all), a     ; but blip is pre-empted by carrier
-
-	call repeater_select_which_blip    ; message string in HL
-	ld c, a                            ; pitch now in C
-
-	ld a, (repeater_cfg_musical_blips)
-	or a
-	jr z, 1f
-
-	call send_notes
-	call send_cw_epilog
-	ret
-1:
-	push hl
-	call cw_calc_blip                  ; C into timer value
-	pop hl
-
-	call send_cw                       ; from HL
-	call send_cw_epilog
-	ret
-
-
-repeater_select_which_blip:
-
-	ld a, (repeater_ptt_seen)             ; PTT BONGO ?
-	or a
-	jr z, 1f                              ; skip if no /PTT seen
-		xor a
-		ld (repeater_ptt_seen), a
-
-		ld hl, #repeater_cfg_blip_link     ; send link-blip
-		ld a, (cfg_cw_pitch_blip_link)
-		ret
-1:
-	; GPIO BONGO ?
-
-	ld a, (cfg_gpio2_state)               ; GPio2 - 2 bits
-	and #3
-	sla a
-	ld b, a
-	ld a, (cfg_gpio1_state)               ; GPio1 - 1 bits
-	and #1
-	or b                                  ; 0000 0cba
-	jr z, 1f                              ; both off, normal blip
-		dec a                             ; 0, 1 or 2
-		sla a       ; 2 times
-		sla a       ; 4 times
-		sla a       ; 8 times
-		ASSERT_EQ(SIZE_STR, 8)
-		ld c, a
-		ld b, #0
-		ld hl, #repeater_cfg_blip_gpio_001 ; all 7 special gpio blips MUST be consecutive
-		add hl, bc
-		ld a, #EOS
-		cp (hl)                           ; is this gpio-blip empty ?
-		ld a, (cfg_cw_pitch_blip_gpio)
-		ret nz                            ; not empty, send it.
-1:
-	; rssi bongos ?
-
-	ld hl, #repeater_cfg_blip              ; default
-
-	ld a, (repeater_cfg_rssi_bongos)
-	or a
-	jr z, 2f                              ; nope. just the default bongo.
-
-	ld b, #255                             ; pick any better compares
-
-	ld ix, #repeater_cfg_rssi_A
-	ld a, (repeater_sig)                  ; peak rssi from the last second of last over
-	sub (ix)
-	jr c, 1f                              ; rssi < limit, cannot be this
-	ld b, a                               ; this much over limit
-	ld hl, #repeater_cfg_blip_rssi_A
-1:
-	ld ix, #repeater_cfg_rssi_B
-	ld a, (repeater_sig)                  ; peak rssi from the last second of last over
-	sub (ix)
-	jr c, 1f                              ; rssi < limit, cannot be this
-	cp b
-	jr nc, 1f                             ; delta > previous delta, this limit was lower
-	ld b, a                               ; better or equal, prefer this
-	ld hl, #repeater_cfg_blip_rssi_B
-1:
-	ld ix, #repeater_cfg_rssi_C
-	ld a, (repeater_sig)                  ; peak rssi from the last second of last over
-	sub (ix)
-	jr c, 1f                              ; rssi < limit, cannot be this
-	cp b
-	jr nc, 1f                             ; delta > previous delta, this limit was lower
-	ld hl, #repeater_cfg_blip_rssi_C
-1:
-
-
-	ld a, (hl)
-	cp #EOS
-	jr nz, 2f
-	ld hl, #repeater_cfg_blip              ; use this as the default again
-2:
-	ld a, (cfg_cw_pitch_blip)
-	ret
-
-
-repeater_send_to:
-	call send_cw_prolog
-	ld hl, #repeater_cfg_msg_hog
-	call send_cw
-	call send_cw_epilog
-	ret
-
-repeater_send_roger:
-	call send_cw_prolog
-	ld hl, #cw_msg_roger
-	call send_cw
-	call send_cw_epilog
-	ret
-
-repeater_send_qrt:
-	call send_cw_prolog
-	ld hl, #cw_msg_qrt
-	call send_cw
-	call send_cw_epilog
-	ret
-
-repeater_check_report_req:
-	ld a, (repeater_req)
-	cp #'#'
-	ret nz
-
-	xor a
-	ld (repeater_req), a
-
-	call send_cw_prolog
-
-	ld hl, #cw_msg_u_are
-	call send_cw                  ; UR_
-
-	ld a, (last_sqtail)    ; 1 if tail, 0 if tailless
-	ld b, a
-	ld a, #5
-	sub b                        ; 5-0 or 5-1
-	call send_cw_chr             ; UR_5
-
-	; S calculation, first see if 
-	; 9 (greater than or equal to s9level) or
-	; 1 (less than s1level).
-
-	ld a, (repeater_sig)
-
-	ld b, #9
-	ld hl, #cfg_rssi_S9
-	cp (hl)
-	jr nc, 2f                  ; rssi >= level9
-
-	ld b, #1
-	ld hl, #cfg_rssi_S1
-	sub (hl)                    ; fraction -= floor_value
-	jr c, 2f                   ; rssi < level1
-
-	; damned, need some dancing for S-levels 2...8
-
-	ld b, #0
-	ld c, a                    ; fraction in bc (8bit value)
-
-	ld a, (cfg_rssi_S9)
-	sub (hl)                    ; fullscale -= floor_value, into A
-
-	; S = 7 * fraction / fullscale + 2
-
-	ld h, b
-	ld l, c
-	add hl, bc
-	add hl, bc
-	add hl, bc
-	add hl, bc
-	add hl, bc
-	add hl, bc      ; six adds, *= 7
-
-	ld b, #0
-	ld c, a            ; fullscale in bc (8bit value)
-
-	ld a, #1            ; start from 2-1, always at least one inc
-	and a              ; clear CY for sbc hl
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	ld b, a
-2:
-	ld a, b
-	call send_cw_chr          ; UR_59
-
-	call send_cw_epilog
-
-	ld a, (repeater_cfg_mprs_id)
-	and #0x08
-	call nz, far_send_mprs_report_packet_1
-
-	ret
-
-	ALIGN(3, 0)
-cw_msg_roger:	.ascii "R"
-.db EOS, EOS, EOS, EOS, EOS, EOS, EOS
-cw_msg_u_are:	.ascii "UR "
-.db         EOS, EOS, EOS, EOS, EOS
-cw_msg_qrt:		.ascii "QRT"
-.db         EOS, EOS, EOS, EOS, EOS
-
-;----------------------------------------------------------------------
-;----------------------------------------------------------------------
-;
-;  CW beeper
-;
-; Note, the cw routines sometimes longjmp out from the depths
-; and abort messages. cw_epilog must undo stuff.
-;
-; tabled bits 1=dit, 0=dash. right aligned into byte.
-; unused bits contain first one 1, then zeroes (0b10000000 terminate).
-;
-; ______________________________________________  46 slots aka dit-times
-; X XXX XXX X __X XXX __X XXX X __X X   X X X __ 
-; P             A       R         I     S
-; 46 slots / 5 chrs;  9.2  slots/chr.
-; N chrs/min; N chrs / 60 sec
-; 60 / ( 9.2 * N )  sec/slot
-; 100 ticks/sec
-; 652/N  ticks/slot
-
-cw_calc_delays:
-
-	; slot duration in ticks
-	; 652 ticks / sec
-	;  40 CPM : 16 ticks / slot
-	; 200 CPM :  3 ticks / slot
-
-	ld a, (cfg_cw_speed)
-	cp #40
-	jr nc, 1f
-	ld a, #40              ; be reasonable, we'd be here until next week
-1:
-	ld c, a
-	imm_ahl(652)          ; see above for maths. CPM into slept ticks
-	call div248
-	ld a, l
-	ld (cw_slot_ticks), a
-
-	; timer count for pitch
-
-	ld a, (cfg_cw_pitch)   ; 10 Hz units 00...2550 (cSEC in fact)
-	ld c, a
-	imm_ahl(403200)        ; timer CLK / 10
-	call div248
-	ld (cw_pitch_cnt), hl
-
-	ret
-
-cw_calc_blip:              ; C-reg has 10 Hz units 00...2550 (cSEC in fact)
-
-	imm_ahl(403200)        ; timer CLK / 10
-	call div248            ; /= C-reg
-	ld (cw_pitch_cnt), hl
-
-	ret
-
-
-send_cw_prolog:
-
-	xor h                     ; maybe do ctcss during blips
-	ld a, (cfg_ctcss_output_when)
-	cp #4
-	jr nz, 1f                 ; not CUSTOM
-	ld a, (ctcss_is_on)
-	or a
-	jr nz, 1f                 ; already on, A nz
-	call ctcss_maybe
-	ld a, (ctcss_is_on)       ; maybe?
-	or a
-	jr z, 1f                  ; 'maybe' was 'no'
-	inc h                     ; set flag to stop it at cw_epilog
-1:
-	ld a, h
-	ld (ctcss_custom_flag), a ; picked by cw_epilog
-
-
-	call cw_calc_delays
-
-	ld a, #1
-	ld (nosir), a
-	ld (repeater_cw_sendit_all), a
-
-	call ccir_on
-	call silence_timer1
-	jr 1f
-
-send_cw_epilog:
-
-	ld a, (ctcss_custom_flag)  ; need to stop ctcss sometimes, if CUSTOM
-	or a
-	call nz, ctcss_off
-
-	call ccir_off
-	call silence_timer1
-
-	xor a
-	ld (nosir), a
-1:
-	ld a, #20
-	call b0_ccir_tx_timer_wait
-
-	ret
-
-send_cw:
-	ld (repeater_cw_jmpbuf), sp    ; in case sequence is pre-empted
-
-	ld b, #SIZE_STR
-1:
-	ld a, (hl)
-	inc hl
-	cp #EOS
-	jr z, 1f
-	call cw_chr
-	djnz 1b
-1:
-	jp silence_timer1
-
-send_cw_chr:
-	call cw_chr
-	jp silence_timer1
-
-; Separate character, 3 dit-times of silence after last tone
-
-cw_chr:
-	push hl
-	push bc
-	call cw_chr_1        ; *_===_
-	call cw_pause_2      ; __
-	pop bc
-	pop hl
-	ret
-
-; play one cw character. No extra slot is appended, just the one silence.
-; i.e. 2 slots per dit, 4 slots per dash.
-
-cw_chr_1:               ; fill slots contained in chr
-	ld b, #0
-	ld c, a
-	ld hl, #cw_tab
-	add hl, bc
-	ld a, (hl)
-	or a                ; terminator 1-bit there ?
-	jr nz, 1f
-	ld a, #0b11001110    ; ? and 0b10 to terminate
-1:
-	cp #0x80             ; terminator at left edge ?
-	ret z               ; return then
-
-	sla a               ; CY has dit/dah, rest shifted, 0 appended
-	push af
-	call cw_ditdash     ; 1 or 3 slots tone
-	call cw_pause_1     ; 1 slot silence
-	pop af
-	jr 1b
-
-cw_pause_1:
-	ld a, (cw_slot_ticks)
-	ld hl, #4
-	jr cw_slots
-
-cw_pause_2:
-	ld a, (cw_slot_ticks)
-	add a, a
-	ld hl, #4
-	jr cw_slots
-
-cw_ditdash:
-	ld a, (cw_slot_ticks)
-	jr c, 1f            ; CY=1=dit = 1 slot only
-	ld d, a
-	add a, d
-	add a, d               ; small values, *= 3 wont carry
-1:
-	ld hl, (cw_pitch_cnt)
-	jr cw_slots
-
-cw_slots:
-	ld d, a
-	call start_marker_tone ; hl pitch, d dur
-
-	; nothing needs to be saved here
-
-	call b0_cw_wait_tone                ; waits in bank 0, NZ = pre-empt
-	jr z, 1f
-		ld sp, (repeater_cw_jmpbuf)
-		ret                                 ; ZAP back.
-1:
-
-	; tone or silence ends,
-	; place to open or close relay audio
-	; XXX infinite stupidity
-
-	call repeater_check_carrier         ; NZ if carrier
-	jp nz, repeater_aon
-	jp repeater_aoff
-
-
-note_to_pitch_table:
-	.dw MT_CALCHZ( 500), MT_CALCHZ( 600), MT_CALCHZ( 700), MT_CALCHZ( 800), MT_CALCHZ( 900)
-	.dw MT_CALCHZ(1000), MT_CALCHZ(1100), MT_CALCHZ(1200), MT_CALCHZ(1300), MT_CALCHZ(1400)
-	.dw MT_CALCHZ(1500), MT_CALCHZ(1600), MT_CALCHZ(1700), MT_CALCHZ(1800), MT_CALCHZ(1900)
-	.dw MT_CALCHZ(2000), MT_CALCHZ(2100), MT_CALCHZ(2200), MT_CALCHZ(2300), MT_CALCHZ(2400)
-	.dw MT_CALCHZ(2500), MT_CALCHZ(2600), MT_CALCHZ(2700), MT_CALCHZ(2800), MT_CALCHZ(2900)
-	.dw 4
-
-send_notes:
-	ld (repeater_cw_jmpbuf), sp    ; in case sequence is pre-empted
-
-	ld b, #SIZE_STR
-1:
-	ld a, (hl)
-	inc hl
-	cp #EOS
-	jr z, 1f
-	push hl
-	push bc
-	call send_note_chr
-	pop bc
-	pop hl
-	djnz 1b
-1:
-	jp silence_timer1
-
-
-send_note_chr:
-	cp #25                  ; 0 ... 9, A ... F, G ...O are "notes"
-	jr c, 1f
-	ld a, #25               ; 25 valid and one last for silence in above table
-1:
-	sla a                  ; word index
-	ld c, a
-	ld b, #0
-	ld ix, #note_to_pitch_table
-	add ix, bc
-	ld l, (ix+0)
-	ld h, (ix+1)
-
-	ld d, #10                           ; 100msec per tone or pause
-	call start_marker_tone             ; hl pitch, d dur
-
-	call b0_cw_wait_tone                ; waits in bank 0, NZ = pre-empt
-	ret z
-		ld sp, (repeater_cw_jmpbuf)
-		ret                                 ; ZAP back.
-
-;----------------------------------------------------------------------
-;----------------------------------------------------------------------
-;
-; feel free to skip the gunk with /-------
-;
-; 1 is dit, 0 is dash, terminating pattern 10*
-; not quite complete.
-
-cw_tab:
-	.db 0b00000100 ; 0
-	.db 0b10000100 ; 1
-	.db 0b11000100 ; 2
-	.db 0b11100100 ; 3
-	.db 0b11110100 ; 4
-	.db 0b11111100 ; 5
-	.db 0b01111100 ; 6
-	.db 0b00111100 ; 7
-	.db 0b00011100 ; 8
-	.db 0b00001100 ; 9
-	.db 0b10100000 ; A
-	.db 0b01111000 ; B
-	.db 0b01011000 ; C
-	.db 0b01110000 ; D
-	.db 0b11000000 ; E
-	.db 0b11011000 ; F
-	.org cw_tab + ' '
-	.db 0b10000000 ; sp
-	.org cw_tab + 0x22
-	.db 0b10110110 ; "
-	.org cw_tab + '#'
-	.db 0b11101010 ; VA aka SK overload #
-	.org cw_tab + '$'
-	.db 0b10111100 ; AS overload $
-	.org cw_tab + 0x27
-	.db 0b10000110 ; '
-	.org cw_tab + '('
-	.db 0b01001010 ; (
-	.db 0b01001010 ; ) ) balance is everything
-	.org cw_tab + ','
-	.db 0b00110010 ; ,
-	.db 0b01111010 ; -
-	.db 0b10101010 ; .
-	.db 0b01101100 ; /
-	.org cw_tab + '0'
-	.db 0b00000100 ; 0
-	.db 0b10000100 ; 1
-	.db 0b11000100 ; 2
-	.db 0b11100100 ; 3
-	.db 0b11110100 ; 4
-	.db 0b11111100 ; 5
-	.db 0b01111100 ; 6
-	.db 0b00111100 ; 7
-	.db 0b00011100 ; 8
-	.db 0b00001100 ; 9
-	.db 0b00011110 ; :
-	.org cw_tab + '?'
-	.db 0b11001110 ; ?
-	.org cw_tab + 'A'
-	.db 0b10100000 ; A
-	.db 0b01111000 ; B
-	.db 0b01011000 ; C
-	.db 0b01110000 ; D
-	.db 0b11000000 ; E
-	.db 0b11011000 ; F
-	.db 0b00110000 ; G
-	.db 0b11111000 ; H
-	.db 0b11100000 ; I
-	.db 0b10001000 ; J
-	.db 0b01010000 ; K
-	.db 0b10111000 ; L
-	.db 0b00100000 ; M
-	.db 0b01100000 ; N
-	.db 0b00010000 ; O
-	.db 0b10011000 ; P
-	.db 0b00101000 ; Q
-	.db 0b10110000 ; R
-	.db 0b11110000 ; S
-	.db 0b01000000 ; T
-	.db 0b11010000 ; U
-	.db 0b11101000 ; V
-	.db 0b10010000 ; W
-	.db 0b01101000 ; X
-	.db 0b01001000 ; Y
-	.db 0b00111000 ; Z
-	.db 0b10101000 ; aiti
-	.db 0b10100110 ; ruats. o
-	.db 0b00011000 ; oljy
-
-	.org cw_tab + 128
-
-;======================================================================
-
-; hl points to first blank after some characters to view
 
 draw_decoder_history:
 	push hl
@@ -19871,6 +18603,1303 @@ build_call_packet_buffer:
 1:
 	ret
 
+
+;----- Repeater main state machine (was fixed ROM) -----
+
+repeater_halt:
+	call repeater_aoff
+	call repeater_txoff
+	jp repeater_init
+
+repeater_run:
+	ld a, (cfg_function)
+	dec a                       ; if 1
+	jp nz, repeater_init        ; not repeater, init in case later turned on
+
+	ld a, (cfg_repeater_suspended)
+	or a
+	jr z, 1f
+		ld a, (repeater_is_suspended)
+		or a
+		ret nz                     ; already. normal path during suspension.
+
+		ld a, #1
+		ld (repeater_is_suspended), a ; now going suspended.
+
+		ld a, (txon)
+		or a
+		call z, repeater_txon
+		call repeater_send_qrt
+
+		jr repeater_halt
+1:
+	ld a, (repeater_is_suspended)
+	or a
+	jr z, 1f
+		xor a
+		ld (repeater_is_suspended), a     ; no more suspended.
+
+		jp repeater_open_by_reset        ; back in business immediately.
+1:
+
+	; /LOCAL rising resets repeater into opening state
+
+	ld a, (sio_bctrl_local)
+	and #SB_LOCAL
+	jr nz, 1f                   ; skip if pin was 1, already handled.
+		ld a, (sio_bctrl_mirror)
+		and #SB_LOCAL
+		jr z, 1f                 ; skip if pin is 0 (and was 0).
+		ld (sio_bctrl_local), a  ; remember bit
+
+		jp repeater_open_by_reset
+1:
+
+	; Check any #? DTMF commands
+
+	ld a, (repeater_req)
+	cp #9                        ; #9_, close NOW
+	jr nz, 1f
+		xor a
+		ld (repeater_req), a
+
+		ld a, (cfg_repeater_cmd_9_hidden)
+		or a
+		jr nz, 2f                          ; not allowed, skip
+
+		call repeater_aoff
+		call repeater_send_roger
+		call repeater_txoff
+		jp repeater_idle
+1:
+	cp #0xFF                            ; #0_, restore squelch & power
+	jr nz, 1f
+		xor a
+		ld (repeater_req), a
+		ld (squelch_tightening), a
+		ld (txpwr_increment), a
+		call update_txpwr_if_tx
+		call repeater_send_roger
+		jr 2f
+1:
+	cp #1                              ; #1_, tighten squelch
+	jr nz, 1f
+		xor a
+		ld (repeater_req), a
+		ld a, (repeater_cfg_sqincr)
+		ld (squelch_tightening), a
+		call repeater_send_roger
+		jr 2f
+1:
+	cp #3                                  ; #3_ rise tx power
+	jr nz, 1f
+		xor a
+		ld (repeater_req), a
+		ld a, (repeater_cfg_txincr)
+		ld (txpwr_increment), a
+		call update_txpwr_if_tx
+		call repeater_send_roger
+		jr 2f
+1:
+	cp #5                                  ; #5_ toggle sending of rssi-bongos
+	jr nz, 1f
+		xor a
+		ld (repeater_req), a
+		ld a, (repeater_cfg_rssi_bongos)
+		xor #1
+		ld (repeater_cfg_rssi_bongos), a
+		call repeater_send_roger
+		jr 2f
+1:
+	cp #0xFE                                ; internal - just roger
+	jr nz, 1f
+		xor a
+		ld (repeater_req), a
+		ld a, (txon)
+		or a
+		push af
+		call z, repeater_txon
+		call repeater_send_roger
+		pop af
+		call z, repeater_txoff
+		jr 2f
+1:
+2:
+	ld hl, (repeater_state)
+	jp (hl)
+
+;
+;  No id sent here, operator announce assumed
+;
+repeater_operator_ptt:
+	ld a, (cfg_function)
+	dec a                   ; if 1
+	ret nz
+	call repeater_txon
+	call repeater_aoff
+	call repeater_send_blip
+	call repeater_start_timer_ID
+	call repeater_start_timer_OPEN
+	jp repeater_open
+
+
+;----- Repeater state and timer helpers (was fixed ROM) -----
+
+repeater_setstate:
+	pop hl
+	ld (repeater_state), hl
+	jp (hl)
+
+;----------------------------------------------------------------------
+
+repeater_check_carrier_access:
+	ld a, (squelch_open)
+	or a
+	ret z                  ; Z, no signal -> no beep
+
+	; squelch is open, do we use access=1=carrier
+
+	ld a, (repeater_cfg_access_method)
+	or a
+	ret z                  ; Z, access=0=beeps
+	cp #2
+	ret z                  ; Z, access=2=none
+
+	ret                    ; NZ, signal -> open, bypass toneaccess
+
+
+repeater_recheck_beep_quickly:
+
+	ld a, (pioa_data)
+	and #PA_CCIR
+	cp #0x80
+	jr nz, 1f
+	or #1                    ; NZ, 1750 Hz on
+	ret
+1:
+	ld a, (dtmf_prevdata)
+	cp #0x80 | (0xB << 3)       ; StD and DTMF * in raw format (shifted up)
+	jr nz, 1f
+	or #1
+	ret                     ; NZ, DTMF * on
+1:
+	sub a                   ; Z, no beep
+	ret
+
+repeater_check_beep:
+
+	call is_ptt_pressed
+	ret nz                  ; PTT is pressed, act as if accesstone.
+
+	ld a, (repeater_cfg_access_method)
+	cp #2
+	ret z                  ; Z, access none -> no beep (2 = none)
+	cp #3
+	ret z                  ; Z, access ctcss(3) -> no beep 
+
+	ld a, (squelch_open)
+	or a
+	ret z                  ; Z, no signal -> no beep
+
+	ld a, (pioa_data)
+	and #PA_CCIR
+	cp #0x80
+	jr nz, 1f
+	ld a, (ccir_tonetime)
+	cp #25
+	jr c, 1f
+	or #1                    ; NZ, 1750 Hz on
+	ret
+1:
+	ld a, (dtmf_prevdata)
+	cp #0x80 | (0xB << 3)       ; StD and DTMF * in raw format (shifted up)
+	jr nz, 1f
+	or #1
+	ret                     ; NZ, DTMF * on
+1:
+	sub a                   ; Z, no beep
+	ret
+
+repeater_check_carrier:
+
+	; just reflect squelch
+
+	ld a, (squelch_open)
+	or a
+	ret                     ; NZ, carrier
+
+
+repeater_check_timer_ID:
+	ld hl, (repeater_timer_ID)
+	ld a, h
+	or l
+	ret
+
+repeater_check_timer:
+	ld hl, (repeater_timer_other)
+	ld a, h
+	or l
+	ret                     ; NZ if timer still running
+
+repeater_check_timer_BLIP:
+	ld a, (repeater_timer_BLIP_state)
+	cp #2
+	ret nz                      ; NZ = stopped (0) or still counting (1)
+	ld a, #0
+	ld (repeater_timer_BLIP_state), a   ; make it idle. Z kept.
+	ret                                 ; Z = counted down.
+
+repeater_start_timer_ID:
+	ld hl, (repeater_cfg_TID)
+	ld (repeater_timer_ID), hl
+	ret
+
+repeater_start_timer_OPEN:
+	ld hl, (repeater_cfg_TOPEN)
+	ld (repeater_timer_other), hl
+	ret
+
+repeater_start_timer_HOG:
+	ld hl, (repeater_cfg_THOG)
+	ld (repeater_timer_other), hl
+	ret
+
+repeater_start_timer_CLS:
+	ld hl, (repeater_cfg_TCLS)
+	ld (repeater_timer_other), hl
+	ret
+
+repeater_start_timer_DEAD:
+	ld hl, (repeater_cfg_TDEAD)
+	ld (repeater_timer_other), hl
+	ret
+
+repeater_start_timer_BLIP:
+	ld a, #0
+	ld (repeater_timer_BLIP_state), a  ; stop
+	ld a, (repeater_cfg_TBLIP)
+	ld (repeater_timer_BLIP), a        ; reload
+	ld a, #1
+	ld (repeater_timer_BLIP_state), a  ; start (1), goes 2 when done.
+	ret
+
+;----------------------------------------------------------------------
+
+
+;----- Repeater states, CW and note sequences (was fixed ROM) -----
+
+	;
+	; boot: (no emission)
+	; stick here for a minute (allow std function to be restored)
+	;
+repeater_boot:
+	ld hl, #60
+	ld (repeater_timer_other), hl
+
+	call repeater_setstate
+
+	call repeater_check_timer
+	jr nz, 1f
+		jr repeater_idle
+1:
+	ret
+
+	;
+	; idle: (no emission)
+	; 	beep or (carrier and using carrier access) ?
+	; 		goto opening
+	;
+repeater_idle:
+	xor a
+	ld (squelch_tightening), a
+	ld (txpwr_increment), a
+
+	call repeater_setstate
+	call repeater_check_beep
+	jr z, 1f
+		jr repeater_opening
+1:
+	call repeater_check_carrier_access
+	jr z, 1f
+		jr repeater_opening
+1:
+	ret
+
+	;
+	; opening: (no emission)
+	;   tone/carrier exceeds N seconds ?
+	;       goto idle
+	; 	no carrier?
+	; 		TXON, "ID", TMR0=TOPEN, TMR1=TID, goto open
+	;
+repeater_opening:
+
+	call repeater_bump_open_counter
+
+	ld hl, (repeater_cfg_TBEEPMAX)
+	ld (repeater_timer_other), hl      ; validate tone length
+
+	call repeater_setstate
+
+	call repeater_check_timer
+	jr nz, 1f
+		jr repeater_beep_too_long
+1:
+	call repeater_check_carrier
+	jr nz, 1f
+
+repeater_open_by_reset:                ; from /LOCAL
+
+		call repeater_txon
+		call repeater_send_id_greet
+		call repeater_start_timer_ID
+		call repeater_start_timer_OPEN
+		jr repeater_open
+1:
+	ret
+
+
+repeater_beep_too_long:
+	call repeater_setstate
+
+	call repeater_check_carrier
+	ret nz                               ; still carrier
+	call repeater_recheck_beep_quickly
+	ret nz                               ; still accesstone
+
+	jr repeater_idle                     ; nothing. go idle.
+
+	;
+	; open: (tx on, but audio muted)
+	; 	carrier?
+	;     AND no beeps (quick check, cut off whistles) ?
+	; 		AON, TMR0=THOG, goto active
+	; 	TMR1?
+	; 		"ID", TMR1=TID
+	; 	TMR0?
+	; 		TXOFF, TMR0=TCLS, goto closing
+	;
+repeater_open:
+	call repeater_setstate
+
+	call repeater_check_report_req
+
+	call repeater_check_timer_BLIP
+	jr nz, 1f
+		call repeater_send_blip
+1:
+	call repeater_check_carrier
+	jr z, 1f
+		call repeater_recheck_beep_quickly
+		jr nz, 1f
+			call repeater_aon
+			call repeater_start_timer_HOG
+			jr repeater_active
+1:
+	call is_ptt_pressed
+	jr z, 1f
+		call repeater_aon
+		call repeater_start_timer_HOG
+		jr repeater_active
+1:
+	call repeater_check_timer_ID
+	jr nz, 1f
+		call repeater_send_id_during
+		call repeater_start_timer_ID
+1:
+	call repeater_check_timer
+	jr nz, 1f
+		; end of open time.
+		; either stay in closing state
+		; or fully close now
+
+		ld hl, (repeater_cfg_TCLS)
+		ld a, l
+		or h
+		jr z, 2f
+			call repeater_txoff               ; quiet time
+			call repeater_start_timer_CLS
+			jr repeater_closing
+	2:
+		call repeater_send_id_bye             ; fully close, no closing state
+		call repeater_txoff
+		jp repeater_idle
+1:
+	ret
+
+	;
+	; active: (tx AND audio on (or forced with PTT))
+	; 	no carrier?
+	; 		AOFF, TMR0=TOPEN, "BLIP", goto open
+	; 	TMR1?
+	; 		"ID", TMR1=TID
+	; 	TMR0?
+	; 		AOFF, "TO", TXOFF, TMR0=TLOCKOUT, goto lockout
+	;
+repeater_active:
+	xor a
+	ld (repeater_sig), a         ; determine peak rssi during an over
+
+	call repeater_setstate
+
+	call repeater_check_carrier
+	jr nz, 1f
+
+		call is_ptt_pressed
+		jr nz, 1f                    ; if PTT is pressed, stay active.
+			call repeater_aoff
+			call repeater_start_timer_BLIP
+			call repeater_start_timer_OPEN
+			jr repeater_open
+1:
+
+	; this omission is a crummy fix
+	; for oh5rab letting noise thru if
+	; an over ends during identification
+	; XXX now id will wait until an over ends
+	; XXX still cannot speak over id
+
+#if 0
+	call repeater_check_timer_ID
+	jp nz, 1f
+		call repeater_send_id_during
+		call repeater_start_timer_ID
+1:
+#endif
+
+	call repeater_check_timer
+	jr nz, 1f
+		call repeater_aoff
+		call repeater_send_to
+		call repeater_txoff
+		call repeater_start_timer_DEAD
+		jp repeater_lockout
+1:
+	ret
+
+	;
+	; closing: (no emission)
+	; 	carrier?
+	;     no beeps (quick check) ?
+	; 		TXON, AON, TMR0=THOG, goto active
+	;     else
+	;       goto reopening.
+	; 	TMR0?
+	; 		( TXON, "ID VA", TXOFF ) (if "ID VA" exists). goto idle.
+	;
+repeater_closing:
+	call repeater_setstate
+
+	call repeater_check_carrier
+	jr z, 1f
+		call repeater_recheck_beep_quickly
+		jr nz, repeater_reopening
+
+		call repeater_txon
+		call repeater_aon
+		call repeater_start_timer_HOG
+		jr repeater_active
+1:
+	call is_ptt_pressed
+	jr z, 1f
+		call repeater_txon
+		call repeater_aon
+		call repeater_start_timer_HOG
+		jr repeater_active
+1:
+	call repeater_check_timer
+	jr nz, 1f
+		call repeater_test_id_bye_length
+		jp z, repeater_idle            ; if id bye is empty, 
+
+		call repeater_txon
+		call repeater_send_id_bye
+		call repeater_txoff
+		jp repeater_idle
+1:
+	ret
+
+	;
+	; reopening: (no emission)
+	;   no beeps ?
+	;      still carrier?
+	;         goto active
+	;      else
+	; 		  goto open.
+	; 	TMR0?
+	; 		( TXON, "ID VA", TXOFF ) (if "ID VA" exists). goto idle.
+	;
+repeater_reopening:
+	call repeater_setstate
+
+	call repeater_recheck_beep_quickly
+	jr nz, 1f
+
+		call repeater_check_carrier
+		jr z, 2f
+			call repeater_txon
+			call repeater_aon
+			call repeater_start_timer_HOG
+			jp repeater_active
+	2:
+		call repeater_txon
+		call repeater_start_timer_BLIP
+		call repeater_start_timer_OPEN
+		jp repeater_open
+1:
+	call is_ptt_pressed
+	jr z, 1f
+		call repeater_txon
+		call repeater_aon
+		call repeater_start_timer_HOG
+		jp repeater_active
+1:
+	call repeater_check_timer
+	jr nz, 1f
+		call repeater_test_id_bye_length
+		jp z, repeater_idle            ; if id bye is empty, 
+
+		call repeater_txon
+		call repeater_send_id_bye
+		call repeater_txoff
+		jp repeater_idle
+1:
+	ret
+
+	;
+	; lockout: (no emission)
+	; 		TMR0?
+	; 			TXON, "ID VA", TXOFF
+	; 
+repeater_lockout:
+	call repeater_setstate
+	call repeater_check_timer
+	jr nz, 1f
+		call repeater_txon
+		call repeater_send_id_bye
+		call repeater_txoff
+		jp repeater_idle
+1:
+	ret
+
+;----------------------------------------------------------------------
+
+repeater_bump_open_counter:
+	ld ix, #repeater_cfg_open_counter
+	inc (ix+0)
+	ret nz
+	inc (ix+1)
+	ret nz
+	inc (ix+2)
+	ret
+
+;----------------------------------------------------------------------
+
+repeater_txon:
+	ld a, (cfg_ctcss_output_when)
+	cp #1                          ; CTCSS OUTPUT WHEN = TRANSMITTER
+	call z, ctcss_maybe
+
+	call tx_on
+	jp force_redraw
+
+repeater_txoff:
+	ld a, (cfg_ctcss_output_when)
+	cp #1                          ; CTCSS OUTPUT WHEN = TRANSMITTER
+	call z, ctcss_off
+
+	call tx_off
+	jp force_redraw
+
+ctcss_output_signal_or_cust:
+	ld a, (cfg_ctcss_output_when)
+	cp #2                          ; CTCSS OUTPUT WHEN = SIGNAL
+	ret z
+	cp #4                          ; CTCSS OUTPUT WHEN = CUSTOM
+	ret
+
+repeater_aon:
+
+	call ctcss_output_signal_or_cust
+	call z, ctcss_maybe           ; CTCSS OUTPUT WHEN = SIGNAL or CUSTOM
+
+	ld a, (repeater_cfg_afsrc) ; Selects which way /MIC affects AF relaying
+	cp #2
+	jr z, 1f                    ; 2 = bypassed audio path
+	cp #0
+	jp z, mic_off               ; 0 = reversed MIC control
+	jp mic_on
+1:
+	call is_ptt_pressed         ; bypassed case, MIC just controls handset
+	jp z, mic_off               ; no ptt, no mic
+	jp mic_on
+
+repeater_aoff:
+
+	call ctcss_output_signal_or_cust
+	call z, ctcss_off_nohang      ; CTCSS OUTPUT WHEN = SIGNAL or CUSTOM
+
+	ld a, (repeater_cfg_afsrc) ; Selects which way /MIC affects AF relaying
+	cp #0
+	jp z, mic_on
+	jp mic_off
+
+;----------------------------------------------------------------------
+
+repeater_test_id_bye_length:          ; return Z if no bye message.
+
+	ld a, (repeater_cfg_id_bye1)
+	cp #EOS
+	ret nz                            ; message is not ""
+	ld a, (repeater_cfg_id_bye2)
+	cp #EOS
+	ret nz                            ; message is not ""
+	ld a, (repeater_cfg_id_bye3)
+	cp #EOS
+	ret nz                            ; message is not ""
+
+	ld a, (repeater_cfg_mprs_id)
+	and #0x04
+	ret                               ; zero-flag valid
+
+;----------------------------------------------------------------------
+
+repeater_send_id_greet:
+	call send_cw_prolog
+
+	ld hl, #repeater_cfg_id_greet1
+	call send_cw
+	ld hl, #repeater_cfg_id_greet2
+	call send_cw
+	ld hl, #repeater_cfg_id_greet3
+	call send_cw
+
+	call repeater_append_any_alerts
+	call send_cw_epilog
+
+	ld a, (repeater_cfg_mprs_id)
+	and #0x01
+	call nz, far_send_mprs_report_packet_1
+
+	ret
+
+repeater_send_id_during:
+	call send_cw_prolog
+
+	ld hl, #repeater_cfg_id_during1
+	call send_cw
+	ld hl, #repeater_cfg_id_during2
+	call send_cw
+	ld hl, #repeater_cfg_id_during3
+	call send_cw
+
+	call repeater_append_any_alerts
+	call send_cw_epilog
+
+	ld a, (repeater_cfg_mprs_id)
+	and #0x02
+	call nz, far_send_mprs_report_packet_1
+
+	ret
+
+repeater_send_id_bye:
+	call send_cw_prolog
+
+	ld hl, #repeater_cfg_id_bye1
+	call send_cw
+	ld hl, #repeater_cfg_id_bye2
+	call send_cw
+	ld hl, #repeater_cfg_id_bye3
+	call send_cw
+
+	call repeater_append_any_alerts
+	call send_cw_epilog
+
+	ld a, (repeater_cfg_mprs_id)
+	and #0x04
+	call nz, far_send_mprs_report_packet_1
+
+	ret
+
+repeater_append_any_alerts:
+
+	; temperature outside window ?
+	; NTC resistor to ground, so A/D goes down as temperature rises
+
+	ld a, (ad_tp4)
+	ld hl, #cfg_temperature_limit_hot
+	cp (hl)
+	ld hl, #repeater_cfg_msg_hot_alert
+	call c, send_cw                     ; a/d below limit
+
+	ld a, (cfg_temperature_limit_cold)
+	ld hl, #ad_tp4
+	cp (hl)
+	ld hl, #repeater_cfg_msg_cold_alert
+	call c, send_cw                     ; limit below a/d
+
+	; high swr?
+	; external coupler(s) at appropriate locations
+
+	ld a, (cfg_rpm_limit)
+	ld hl, #ad_rpm
+	cp (hl)                           ; limit - curr
+	ld hl, #repeater_cfg_msg_ant_bad
+	call c, send_cw                   ; if current above limit
+
+	ret
+
+repeater_send_blip:
+	call send_cw_prolog
+
+	xor a
+	ld (repeater_cw_sendit_all), a     ; but blip is pre-empted by carrier
+
+	call repeater_select_which_blip    ; message string in HL
+	ld c, a                            ; pitch now in C
+
+	ld a, (repeater_cfg_musical_blips)
+	or a
+	jr z, 1f
+
+	call send_notes
+	call send_cw_epilog
+	ret
+1:
+	push hl
+	call cw_calc_blip                  ; C into timer value
+	pop hl
+
+	call send_cw                       ; from HL
+	call send_cw_epilog
+	ret
+
+
+repeater_select_which_blip:
+
+	ld a, (repeater_ptt_seen)             ; PTT BONGO ?
+	or a
+	jr z, 1f                              ; skip if no /PTT seen
+		xor a
+		ld (repeater_ptt_seen), a
+
+		ld hl, #repeater_cfg_blip_link     ; send link-blip
+		ld a, (cfg_cw_pitch_blip_link)
+		ret
+1:
+	; GPIO BONGO ?
+
+	ld a, (cfg_gpio2_state)               ; GPio2 - 2 bits
+	and #3
+	sla a
+	ld b, a
+	ld a, (cfg_gpio1_state)               ; GPio1 - 1 bits
+	and #1
+	or b                                  ; 0000 0cba
+	jr z, 1f                              ; both off, normal blip
+		dec a                             ; 0, 1 or 2
+		sla a       ; 2 times
+		sla a       ; 4 times
+		sla a       ; 8 times
+		ASSERT_EQ(SIZE_STR, 8)
+		ld c, a
+		ld b, #0
+		ld hl, #repeater_cfg_blip_gpio_001 ; all 7 special gpio blips MUST be consecutive
+		add hl, bc
+		ld a, #EOS
+		cp (hl)                           ; is this gpio-blip empty ?
+		ld a, (cfg_cw_pitch_blip_gpio)
+		ret nz                            ; not empty, send it.
+1:
+	; rssi bongos ?
+
+	ld hl, #repeater_cfg_blip              ; default
+
+	ld a, (repeater_cfg_rssi_bongos)
+	or a
+	jr z, 2f                              ; nope. just the default bongo.
+
+	ld b, #255                             ; pick any better compares
+
+	ld ix, #repeater_cfg_rssi_A
+	ld a, (repeater_sig)                  ; peak rssi from the last second of last over
+	sub (ix)
+	jr c, 1f                              ; rssi < limit, cannot be this
+	ld b, a                               ; this much over limit
+	ld hl, #repeater_cfg_blip_rssi_A
+1:
+	ld ix, #repeater_cfg_rssi_B
+	ld a, (repeater_sig)                  ; peak rssi from the last second of last over
+	sub (ix)
+	jr c, 1f                              ; rssi < limit, cannot be this
+	cp b
+	jr nc, 1f                             ; delta > previous delta, this limit was lower
+	ld b, a                               ; better or equal, prefer this
+	ld hl, #repeater_cfg_blip_rssi_B
+1:
+	ld ix, #repeater_cfg_rssi_C
+	ld a, (repeater_sig)                  ; peak rssi from the last second of last over
+	sub (ix)
+	jr c, 1f                              ; rssi < limit, cannot be this
+	cp b
+	jr nc, 1f                             ; delta > previous delta, this limit was lower
+	ld hl, #repeater_cfg_blip_rssi_C
+1:
+
+
+	ld a, (hl)
+	cp #EOS
+	jr nz, 2f
+	ld hl, #repeater_cfg_blip              ; use this as the default again
+2:
+	ld a, (cfg_cw_pitch_blip)
+	ret
+
+
+repeater_send_to:
+	call send_cw_prolog
+	ld hl, #repeater_cfg_msg_hog
+	call send_cw
+	call send_cw_epilog
+	ret
+
+repeater_send_roger:
+	call send_cw_prolog
+	ld hl, #cw_msg_roger
+	call send_cw
+	call send_cw_epilog
+	ret
+
+repeater_send_qrt:
+	call send_cw_prolog
+	ld hl, #cw_msg_qrt
+	call send_cw
+	call send_cw_epilog
+	ret
+
+repeater_check_report_req:
+	ld a, (repeater_req)
+	cp #'#'
+	ret nz
+
+	xor a
+	ld (repeater_req), a
+
+	call send_cw_prolog
+
+	ld hl, #cw_msg_u_are
+	call send_cw                  ; UR_
+
+	ld a, (last_sqtail)    ; 1 if tail, 0 if tailless
+	ld b, a
+	ld a, #5
+	sub b                        ; 5-0 or 5-1
+	call send_cw_chr             ; UR_5
+
+	; S calculation, first see if 
+	; 9 (greater than or equal to s9level) or
+	; 1 (less than s1level).
+
+	ld a, (repeater_sig)
+
+	ld b, #9
+	ld hl, #cfg_rssi_S9
+	cp (hl)
+	jr nc, 2f                  ; rssi >= level9
+
+	ld b, #1
+	ld hl, #cfg_rssi_S1
+	sub (hl)                    ; fraction -= floor_value
+	jr c, 2f                   ; rssi < level1
+
+	; damned, need some dancing for S-levels 2...8
+
+	ld b, #0
+	ld c, a                    ; fraction in bc (8bit value)
+
+	ld a, (cfg_rssi_S9)
+	sub (hl)                    ; fullscale -= floor_value, into A
+
+	; S = 7 * fraction / fullscale + 2
+
+	ld h, b
+	ld l, c
+	add hl, bc
+	add hl, bc
+	add hl, bc
+	add hl, bc
+	add hl, bc
+	add hl, bc      ; six adds, *= 7
+
+	ld b, #0
+	ld c, a            ; fullscale in bc (8bit value)
+
+	ld a, #1            ; start from 2-1, always at least one inc
+	and a              ; clear CY for sbc hl
+1:
+	inc a
+	sbc hl, bc
+	jr nc, 1b
+	ld b, a
+2:
+	ld a, b
+	call send_cw_chr          ; UR_59
+
+	call send_cw_epilog
+
+	ld a, (repeater_cfg_mprs_id)
+	and #0x08
+	call nz, far_send_mprs_report_packet_1
+
+	ret
+
+	ALIGN(3, 0)
+cw_msg_roger:	.ascii "R"
+.db EOS, EOS, EOS, EOS, EOS, EOS, EOS
+cw_msg_u_are:	.ascii "UR "
+.db         EOS, EOS, EOS, EOS, EOS
+cw_msg_qrt:		.ascii "QRT"
+.db         EOS, EOS, EOS, EOS, EOS
+
+;----------------------------------------------------------------------
+;----------------------------------------------------------------------
+;
+;  CW beeper
+;
+; Note, the cw routines sometimes longjmp out from the depths
+; and abort messages. cw_epilog must undo stuff.
+;
+; tabled bits 1=dit, 0=dash. right aligned into byte.
+; unused bits contain first one 1, then zeroes (0b10000000 terminate).
+;
+; ______________________________________________  46 slots aka dit-times
+; X XXX XXX X __X XXX __X XXX X __X X   X X X __ 
+; P             A       R         I     S
+; 46 slots / 5 chrs;  9.2  slots/chr.
+; N chrs/min; N chrs / 60 sec
+; 60 / ( 9.2 * N )  sec/slot
+; 100 ticks/sec
+; 652/N  ticks/slot
+
+cw_calc_delays:
+
+	; slot duration in ticks
+	; 652 ticks / sec
+	;  40 CPM : 16 ticks / slot
+	; 200 CPM :  3 ticks / slot
+
+	ld a, (cfg_cw_speed)
+	cp #40
+	jr nc, 1f
+	ld a, #40              ; be reasonable, we'd be here until next week
+1:
+	ld c, a
+	imm_ahl(652)          ; see above for maths. CPM into slept ticks
+	call div248
+	ld a, l
+	ld (cw_slot_ticks), a
+
+	; timer count for pitch
+
+	ld a, (cfg_cw_pitch)   ; 10 Hz units 00...2550 (cSEC in fact)
+	ld c, a
+	imm_ahl(403200)        ; timer CLK / 10
+	call div248
+	ld (cw_pitch_cnt), hl
+
+	ret
+
+cw_calc_blip:              ; C-reg has 10 Hz units 00...2550 (cSEC in fact)
+
+	imm_ahl(403200)        ; timer CLK / 10
+	call div248            ; /= C-reg
+	ld (cw_pitch_cnt), hl
+
+	ret
+
+
+send_cw_prolog:
+
+	xor h                     ; maybe do ctcss during blips
+	ld a, (cfg_ctcss_output_when)
+	cp #4
+	jr nz, 1f                 ; not CUSTOM
+	ld a, (ctcss_is_on)
+	or a
+	jr nz, 1f                 ; already on, A nz
+	call ctcss_maybe
+	ld a, (ctcss_is_on)       ; maybe?
+	or a
+	jr z, 1f                  ; 'maybe' was 'no'
+	inc h                     ; set flag to stop it at cw_epilog
+1:
+	ld a, h
+	ld (ctcss_custom_flag), a ; picked by cw_epilog
+
+
+	call cw_calc_delays
+
+	ld a, #1
+	ld (nosir), a
+	ld (repeater_cw_sendit_all), a
+
+	call ccir_on
+	call silence_timer1
+	jr 1f
+
+send_cw_epilog:
+
+	ld a, (ctcss_custom_flag)  ; need to stop ctcss sometimes, if CUSTOM
+	or a
+	call nz, ctcss_off
+
+	call ccir_off
+	call silence_timer1
+
+	xor a
+	ld (nosir), a
+1:
+	ld a, #20
+	call b0_ccir_tx_timer_wait
+
+	ret
+
+send_cw:
+	ld (repeater_cw_jmpbuf), sp    ; in case sequence is pre-empted
+
+	ld b, #SIZE_STR
+1:
+	ld a, (hl)
+	inc hl
+	cp #EOS
+	jr z, 1f
+	call cw_chr
+	djnz 1b
+1:
+	jp silence_timer1
+
+send_cw_chr:
+	call cw_chr
+	jp silence_timer1
+
+; Separate character, 3 dit-times of silence after last tone
+
+cw_chr:
+	push hl
+	push bc
+	call cw_chr_1        ; *_===_
+	call cw_pause_2      ; __
+	pop bc
+	pop hl
+	ret
+
+; play one cw character. No extra slot is appended, just the one silence.
+; i.e. 2 slots per dit, 4 slots per dash.
+
+cw_chr_1:               ; fill slots contained in chr
+	ld b, #0
+	ld c, a
+	ld hl, #cw_tab
+	add hl, bc
+	ld a, (hl)
+	or a                ; terminator 1-bit there ?
+	jr nz, 1f
+	ld a, #0b11001110    ; ? and 0b10 to terminate
+1:
+	cp #0x80             ; terminator at left edge ?
+	ret z               ; return then
+
+	sla a               ; CY has dit/dah, rest shifted, 0 appended
+	push af
+	call cw_ditdash     ; 1 or 3 slots tone
+	call cw_pause_1     ; 1 slot silence
+	pop af
+	jr 1b
+
+cw_pause_1:
+	ld a, (cw_slot_ticks)
+	ld hl, #4
+	jr cw_slots
+
+cw_pause_2:
+	ld a, (cw_slot_ticks)
+	add a, a
+	ld hl, #4
+	jr cw_slots
+
+cw_ditdash:
+	ld a, (cw_slot_ticks)
+	jr c, 1f            ; CY=1=dit = 1 slot only
+	ld d, a
+	add a, d
+	add a, d               ; small values, *= 3 wont carry
+1:
+	ld hl, (cw_pitch_cnt)
+	jr cw_slots
+
+cw_slots:
+	ld d, a
+	call start_marker_tone ; hl pitch, d dur
+
+	; nothing needs to be saved here
+
+	call b0_cw_wait_tone                ; waits in bank 0, NZ = pre-empt
+	jr z, 1f
+		ld sp, (repeater_cw_jmpbuf)
+		ret                                 ; ZAP back.
+1:
+
+	; tone or silence ends,
+	; place to open or close relay audio
+	; XXX infinite stupidity
+
+	call repeater_check_carrier         ; NZ if carrier
+	jp nz, repeater_aon
+	jp repeater_aoff
+
+
+note_to_pitch_table:
+	.dw MT_CALCHZ( 500), MT_CALCHZ( 600), MT_CALCHZ( 700), MT_CALCHZ( 800), MT_CALCHZ( 900)
+	.dw MT_CALCHZ(1000), MT_CALCHZ(1100), MT_CALCHZ(1200), MT_CALCHZ(1300), MT_CALCHZ(1400)
+	.dw MT_CALCHZ(1500), MT_CALCHZ(1600), MT_CALCHZ(1700), MT_CALCHZ(1800), MT_CALCHZ(1900)
+	.dw MT_CALCHZ(2000), MT_CALCHZ(2100), MT_CALCHZ(2200), MT_CALCHZ(2300), MT_CALCHZ(2400)
+	.dw MT_CALCHZ(2500), MT_CALCHZ(2600), MT_CALCHZ(2700), MT_CALCHZ(2800), MT_CALCHZ(2900)
+	.dw 4
+
+send_notes:
+	ld (repeater_cw_jmpbuf), sp    ; in case sequence is pre-empted
+
+	ld b, #SIZE_STR
+1:
+	ld a, (hl)
+	inc hl
+	cp #EOS
+	jr z, 1f
+	push hl
+	push bc
+	call send_note_chr
+	pop bc
+	pop hl
+	djnz 1b
+1:
+	jp silence_timer1
+
+
+send_note_chr:
+	cp #25                  ; 0 ... 9, A ... F, G ...O are "notes"
+	jr c, 1f
+	ld a, #25               ; 25 valid and one last for silence in above table
+1:
+	sla a                  ; word index
+	ld c, a
+	ld b, #0
+	ld ix, #note_to_pitch_table
+	add ix, bc
+	ld l, (ix+0)
+	ld h, (ix+1)
+
+	ld d, #10                           ; 100msec per tone or pause
+	call start_marker_tone             ; hl pitch, d dur
+
+	call b0_cw_wait_tone                ; waits in bank 0, NZ = pre-empt
+	ret z
+		ld sp, (repeater_cw_jmpbuf)
+		ret                                 ; ZAP back.
+
+;----------------------------------------------------------------------
+;----------------------------------------------------------------------
+;
+; feel free to skip the gunk with /-------
+;
+; 1 is dit, 0 is dash, terminating pattern 10*
+; not quite complete.
+
+cw_tab:
+	.db 0b00000100 ; 0
+	.db 0b10000100 ; 1
+	.db 0b11000100 ; 2
+	.db 0b11100100 ; 3
+	.db 0b11110100 ; 4
+	.db 0b11111100 ; 5
+	.db 0b01111100 ; 6
+	.db 0b00111100 ; 7
+	.db 0b00011100 ; 8
+	.db 0b00001100 ; 9
+	.db 0b10100000 ; A
+	.db 0b01111000 ; B
+	.db 0b01011000 ; C
+	.db 0b01110000 ; D
+	.db 0b11000000 ; E
+	.db 0b11011000 ; F
+	.org cw_tab + ' '
+	.db 0b10000000 ; sp
+	.org cw_tab + 0x22
+	.db 0b10110110 ; "
+	.org cw_tab + '#'
+	.db 0b11101010 ; VA aka SK overload #
+	.org cw_tab + '$'
+	.db 0b10111100 ; AS overload $
+	.org cw_tab + 0x27
+	.db 0b10000110 ; '
+	.org cw_tab + '('
+	.db 0b01001010 ; (
+	.db 0b01001010 ; ) ) balance is everything
+	.org cw_tab + ','
+	.db 0b00110010 ; ,
+	.db 0b01111010 ; -
+	.db 0b10101010 ; .
+	.db 0b01101100 ; /
+	.org cw_tab + '0'
+	.db 0b00000100 ; 0
+	.db 0b10000100 ; 1
+	.db 0b11000100 ; 2
+	.db 0b11100100 ; 3
+	.db 0b11110100 ; 4
+	.db 0b11111100 ; 5
+	.db 0b01111100 ; 6
+	.db 0b00111100 ; 7
+	.db 0b00011100 ; 8
+	.db 0b00001100 ; 9
+	.db 0b00011110 ; :
+	.org cw_tab + '?'
+	.db 0b11001110 ; ?
+	.org cw_tab + 'A'
+	.db 0b10100000 ; A
+	.db 0b01111000 ; B
+	.db 0b01011000 ; C
+	.db 0b01110000 ; D
+	.db 0b11000000 ; E
+	.db 0b11011000 ; F
+	.db 0b00110000 ; G
+	.db 0b11111000 ; H
+	.db 0b11100000 ; I
+	.db 0b10001000 ; J
+	.db 0b01010000 ; K
+	.db 0b10111000 ; L
+	.db 0b00100000 ; M
+	.db 0b01100000 ; N
+	.db 0b00010000 ; O
+	.db 0b10011000 ; P
+	.db 0b00101000 ; Q
+	.db 0b10110000 ; R
+	.db 0b11110000 ; S
+	.db 0b01000000 ; T
+	.db 0b11010000 ; U
+	.db 0b11101000 ; V
+	.db 0b10010000 ; W
+	.db 0b01101000 ; X
+	.db 0b01001000 ; Y
+	.db 0b00111000 ; Z
+	.db 0b10101000 ; aiti
+	.db 0b10100110 ; ruats. o
+	.db 0b00011000 ; oljy
+
+	.org cw_tab + 128
+
+;======================================================================
+
+; hl points to first blank after some characters to view
+
 #ifdef BANK_TEST
 bank_test_ping:
 	ld a, #0xA5
@@ -20644,6 +20673,7 @@ ctcss_dec_src:	WORD	; CTCSS DSP decoder sample address
 ctcss_idle_sample: BYTE	; stays 0: "no signal" while banked
 bank_hl:	WORD	; bank1_call temporaries
 bank_to:	WORD	; target bank (low byte)
+repeater_tick:	BYTE	; sec100 at the last far_repeater_run
 bank_fn:	WORD
 bank_af:	WORD
 #ifdef BANK_TEST

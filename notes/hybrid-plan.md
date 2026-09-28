@@ -191,7 +191,8 @@ decided otherwise):
      it. `python3 tools/bankxref.py firmware/r58.s FIRST AFTER` lists every
      symbol of the block used outside it and local labels crossing its
      edges.
-  2. Classify each hit. A routine called from mainline gets a stub
+  2. `python3 tools/isrreach.py firmware/r58.s FIRST AFTER` must say
+     "none". Classify each bankxref hit. A routine called from mainline gets a stub
      `far_X: call bank1_call / .dw X` in fixed ROM, and the outside
      `call`/`jp` sites are renamed to `far_X`. Keep in fixed ROM: data that
      fixed code reads (like `tab_ax25_digi`), anything reachable from an
@@ -236,11 +237,43 @@ decided otherwise):
   Fixed ROM ends at 0x4A61 (**~13.4 KB free**), bank 1 at 0xB591
   (**~2.6 KB free**). MBUS CFGSnd/CFGGEt (`all_config_send/get`) were
   already in bank 1 with the menu; `test_mbus_config.py` now covers them.
-- **Next:** bank 1 is nearly full. Options: (a) more small mainline blocks
-  (scanner, repeater state machine, CW sequencing) into the last 2.6 KB;
-  (b) a second bank: the P8N-only EPROM0 page (P8E cannot reach it) or
-  EPROM1 (excludes the multiboard); (c) Phase 4, port to C, which may
-  shrink code. Needs a user decision before (b).
+- **Done: repeater state machine, CW and note sequences** (2026-09-28),
+  1.9 KB: `repeater_halt` … `repeater_operator_ptt`, `repeater_setstate` …
+  timer helpers, `repeater_boot` … `cw_tab`. Stays fixed: everything
+  interrupts reach (`repeater_toggle_suspend`, `dtmf_commands`,
+  `ccir_repeater_cmd`, `repeater_step_1sec/10msec`) and `repeater_init`
+  (runs on every pass when not a repeater). Stubs: `far_repeater_run`,
+  `far_repeater_operator_ptt`. Fixed ROM ends at 0x4336 (**~15.2 KB
+  free**), bank 1 at 0xBCEF (**785 bytes free**).
+- **Multiboard readers vs. bank 1 (lesson from this move).** A plain stub
+  for `repeater_run` kept bank 1 selected **46 %** of the time in repeater
+  idle (the mainloop mostly spins), i.e. the multiboard DTMF decoder
+  skipped about half its samples and the CTCSS DSP decoder read zeros.
+  Two rules now:
+  - Code polled on every mainloop pass enters bank 1 only when there is
+    work: `far_repeater_run` checks `cfg_function`, then runs at most once
+    per 10 ms systick (`sec100` vs `repeater_tick`). The state machine
+    polls systick-driven inputs, so the pass after a tick sees the same
+    inputs as before; only SIO-driven ones (LOCAL, PTT) can be up to 10 ms
+    later. Repeater idle: 0.4 % in bank 1; while sending CW: 2.6 %.
+  - Long busy-waits run with bank 0 selected: `bank0_call` (same body as
+    `bank1_call`, target in `bank_to`) through fixed-ROM stubs
+    (`b0_cw_wait_tone`, `b0_ccir_tx_timer_wait`). The pre-emption
+    longjmp (`ld sp, (repeater_cw_jmpbuf)`) stays in bank 1 code, after
+    the wait has restored the bank.
+  `test_banking.BankDuty` checks < 5 % in normal mode and repeater idle
+  (fails at 46 % without the guard) and runs `tools/isrreach.py` over all
+  of bank 1 (nothing reachable from interrupts).
+- **Not moved: the scanner** (1.2 KB, does not fit in the 785 bytes left).
+  It is interrupt-free (`load_num_tmp_rejects`/`unreject_timer` stay
+  fixed) and a coroutine through `scanner_state`; it would need the same
+  kind of guard as the repeater (it runs on every pass while scanning).
+- `tools/isrreach.py FILE [FIRST AFTER]`: routines reachable from the IM2
+  handlers and dosir (textual call graph, `.dw` tables, fall-through);
+  run it on a block before moving it (step 2 of the procedure above).
+- Repeater tests are P8E-only: on a P8N the fixture pokes the 60 s boot
+  timer before `repeater_boot` has set it (same on the release).
+- **Next:** Phase 4 (port to C).
 - Note: MPRS receive takes ~0.2 s on a P8N (QRB/locator maths), all of it
   in bank 1, i.e. with the multiboard DTMF/CTCSS readers off.
 - P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
