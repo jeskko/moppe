@@ -180,10 +180,12 @@ decided otherwise):
   `make -C firmware banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
   image for a 27C512 in the EPROM0 socket (EPROM1 socket as usual). It is
   the normal firmware plus `bank_test` early at boot. The lower row shows
-  `b1  PASS  ` (on a CU53AN the S look like 5); `b1 ssss 00` = the window's
-  16-bit byte sum was ssss (`make banktest` prints the right one; 0000 =
-  the P8N-only page, zero-filled on purpose; C000 would be an empty 0xFF
-  page); `b1 CA11 vv` = sum fine but the routine returned vv. The
+  `b1b2 PASS` (on a CU53AN the S look like 5) when both window pages are
+  right; `b1 ssss 00` = bank 1's 16-bit byte sum was ssss (`make banktest`
+  prints the right one; 8000 = it showed the bank-2 page, which is filled
+  with 0x5A; C000 = an empty 0xFF page); `b1 CA11 vv` = sum fine but the
+  routine returned vv; `b2 ssss 00` = bank 1 fine but bank 2's sum was ssss
+  instead of 8000 (bank 1's sum = RA14 does not select the page). The
   emulator shows PASS on P8E/P8N with both handsets
   (`test_banking.BenchTestRom`). The user will burn it when the EPROM
   programmer turns up and expects the service manual's decode to be right,
