@@ -181,6 +181,31 @@ decided otherwise):
   programmer turns up and expects the service manual's decode to be right,
   so Phase 3 proceeds in the emulator meanwhile. Still to report: which
   card (P8E /H or P8N) and the display.
+- **How to move the next block to bank 1** (what worked for the menu):
+  1. Pick a contiguous block of r58.s, first label to the first label after
+     it. `python3 tools/bankxref.py firmware/r58.s FIRST AFTER` lists every
+     symbol of the block used outside it and local labels crossing its
+     edges.
+  2. Classify each hit. A routine called from mainline gets a stub
+     `far_X: call bank1_call / .dw X` in fixed ROM, and the outside
+     `call`/`jp` sites are renamed to `far_X`. Keep in fixed ROM: data that
+     fixed code reads (like `tab_ax25_digi`), anything reachable from an
+     ISR or `dosir`, cycle-counted code. Address-only compares
+     (`cp #HI(x)`) are fine. Also look for bank addresses stored in RAM
+     and later used by fixed code (`adj_feedback`, pointers).
+  3. Cut the block, paste it before `bank1_end:` in the BANK 1 section;
+     `#define`s used by code left behind move with it to fixed ROM.
+  4. Build (asserts catch range/size problems, the linker catches `jr`
+     out of range), run all tests incl. `test_diff.py` against the release
+     and `make C=1`; confirm with a breakpoint in the moved code that it
+     runs with `cur_bank` = 1.
+- **Next candidates:** APRS/MPRS/MIC-E + locator maths (~3 KB) and GPS
+  parsing (~1 KB), then remote config/FSK packet building and MBUS
+  CFGSnd/CFGGEt. Check first that none of it runs from the SIO/modem
+  interrupt handlers (`modem_handler`, sioa/siob) — only the mainline
+  parsers can move. Test coverage: `test_signalling.py` (APRS decoded from
+  the tone pin, GPS NMEA → APRS, packet CRC); MBUS/CFGSnd are untested, so
+  add tests before moving them (Phase 0 gap).
 - P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
   it. Don't depend on it, or make it P8N-only.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused

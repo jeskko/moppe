@@ -61,6 +61,7 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `firmware/c/` | C modules for `make C=1` |
 | `tools/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py` | Build steps around sdasz80/sdldz80 |
 | `tools/jp2jr.py` | Size optimiser: `jp` → `jr` outside timing-critical code |
+| `tools/bankxref.py` | Cross-references of a source block, before moving it to bank 1 |
 | `tools/as80tosdas.py` | One-shot as80 → sdasz80 source converter |
 | `tools/as80/` | The original assembler (patched), for reference builds |
 | `emu/` | Emulator in C: `z80.c` core, `pio/sio/pit/daisy.c` Zilog/Intel chips, `cu53an.c`, `cu58af.c` handsets, `r58.c` board, `api.c` flat API |
