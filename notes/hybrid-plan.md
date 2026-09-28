@@ -356,12 +356,35 @@ first, port, differential test against stock, size check, commit.
   landed a differential checkpoint on one. Now cleared only when the menu
   row is not next (asm and C). `test_menu_power.MenuColon`.
 - Size so far (`C=1`): fixed ROM ends at ~0x4437, about 15 KB free.
-- **Next module:** frequency/band/synth maths. It is 24-bit arithmetic in
-  AHL throughout; per the plan, keep `mul248`/`div248`/`bin_bcd` and the
-  AHL helpers as C-callable asm (C's 32-bit maths is 2-4x larger), which
-  needs shims like `dpy_freq`. After that the remaining candidates
-  (scanner, FSK, APRS, repeater, CW, menu) are mostly in bank 1, so C in a
-  bank (SDCC `--codeseg` + `__banked`) has to come first. Porting code that is in bank 1 needs C in a bank (SDCC
+- **Done: frequency, band and duplex logic** (2026-09-28), `c/freq.c`:
+  `changed_frequency` and its chain, `locate_band`, `set_duplex_from_tx_rx`,
+  `determine_tx_div`, `step_duplex_state`, `set_legal_tx_flag`, channel
+  stepping, `determine_qsy_kHz`, the VCO band bits. 24-bit values wrap at
+  24 bits (`get24`/`put24` through a static union: SDCC's 32-bit shifts
+  are large). Stay asm: the arithmetic kernel (`freq2div`/`div2freq`: the
+  long division compares 2r+1, the last rounding takes a carry left by
+  `div248`; via `determine_rx_div`/`determine_tx_div_split`), and helpers
+  whose register results asm callers use (`locate_tx_band` → IX,
+  `channel_step_parms` → HL/BC/DE; C calls the latter directly, A in and
+  DE out being `--sdcccall 1`'s convention). The band record layout C
+  hard-codes is asserted in r58.s. 1360 bytes of C for ~710 of asm (1.9×).
+  Safety net: `test_freq.py` compares the RAM this logic writes, release
+  vs build, through edge cases (mutation-checked).
+- **Pattern for RAM the differential tests cannot see:** run the release
+  and the build side by side and compare named RAM after each step
+  (`test_freq.Pair`), each symbol resolved in its own build's map.
+- Size (`C=1`): C modules 0xD08 bytes; fixed ROM ends at ~0x46C1, ~14.7 KB
+  free.
+- **What is left, and what gates it:**
+  - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
+    coroutine through `scanner_state`: needs an explicit state machine),
+    memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
+    functions.
+  - The bank-1 modules (menu, APRS/GPS, FSK, repeater/CW) cannot go to C
+    until there is room for C in a bank: bank 1 has 785 bytes free and C
+    is ~1.9× the asm. That needs a second bank (P8N-only EPROM0 page, or
+    EPROM1, which excludes the multiboard): **a user decision**, plus SDCC
+    `--codeseg` + `__banked` wiring.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
 
 ### Future: EPROM1
