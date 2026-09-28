@@ -16,6 +16,7 @@ A scenario is a list of steps, each a tuple `(kind, *args)`:
     ("run", seconds)               advance time
     ("keys", "433500#")            Radio.type()
     ("press", key[, hold[, gap]])  Radio.press()
+    ("key_down", key) / ("key_up",)  Radio.key_down() / key_up()
     ("ptt", bool)                  Radio.ptt()
     ("adc", chan, value)           Radio.adc(); chan may be an AD_* name (str)
     ("poke", symbol, data)         Radio.poke(); symbol resolved per build
@@ -311,6 +312,10 @@ def _apply_step(radio, step):
         radio.type(*step[1:])
     elif kind == "press":
         radio.press(*step[1:])
+    elif kind == "key_down":
+        radio.key_down(step[1])
+    elif kind == "key_up":
+        radio.key_up()
     elif kind == "ptt":
         radio.ptt(step[1])
     elif kind == "adc":
