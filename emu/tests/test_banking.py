@@ -270,6 +270,24 @@ class BankedC(unittest.TestCase):
         self.assertEqual(r.peek("gps_valid_seconds"), 5)
 
 
+    def test_mprs_receive_runs_in_bank2(self):
+        """c/aprs.c: a received MPRS position is handled in bank 2 (called
+        by c/fsk.c there, no bank switch between them)."""
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        from test_fsk import mprs_packet
+        r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
+                  card=P8E, nv=make_sane_nv(P8E))
+        r.run(2.5)
+        r.breakpoint("_handle_mprs_packets")
+        r.modem_rx(mprs_packet())
+        self.assertEqual(r.run(0.5), "break")
+        self.assertEqual(r.peek("cur_bank"), 2)
+        r.breakpoint("_handle_mprs_packets", False)
+        r.run(0.6)
+        self.assertEqual(r.peek("cur_bank"), 0)
+
+
 BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
 
 

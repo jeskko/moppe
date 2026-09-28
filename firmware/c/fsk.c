@@ -3,15 +3,15 @@
  * Built with `make C=1`; replaces the bank-1 assembler from
  * packet_callsign_pack to send_mprs_report_packet_1 and from
  * map_special_ptrs to build_call_packet_buffer (see the C_MODULES blocks
- * in r58.s), except packet_callsign_unpack and mprs_degmin_pack, which
- * the APRS code in bank 1 keeps using (mprs_degmin_pack is repeated
- * here).
+ * in r58.s).  packet_callsign_unpack and mprs_degmin_pack are in
+ * c/aprs.c (mprs_degmin_pack also here).
  *
  * Fixed code enters through the far_* stubs (bank2_call): receive
  * dispatch packet_for_whom, send_remote_config_packets,
  * send_mprs_report_packet{_maybe,,_1} and send_call_packet.  Bank-1
- * routines are called through their own far_* stubs, which return to
- * bank 2.  Register interfaces go through r58.s shims (fsk_*).
+ * routines (the menu's) are called through their own far_* stubs, which
+ * return to bank 2; MPRS receive and APRS sending are c/aprs.c.  Register
+ * interfaces go through r58.s shims (fsk_*).
  *
  * Received packets are one nibble per byte in the page-aligned ring
  * fsk_history, starting at packet_good; the index wraps at 256 as the
@@ -42,18 +42,19 @@ extern const uint8_t menu_rfc_change[], menu_sql_change[], menu_sqB_change[];
 extern void redraw(void), cu_lights_on(void), cu_call_on(void), ding(void),
 	mic_off_ccir_off(void), tx_error(void), tx_off(void), mdm_delay(void),
 	waitkey(void), clear_buffer(void), start_call_timer(uint8_t on),
-	far_leaved_setup(void), far_send_aprs_report_packet(void),
+	far_leaved_setup(void),
 	append_short_packet_crc(void), append_long_packet_crc(void),
 	append_secret_packet_crc(void);
 extern uint8_t read_squelcher_value(void);
 
+/* c/aprs.c */
+extern void handle_mprs_packets(uint8_t at), send_aprs_report_packet(void);
 /* r58.s shims */
 extern void fsk_putchar(uint8_t c);		/* MBUS putchar (C) */
 extern void fsk_send(uint8_t len);		/* send_packet_buffer (B) */
 extern uint8_t fsk_tx_on_failed(void);		/* tx_on: carry */
 extern uint8_t fsk_mprs_not_yet(void);		/* check_for_mprs_timer: carry */
 extern uint16_t fsk_menu_ptr(void);		/* far_load_menu_ptr, IX = menu_ptr */
-extern void fsk_handle_mprs(uint8_t at);	/* far_handle_mprs_packets, HL */
 extern void fsk_remote_config_execute(uint16_t ptr, const uint8_t *data);
 
 static const uint8_t onesies[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
@@ -156,7 +157,7 @@ void packet_for_whom(void)
 	else if (c == 0xD)
 		handle_display_packets();
 	else if (c == 0x4)
-		fsk_handle_mprs(packet_good);
+		handle_mprs_packets(packet_good);
 	else if (c == 0x5)
 		handle_relay_packets();
 }
@@ -330,7 +331,7 @@ void send_mprs_report_packet_1(void)
 {
 	gps_reported_speed = gps_speed;	/* the speed during report */
 	if (cfg_report_type) {
-		far_send_aprs_report_packet();
+		send_aprs_report_packet();
 		return;
 	}
 	/* 40 cc cc cc cc cs xx la la la lo lo lo */

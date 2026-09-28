@@ -44,7 +44,7 @@ CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
 def rx_state(r):
     return (r.peek("remote_display_buffer", 16), r.peek("locator_display_buffer", 8),
             r.peek("distance_bearing", 8), r.peek("mprs_packed_packet", 12),
-            r.peek("mprs_qrb_dir_bits"), r.peek("display_buffer_time") > 0,
+            r.peek("mprs_qrb_dir_bits"), r.peek("my_coord_tmp_6bytes", 6), r.peek("display_buffer_time") > 0,
             r.peek("locator_dpyed") > 0, r.peek("cfg_gps_locator", 8))
 
 
@@ -184,7 +184,46 @@ def tx_scenario(seed, n):
         steps += [("poke", k, v) for k, v in tx_case(rnd).items()]
         steps += [("poke", "aprs_packet_out", bytes(124)), ("poke", "aprs_bits_out", bytes(189)),
                   ("ptt", True), ("run", 0.3), ("ptt", False), ("run", 2.5),
+                  # the C build transmits ~10 ms longer per report (bit
+                  # stuffing before the audio): the TX-hours seconds counter
+                  # drifts over many reports
+                  ("poke", "transmitter_hours_second_counter", 0),
                   ("probe", "tx %d" % i, tx_state), ("check", "tx %d" % i)]
+    return steps
+
+
+def tx_boundaries():
+    """every speed and course boundary in both report formats"""
+    steps = [("boot", 2.5), ("poke", "cfg_keyup_mprs", 1), ("keys", "433500"),
+             ("press", "#"), ("run", 0.3)]
+    k = 0
+    for rtype in (1, 2):
+        for knots, course in ((0, 5), (1, 5), (2, 0), (3, 1), (99, 99), (100, 100),
+                              (150, 359), (199, 360), (200, 999), (299, 1000),
+                              (300, 1001), (999, 7), (1000, 7), (1001, 7)):
+            steps += [("poke", "cfg_report_type", rtype),
+                      ("poke", "gps_knots", knots.to_bytes(2, "little")),
+                      ("poke", "gps_course", course.to_bytes(2, "little")),
+                      ("poke", "aprs_packet_out", bytes(124)),
+                      ("ptt", True), ("run", 0.3), ("ptt", False), ("run", 2.0),
+                      ("poke", "transmitter_hours_second_counter", 0),
+                      ("probe", "boundary %d" % k, tx_state), ("check", "boundary %d" % k)]
+            k += 1
+    return steps
+
+
+def rx_boundaries():
+    """a longitude difference of exactly +-180 degrees (and just inside),
+    east against west: degrees from 128 on are masked (7 bits)"""
+    steps = [("boot", 2.5), ("poke", "cfg_remote_dpy_secs", 5), ("keys", "433500"),
+             ("press", "#"), ("run", 0.3)]
+    cases = ((b"\x01\x00\x00E", [80, 0, 0x80]), (b"\x00\x08\x00W", [100, 0, 0]),
+             (b"\x01\x00\x00E", [79, 59, 0x80 | 99]), (b"\x00\x08\x00W", [99, 59, 99]))
+    for i, (own, his_lon) in enumerate(cases):
+        steps += [("poke", "cfg_gps_latitude", bytes([0, 6, 1, 0, 0, 0, 0, ord("N")])),
+                  ("poke", "cfg_gps_longitude", own[:3] + bytes(4) + own[3:]),
+                  ("modem_rx", with_crc(bytes([0x40] + pack_callsign("OH3AB") + [61, 0, 0] + his_lon))),
+                  ("run", 0.8), ("probe", "lon 180 %d" % i, rx_state), ("check", "lon 180 %d" % i)]
     return steps
 
 
@@ -204,6 +243,12 @@ class AprsDiff(unittest.TestCase):
 
     def test_aprs_send(self):
         self.diff(tx_scenario(4, 30))
+
+    def test_aprs_send_boundaries(self):
+        self.diff(tx_boundaries())
+
+    def test_mprs_receive_lon_180(self):
+        self.diff(rx_boundaries())
 
 
 if __name__ == "__main__":

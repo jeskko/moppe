@@ -31,7 +31,9 @@ extern uint16_t gps_knots, gps_course;
 /* firmware routines (assembler) */
 extern uint8_t knots_to_kmh(uint16_t knots);		/* HL -> A, max 255 */
 extern uint8_t quarter_ms_to_kmh(uint16_t qms);	/* HL -> A, max 255 */
-extern void redraw(void), far_gps_own_locator(void);
+extern void redraw(void);
+/* c/aprs.c */
+extern void gps_own_locator(void);
 /* r58.s shim: aisin_seiki_parse_latlon (IY, IX) */
 extern void gps_latlon(const uint8_t *from, uint8_t *to);
 
@@ -45,7 +47,7 @@ static uint8_t *dst;
 
 static void gps_information_has_been_updated(void)
 {
-	far_gps_own_locator();		/* lat/lon into the Maidenhead locator */
+	gps_own_locator();		/* lat/lon into the Maidenhead locator */
 	gps_valid_seconds = 5;
 	if (menu_active)
 		redraw();		/* in case a GPS value is shown */

@@ -13,7 +13,9 @@ bank1_end (window addresses), _CODE_2 at bank2_end (virtual 0x28000 +
 offset, see ihx2bin.py).  After linking, the map is checked: _CODE must
 end by 0x8000 (the fixed ROM), _CODE_N by the end of its bank, _DATA must
 fit its block, and every other relocatable area must be empty (C code must
-not use initialised data, which would need a startup copy).  And no C
+not use initialised data, which would need a startup copy).  _HOME (SDCC library
+helpers for banked code, e.g. __mullong) is placed after _CODE in a second
+pass.  And no C
 module may reference a symbol in a bank it does not run in (a bank-2
 module cannot see bank 1, fixed code sees neither): calls go through the
 fixed-ROM far_* stubs.  ADDRESS_ONLY lists the exceptions, symbols C only
@@ -127,21 +129,29 @@ def main():
             if s not in syms:
                 sys.exit("link.py: %s does not define %s (built without -DC_MODULES?)" % (a.asm, s))
         cmd += ["-b", "_DATA=0x%04X" % syms["c_bss"]]
-    cmd += [a.o + ".ihx", a.asm] + a.cmods
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    out = r.stdout + r.stderr
-    if r.returncode or "?ASlink" in out or "Error" in out:
-        sys.stderr.write(out)
-        sys.exit("link.py: sdldz80 failed")
+    files = [a.o + ".ihx", a.asm] + a.cmods
 
-    areas = map_areas(a.o + ".map")
+    def link(extra):
+        r = subprocess.run(cmd + extra + files, capture_output=True, text=True)
+        out = r.stdout + r.stderr
+        if r.returncode or "?ASlink" in out or "Error" in out:
+            sys.stderr.write(out)
+            sys.exit("link.py: sdldz80 failed")
+        return map_areas(a.o + ".map")
+
+    # the SDCC library puts some helpers (__mullong, __divulong) in _HOME,
+    # code for every bank: a second pass places it after _CODE (fixed ROM)
+    areas = link([])
+    if areas.get("_HOME", (0, 0, ""))[1]:
+        code = areas.get("_CODE", (syms["rom_end"], 0, ""))
+        areas = link(["-b", "_HOME=0x%04X" % (code[0] + code[1])])
     bad = []
     for name, (addr, size, flags) in areas.items():
         if size == 0 or "ABS" in flags:
             continue
-        if name == "_CODE":
+        if name in ("_CODE", "_HOME"):
             if addr + size > ROM_END:
-                bad.append("_CODE 0x%04X-0x%04X passes 0x%04X" % (addr, addr + size, ROM_END))
+                bad.append("%s 0x%04X-0x%04X passes 0x%04X" % (name, addr, addr + size, ROM_END))
         elif name in BANKS:
             end = BANKS[name][1]
             if BANKS[name][0] not in syms:

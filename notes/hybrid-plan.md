@@ -12,29 +12,24 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 ## Start here (next session, written 2026-09-28)
 
 **State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
-1 = EPROM0 chip 0xC000 (menu, APRS/MPRS; in the asm build also GPS, FSK
-packets and repeater/CW; `C=1`: **4636 bytes free**, asm build 834), 2 =
-EPROM0 chip 0x8000 (`C=1`: `c/fsk.c`, `c/rptr.c`, `c/gps.c`, 5216 bytes;
-**~11 KB free**). Phase 4 in `make C=1`: `c/squelch_crc.c`, `timers.c`,
-`keys.c`, `display.c`, `freq.c` in fixed ROM, `fsk.c`, `rptr.c`, `gps.c`
-in bank 2 (see "Done: ... bank 2" under Phase 4); fixed ROM ends at
-~0x4783 (~14.4 KB free). 178 tests pass on both builds; `make -C firmware
-verify` still byte-identical for the release reference.
+1 = EPROM0 chip 0xC000 (the menu; in the asm build also APRS/MPRS, GPS,
+FSK packets and repeater/CW; `C=1`: **8180 bytes free**, asm build 834),
+2 = EPROM0 chip 0x8000 (`C=1`: `c/fsk.c`, `rptr.c`, `gps.c`, `aprs.c`,
+12054 bytes; **~4.3 KB free**). Phase 4 in `make C=1`: `c/squelch_crc.c`,
+`timers.c`, `keys.c`, `display.c`, `freq.c` in fixed ROM, the four bank-2
+modules (see "Done: ... bank 2" under Phase 4); fixed ROM ends at ~0x493D
+(~13.7 KB free, `_HOME` included). 186 tests pass on both builds; `make
+-C firmware verify` still byte-identical for the release reference.
 
-**Next task: MPRS/APRS to C in bank 2** (`handle_mprs_packets` …
-`stuffed_8bits`, ~2400 lines: MPRS receive/display, locator and QRB
-maths, the five MBUS output formats, GPS waypoint output, APRS/MIC-E
-encoding, AX.25 framing; `packet_callsign_unpack`/`mprs_degmin_pack` and
-the two symbol tables go with it). Widen the net first: every
-`cfg_mbus_mprs` format, waypoint output, QRB display, APRS/MIC-E packets
-(AFSK decode, `afsk.py`), locator edge cases. Then the menu engine (8 KB,
-mostly REC tables; the tables could stay asm data in bank 1 if the engine
-that reads them stays there too). Per module: tests first (reference =
-the asm build when a fixed bug makes the release differ), `#pragma bank
-2`, entry points as plain `void f(void)` behind `far_X: call bank2_call /
-.dw _X` stubs under `#ifdef C_MODULES`, register interfaces through
-fixed-ROM shims, bank-1 data it reads moved out of bank 1 (link.py
-refuses bank-1 references from bank-2 C), a mutation run.
+**Next task: the menu engine to C** (bank 1 holds only the menu now in
+`C=1`: 8.2 KB of asm, mostly the REC/TAB/STR tables; the engine could be C
+with `#pragma bank 1` next to the tables, which stay asm data, since bank
+2 is nearly full). Then the scanner (coroutine → state machine) and the
+other fixed-ROM modules. Per module: tests first (reference = the asm
+build when a fixed bug makes the release differ), entry points as plain
+`void f(void)` behind `far_X` stubs under `#ifdef C_MODULES`, register
+interfaces through fixed-ROM shims, data it reads moved out of other
+banks (link.py refuses cross-bank references), a mutation run.
 Other open items: scanner to C (coroutine → state machine); the real-board
 bench test (EPROM programmer); `notes/hardware.md` open questions (IC27,
 EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
@@ -582,12 +577,41 @@ first, port, differential test against stock, size check, commit.
   written (the byte keeps its old value). Is that GPS still in use? If not,
   the path could be dropped; if yes, the first two are clear fixes, the
   hemisphere needs the unit's sign convention.
+- **Done: MPRS receive and APRS sending in C, bank 2** (2026-09-28),
+  `c/aprs.c`: `handle_mprs_packets` (display, locator, QRB), the five
+  MBUS formats, GPS waypoint upload, `gps_own_locator`, APRS normal and
+  MIC-E encoding, AX.25 CRC (fixed-ROM `calc_ax25_crc` via a shim) and bit
+  stuffing; `emit_ax25_packet` (cycle-exact PWM) stays fixed. With it
+  `packet_callsign_unpack`, `mprs_degmin_pack` and the symbol tables left
+  bank 1: in `C=1` bank 1 holds only the menu. c/fsk.c and c/gps.c call it
+  directly (same bank). 6474 bytes of C. Arithmetic kept bit for bit: a C
+  copy of `div248` (its overflow for wrapped 24-bit values of out-of-range
+  packets), 24-bit wrap, digits as values in `distance_bearing`, and two
+  v3_Z bugs in `centiminutes_to_meters` (fixed in the next commit, see
+  "Firmware behaviour"). Deliberate difference: the metres-per-minute
+  table for own latitudes of 90 and more (the asm read past it). Also
+  found: the logger format prints `gps_utc` up to EOS, and before the first
+  fix there is none, so it prints RAM after it (kept, noted).
+  Toolchain: SDCC puts `__mullong`/`__divulong` in `_HOME`; link.py places
+  it after `_CODE` in a second pass. `c_bss` 192 bytes. Frame rule refined:
+  no frame in a function that calls assembler routines (a leaf using only C
+  and the SDCC library may have one; SDCC spills some 32-bit conversions).
+  Safety net: `test_aprs_diff.py` (seeded fuzz, asm build vs `C=1`: 60+15
+  random MPRS packets near and far, every MBUS format and GPS upload, 40
+  own locators, 30 random APRS reports, speed/course boundaries in both
+  formats, ±180° longitude); difftest compares events per type now (MBUS
+  and GPS output interleave by timing). Mutation run: 30 mutants, 28
+  caught, 1 equivalent (SSID mask 0x1F vs 0x1E), 1 needing an exact
+  9999 m distance. The C APRS path transmits ~10 ms longer (bit stuffing
+  before the audio). `BankedC` breakpoint in `_handle_mprs_packets`.
+  `test_rptr_diff`: the probe no longer compares raw second timers (edge
+  flake as timing moved), `test_boot_minute` traces boot → idle instead.
 - **What is left, and what gates it:**
   - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The remaining bank-1 modules (menu, MPRS/APRS) go to C
+  - The menu (bank 1) goes to C
     in bank 2 like `fsk.c` (~14.7 KB free there). The real-board bench
     test still has to confirm both window pages.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.

@@ -36,7 +36,10 @@ BYTES = ("repeater_timer_BLIP_state", "squelch_tightening", "txpwr_increment",
 
 
 def probe(r):
-    return ((repeater_state_name(r),) + tuple(r.peek16(n) for n in WORDS) +
+    # the second timers themselves are not compared: a probe can fall on a
+    # second boundary a few ms apart in the two builds; what they do shows
+    # in the states, events and tones
+    return ((repeater_state_name(r),) + tuple(r.peek16(n) > 0 for n in WORDS) +
             tuple(r.peek(n) for n in BYTES) + (r.peek16("cw_pitch_cnt"),))
 
 
@@ -209,6 +212,7 @@ def alerts_mprs(mprs_id):
 ) + [("adc", AD_TP4, 50), ("adc", AD_RPM, 200)] + [
     TONE, CARRIER, ("run", 0.4), NO_TONE, NO_CARRIER, ("tones", "greet with alerts", 2.5)] + at("open") + [
     ("tones", "id during with alerts", 2.5)] + at("during") + [
+    ("poke", "repeater_cfg_TID", w(60)),         # no more during IDs near the checks
     ("adc", AD_TP4, 60), ("adc", AD_RPM, 0),
     ("poke", "repeater_req", ord("#")), ("tones", "report + mprs", 1.5)] + at("report") + [
     ("run", 3.5)] + at("closing") + [("tones", "bye with alerts", 4.0)] + at("closed")
@@ -240,6 +244,12 @@ class RepeaterDiff(unittest.TestCase):
 
     def test_cycle_p8n(self):
         self.diff(SCN_CYCLE, card=P8N)
+
+    def test_boot_minute(self):
+        """repeater_boot holds for 60 s before idle (the change traced from
+        57 s to 61 s)"""
+        self.diff([("boot", 2.5), ("poke", "cfg_function", 1), ("run", 0.5)] + at("boot") + [
+            ("run", 56.5)] + trace("boot -> idle", repeater_state_name, 4.0) + at("idle"))
 
     def test_hog_lockout(self):
         self.diff(SCN_HOG)
