@@ -79,8 +79,8 @@ typematic timings.
   (menu edit of every record type in use, "???", backspace, low battery
   warning/power-down, TOT, typematic groups, CU58AF menu/frequency/volume
   layout). Still open: CCIR/DTMF *receive* decode of digit strings, FSK
-  receive/remote config (**covered 2026-09-28**, `test_fsk.py`), MBUS
-  CFGSnd/CFGGEt.
+  receive/remote config and MBUS CFGSnd/CFGGEt (**covered 2026-09-28**,
+  `test_fsk.py`, `test_mbus_config.py`).
 - Grow the emulator where tests need it: FX429 RX bit timing, MBUS
   host-side helpers (CFGSnd/CFGGEt), maybe CTCSS slicer input.
 
@@ -96,6 +96,11 @@ decided otherwise):
   squelch level stays 0 after SAnE although its REC default is 127.
 - cSEC entry drops the last typed digit ("150" stores 15, shown as 150 ms).
 - CFG_EXE (type 10) is defined but no record uses it.
+- CFGSnd sends the last NV byte twice instead of the checksum
+  (`all_config_send` computes it in A, `putchar` sends C), so CFGGEt,
+  which checks the sum, refuses a plain CFGSnd dump. Kept for now;
+  `test_mbus_config.py` pins it. Fixing it is a user decision (host tools
+  may depend on it).
 
 ### Phase 1: one toolchain (SDCC's sdas + sdld) — done 2026-09-28
 - `firmware/r58.s` (sdasz80 syntax, converted by `tools/as80tosdas.py`)
@@ -231,7 +236,7 @@ decided otherwise):
   also on `C=1`; breakpoints in the moved code hit with `cur_bank` = 1.
   Fixed ROM ends at 0x4A61 (**~13.4 KB free**), bank 1 at 0xB591
   (**~2.6 KB free**). MBUS CFGSnd/CFGGEt (`all_config_send/get`) were
-  already in bank 1 with the menu (still untested).
+  already in bank 1 with the menu; `test_mbus_config.py` now covers them.
 - **Next:** bank 1 is nearly full. Options: (a) more small mainline blocks
   (scanner, repeater state machine, CW sequencing) into the last 2.6 KB;
   (b) a second bank: the P8N-only EPROM0 page (P8E cannot reach it) or
