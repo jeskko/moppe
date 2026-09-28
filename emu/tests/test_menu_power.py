@@ -583,5 +583,60 @@ class MenuColon(RadioTest):
         self.assertEqual(off, 0, "%d of 300 samples without the colon" % off)
 
 
+
+class MenuMemoryCtcss(RadioTest):
+    """On a memory channel the CTCSS records edit the memory's tones
+    (mem_ctcss_tx/rx_hz, what get_ctcss_tx/rx_hz use there), saved into
+    the memory when the menu is left. v3_Z did that only for BYTE
+    records: GE:CtCSSt is a TAB record, so it changed the VFO tone
+    (cfg_ctcss_tx_hz) and the memory kept its own. Fixed 2026-09-29."""
+
+    def recalled_memory(self):
+        r = self.boot()
+        self.enter("433525")
+        r.type("12")
+        r.press("#", 1.5)
+        r.run(0.3)
+        r.type("12")
+        r.run(0.5)
+        self.assertTrue(r.peek("mem_flags") & 1)
+        r.press("C")        # the recall digits stay typed: erase them
+        r.press("C")
+        r.run(0.3)
+        self.assertEqual(r.peek("digidx"), 0)
+        self.assertTrue(r.peek("mem_flags") & 1)
+        return r
+
+    def test_ctcsst_edits_the_memory(self):
+        r = self.recalled_memory()
+        enter_menu(r, "001")                 # GE:CtCSSt
+        self.assertUpper("CtCSSt")
+        r.press("+")
+        r.run(0.2)
+        self.assertEqual(r.peek("mem_ctcss_tx_hz"), 1)
+        self.assertEqual(r.peek("cfg_ctcss_tx_hz"), 0, "VFO tone unchanged")
+        self.assertLower("GE     670")
+        r.press("E")                         # leave: saved into the memory
+        r.run(0.3)
+        rec = r.addr("memories") + 12 * r.sym["mem_SIZE"]
+        self.assertEqual(r.peek(rec + r.sym["mem_CTCSSt"]), 1, "stored in memory 12")
+        self.assertEqual(r.peek("cfg_ctcss_tx_hz"), 0)
+
+    def test_ctcssr_edits_the_memory(self):
+        r = self.recalled_memory()
+        enter_menu(r, "002")                 # GE:CtCSSr (BYTE, worked in v3_Z)
+        r.press("+")
+        r.run(0.2)
+        self.assertEqual((r.peek("mem_ctcss_rx_hz"), r.peek("cfg_ctcss_rx_hz")), (1, 0))
+
+    def test_vfo_edits_cfg(self):
+        r = self.boot()
+        self.enter("433500")
+        enter_menu(r, "001")
+        r.press("+")
+        r.run(0.2)
+        self.assertEqual((r.peek("cfg_ctcss_tx_hz"), r.peek("mem_ctcss_tx_hz")), (1, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

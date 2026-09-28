@@ -13260,8 +13260,11 @@ load_menu_ptr:
 	ret z                          ; not on memories.
 
 	ld a, (ix+offset_type)
+	cp #CFG_TAB
+	jr z, 2f                       ; CtCSSt is a TAB record (v3_Z: BYTE only)
 	cp #CFG_BYTE
-	ret nz                         ; ctcss_*_hz are bytes
+	ret nz                         ; CtCSSr a BYTE
+2:
 
 	ld a, l
 	cp #LO(cfg_ctcss_tx_hz)

@@ -68,16 +68,6 @@ deliberate difference in `c/aprs.c`).
 
 ## Menu
 
-**CtCSSt on a memory channel edits the VFO's tone, not the memory's**
-(`load_menu_ptr`, C `value_ptr` in `c/menu.c`): on a memory
-(`mem_flags` MEM_VALID) the CTCSS records are meant to edit
-`mem_ctcss_tx/rx_hz`, which `leaved_setup` saves into the memory. The
-special case only applies to CFG_BYTE records, and GE:CtCSSt is a CFG_TAB
-record, so its half of the check never matches: `+` there changes
-`cfg_ctcss_tx_hz` (shown as the tone), and the memory keeps its old one.
-GE:CtCSSr (a BYTE record) works. Verified 2026-09-28 in the emulator on
-the release. Fix candidate: accept CFG_TAB too (asm and C).
-
 **Remote config while a DC reply is shown writes the reply buffer**
 (`remote_config_execute` → `menu_new_value` → `load_menu_ptr`): while
 `display_buffer_time` runs, the value pointer of every record is

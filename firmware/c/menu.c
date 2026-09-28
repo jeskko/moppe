@@ -145,9 +145,9 @@ static uint8_t *value_ptr(const struct rec *x)
 	if (display_buffer_time)
 		return remote_display_buffer;	/* a remote config reply */
 	a = x->ptr;
-	/* on a memory, the CTCSS byte records edit the memory's copy
-	 * (only CtCSSr: CtCSSt is a TAB record) */
-	if (!(mem_flags & MEM_VALID) || x->type != CFG_BYTE)
+	/* on a memory, the CTCSS records edit the memory's copy (CtCSSt is
+	 * a TAB record, CtCSSr a BYTE; v3_Z only swapped BYTE records) */
+	if (!(mem_flags & MEM_VALID) || (x->type != CFG_BYTE && x->type != CFG_TAB))
 		return a;
 	if (a == &cfg_ctcss_tx_hz)
 		return &mem_ctcss_tx_hz;

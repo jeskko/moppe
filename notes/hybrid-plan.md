@@ -37,8 +37,7 @@ functions (see "What is left" under Phase 4).
 Other open items: the real-board bench test (EPROM programmer);
 `notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
 modem CLK frequency); the bugs left in place: **notes/open-bugs.md** (the
-menu ones found in the port are there; CtCSSt on memories is the one
-with user impact).
+menu ones found in the port are there; CtCSSt on memories is fixed).
 Earlier handoffs: notes/hybrid-plan-history.md.
 
 **Rules learned this session (details in Phase 3/4 below):**
@@ -200,6 +199,11 @@ notes/open-bugs.md):
   the result was garbage (345' west showed nothing). **Fixed 2026-09-28**
   (obvious bug, asm and C); `test_fsk.Qrb` against a model of the flat
   formula.
+- GE:CtCSSt on a memory channel changed the VFO's TX tone
+  (`cfg_ctcss_tx_hz`), not the memory's (`mem_ctcss_tx_hz`, which TX uses
+  there): `load_menu_ptr` swapped only BYTE records, and CtCSSt is a TAB
+  record. **Fixed 2026-09-29** (user decision): TAB records swap too (asm
+  and C); `test_menu_power.MenuMemoryCtcss`.
 - MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
   the first GPS fix there is none and it prints the RAM after it. Kept.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
