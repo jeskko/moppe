@@ -112,7 +112,14 @@ STATE_LABELS = [
 ]
 
 
+# c/rptr.c (make C=1): repeater_state is a state number instead, in the
+# order of its enum (0 = boot not entered yet).
+C_STATES = ["repeater_boot"] + STATE_LABELS
+
+
 def repeater_state_name(r):
+    if "_repeater_run" in r.sym:
+        return C_STATES[r.peek("repeater_state")]
     marks = sorted((r.sym[n], n) for n in STATE_LABELS)
     name = marks[0][1]
     pc = r.peek16("repeater_state")

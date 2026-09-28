@@ -233,6 +233,25 @@ class BankedC(unittest.TestCase):
             self.assertEqual(mbus, bytes([5]) + bytes(range(1, 12)))
 
 
+    def test_repeater_runs_in_bank2(self):
+        """c/rptr.c: far_repeater_run enters bank 2 once per systick in
+        repeater mode; the CW waits in between run in bank 0."""
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
+                  card=P8E, nv=make_sane_nv(P8E))
+        r.run(2.5)
+        self.assertGreaterEqual(r.sym["_repeater_run"], 0x8000)
+        r.poke("cfg_function", 1)
+        r.breakpoint("_repeater_run")
+        self.assertEqual(r.run(0.5), "break")
+        self.assertEqual(r.peek("cur_bank"), 2)
+        self.assertEqual(r.latches()["out2"] & 0x0F, OUT2_BANK[2])
+        r.breakpoint("_repeater_run", False)
+        r.run(0.3)
+        self.assertEqual(r.peek("repeater_state"), 1)     # ST_BOOT
+
+
 BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
 
 

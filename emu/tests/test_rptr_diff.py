@@ -115,20 +115,46 @@ SCN_BEEP_TOO_LONG = setup(repeater_cfg_TBEEPMAX=w(1)) + [
     NO_CARRIER, ("run", 0.3)] + at("idle")
 
 
-def command(label, req, before=()):
-    return list(before) + [("poke", "repeater_req", req), ("tones", label, 1.0)] + at(label)
+def command(label, req, before=(), seconds=1.0):
+    return list(before) + [("poke", "repeater_req", req), ("tones", label, seconds)] + at(label)
+
+
+def trace(label, fn, seconds):
+    """fn(radio) traced (difftest "trace"): for what changes and changes
+    back between checkpoints."""
+    return [("trace", label, fn, seconds)]
+
+
+def ctcss_now(r):
+    return r.peek("ctcss_is_on")
+
+
+def marker_tone(r):
+    return r.peek("mt_timer") > 0, r.latches()["out0"] & 0x60, r.pit(1)["count"]   # MTC, CCIRC
 
 
 SCN_COMMANDS = setup(cfg_rssi_S1=20, cfg_rssi_S9=200, repeater_cfg_TOPEN=w(60)) + open_by_tone() + (
     command("#1 tighten", 1) + command("#3 tx power", 3) + command("#5 bongos", 5) +
     command("#5 bongos off", 5) + command("#0 restore", 0xFF) + command("roger", 0xFE) +
-    command("report S1", ord("#"), [("poke", "repeater_sig", 10), ("poke", "last_sqtail", 1)]) +
-    command("report S9", ord("#"), [("poke", "repeater_sig", 250), ("poke", "last_sqtail", 0)]) +
-    command("report S5", ord("#"), [("poke", "repeater_sig", 100)]) +
-    command("report S2", ord("#"), [("poke", "repeater_sig", 21)]) +
+    command("report S1", ord("#"), seconds=2.6, before=[("poke", "repeater_sig", 10), ("poke", "last_sqtail", 1)]) +
+    command("report S9", ord("#"), seconds=2.6, before=[("poke", "repeater_sig", 250), ("poke", "last_sqtail", 0)]) +
+    command("report S5", ord("#"), seconds=2.6, before=[("poke", "repeater_sig", 100)]) +
+    command("report S2", ord("#"), seconds=2.6, before=[("poke", "repeater_sig", 21)]) +
     command("#9 hidden", 9, [("poke", "cfg_repeater_cmd_9_hidden", 1)]) +
     command("#9 close", 9, [("poke", "cfg_repeater_cmd_9_hidden", 0)]) +
     command("roger from idle", 0xFE))
+
+SCN_EMPTY_BYE = setup(repeater_cfg_id_bye1=cw_str(""), repeater_cfg_id_bye2=cw_str(""),
+                      repeater_cfg_id_bye3=cw_str(""), repeater_cfg_mprs_id=0) + open_by_tone() + [
+    ("run", 3.3)] + at("closing") + [("run", 2.5)] + at("idle, nothing sent")
+
+# CUSTOM (4): send_cw_prolog turns CTCSS on, and when the message ends with
+# a carrier present (aon after the last element keeps it on) the epilog
+# turns it off for its 200 ms wait, until the open state's poll goes active
+SCN_CTCSS_CUSTOM_EPILOG = setup(cfg_ctcss_output_when=4, cfg_ctcss_tx_hz=10,
+                                repeater_cfg_TOPEN=w(60)) + open_by_tone() + [
+    CARRIER, ("poke", "repeater_req", 1)] + trace("roger with carrier", ctcss_now, 1.2) + [
+    NO_CARRIER, ("run", 1.0)] + at("after")
 
 SCN_LOCAL_SUSPEND = setup() + [
     ("local", True), ("tones", "local rising", 1.2)] + at("open by /LOCAL") + [
@@ -152,7 +178,7 @@ SCN_BLIPS = setup(
     repeater_cfg_blip_gpio_011=cw_str("S"),
     repeater_cfg_rssi_A=50, repeater_cfg_blip_rssi_A=cw_str("A"),
     repeater_cfg_rssi_B=100, repeater_cfg_blip_rssi_B=cw_str("B"),
-    repeater_cfg_rssi_C=150, repeater_cfg_blip_rssi_C=cw_str(""),
+    repeater_cfg_rssi_C=150, repeater_cfg_blip_rssi_C=cw_str(""), repeater_cfg_TOPEN=w(60),
 ) + open_by_tone() + (
     blip("plain blip") +
     blip("link blip", ("repeater_ptt_seen", 1)) +
@@ -165,16 +191,20 @@ SCN_BLIPS = setup(
     blip("bongo below A", ("repeater_sig", 20)) +
     blip("musical", ("repeater_cfg_rssi_bongos", 0), ("repeater_cfg_musical_blips", 1),
          ("repeater_cfg_blip", bytes([0, 5, 10, 24, 25, 30, 0xFF, 0xFF]))) +
-    blip("carrier pre-empts blip", ("repeater_cfg_musical_blips", 0),
-         ("repeater_cfg_blip", cw_str("TTTT"))) +
-    [CARRIER, ("run", 0.3), NO_CARRIER, ("run", 0.45), ("tones", "blip starts", 0.12),
-     CARRIER, ("tones", "pre-empted", 0.6), NO_CARRIER, ("run", 0.5)] + at("after pre-empt"))
+    # pre-emption: at 60 CPM the squelch opens early in the first dash (the
+    # dash runs out on its own, not as the rest of the message would), not
+    # near a slot edge where the builds' few ms differ
+    [("poke", "repeater_cfg_musical_blips", 0), ("poke", "repeater_cfg_blip", cw_str("TTTT")),
+     ("poke", "cfg_cw_speed", 60),
+     CARRIER, ("run", 0.3), NO_CARRIER, ("run", 0.62), CARRIER] +
+    trace("pre-empted", marker_tone, 0.8) + [NO_CARRIER, ("run", 1.0)] + at("after pre-empt"))
 
-SCN_ALERTS_MPRS = setup(
+def alerts_mprs(mprs_id):
+    return setup(
     cfg_temperature_limit_hot=100, cfg_temperature_limit_cold=30, cfg_rpm_limit=10,
     repeater_cfg_msg_hot_alert=cw_str("H"), repeater_cfg_msg_cold_alert=cw_str("C"),
     repeater_cfg_msg_ant_bad=cw_str("A"),
-    repeater_cfg_mprs_id=0x0F, cfg_report_type=0, cfg_mprs_callsign=b"OH3RPT\xff\xff",
+    repeater_cfg_mprs_id=mprs_id, cfg_report_type=0, cfg_mprs_callsign=b"OH3RPT\xff\xff",
     repeater_cfg_TID=w(2), repeater_cfg_TOPEN=w(8),
 ) + [("adc", AD_TP4, 50), ("adc", AD_RPM, 200)] + [
     TONE, CARRIER, ("run", 0.4), NO_TONE, NO_CARRIER, ("tones", "greet with alerts", 2.5)] + at("open") + [
@@ -182,6 +212,16 @@ SCN_ALERTS_MPRS = setup(
     ("adc", AD_TP4, 60), ("adc", AD_RPM, 0),
     ("poke", "repeater_req", ord("#")), ("tones", "report + mprs", 1.5)] + at("report") + [
     ("run", 3.5)] + at("closing") + [("tones", "bye with alerts", 4.0)] + at("closed")
+
+
+def mic(afsrc):
+    """An over with the handset PTT held in the middle: where /MIC routes
+    the audio (OUT0 MICM, compared at the checks)."""
+    return setup(repeater_cfg_afsrc=afsrc) + open_by_tone() + [
+        CARRIER, ("run", 0.3)] + at("active") + [
+        ("ptt", True), ("run", 0.2)] + at("active, ptt") + [
+        ("ptt", False), ("run", 0.2), NO_CARRIER, ("run", 0.1)] + at("open") + [
+        ("run", 1.0)] + at("after blip")
 
 
 def ctcss(when):
@@ -217,7 +257,20 @@ class RepeaterDiff(unittest.TestCase):
         self.diff(SCN_BLIPS)
 
     def test_alerts_and_mprs_id(self):
-        self.diff(SCN_ALERTS_MPRS)
+        for mprs_id in (0x05, 0x0A):        # greet+bye, during+report
+            with self.subTest(mprs_id=mprs_id):
+                self.diff(alerts_mprs(mprs_id))
+
+    def test_empty_bye(self):
+        self.diff(SCN_EMPTY_BYE)
+
+    def test_ctcss_custom_epilog(self):
+        self.diff(SCN_CTCSS_CUSTOM_EPILOG)
+
+    def test_mic_routing(self):
+        for afsrc in (0, 1, 2):
+            with self.subTest(afsrc=afsrc):
+                self.diff(mic(afsrc))
 
     def test_ctcss_output_when(self):
         for when in (1, 2, 4):

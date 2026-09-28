@@ -39,6 +39,10 @@ A scenario is a list of steps, each a tuple `(kind, *args)`:
                                    durations within the timing tolerance;
                                    one-sample runs are folded into the run
                                    before (half-loaded 8254 counts)
+    ("trace", label, fn, seconds)  sample fn(radio) every TRACE_STEP_S for
+                                   `seconds` and compare the sequences of
+                                   values; when each change happens may
+                                   differ by the timing tolerance
     ("probe", label, fn)           compare fn(radio) of both sides (state no
                                    display/NV/latch shows, e.g. a state
                                    machine's state resolved per build)
@@ -369,6 +373,29 @@ def _diff_tones(label, a, b, tolerance_s):
     return [] if same else ["%s: tones differ:\n  stock %s\n  cand  %s" % (label, fmt(a), fmt(b))]
 
 
+TRACE_STEP_S = 0.005
+
+
+def _trace(radio, fn, seconds):
+    changes = []
+    for i in range(int(round(seconds / TRACE_STEP_S))):
+        radio.run(TRACE_STEP_S)
+        v = fn(radio)
+        if not changes or changes[-1][1] != v:
+            changes.append(((i + 1) * TRACE_STEP_S, v))
+    return changes
+
+
+def _diff_trace(label, a, b, tolerance_s):
+    same = len(a) == len(b) and all(
+        va == vb and abs(ta - tb) <= tolerance_s + TRACE_STEP_S
+        for (ta, va), (tb, vb) in zip(a, b))
+    if same:
+        return []
+    fmt = lambda c: " ".join("%.3f:%r" % x for x in c)  # noqa: E731
+    return ["%s: trace differs:\n  stock %s\n  cand  %s" % (label, fmt(a), fmt(b))]
+
+
 def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
              stock_kw=None, cand_kw=None, **radio_kw):
     """Run `scenario` against the stock build (`stock = (rom, lst)`) and
@@ -408,6 +435,10 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
         if kind == "tones":
             runs = {side: _tone_runs(radios[side], step[2]) for side in radios}
             diffs += _diff_tones(step[1], runs["stock"], runs["cand"], tolerance_s)
+            continue
+        if kind == "trace":
+            tr = {side: _trace(radios[side], step[2], step[3]) for side in radios}
+            diffs += _diff_trace(step[1], tr["stock"], tr["cand"], tolerance_s)
             continue
         if kind == "probe":
             v = {side: step[2](radios[side]) for side in radios}

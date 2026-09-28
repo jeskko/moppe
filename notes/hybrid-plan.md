@@ -12,25 +12,25 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 ## Start here (next session, written 2026-09-28)
 
 **State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
-1 = EPROM0 chip 0xC000 (menu, APRS/GPS, repeater/CW, and in the asm build
-the FSK packets; `C=1`: **2001 bytes free**, asm build 785), 2 = EPROM0
-chip 0x8000 (`C=1`: `c/fsk.c`, 1688 bytes; **~14.7 KB free**). Phase 4 in
-`make C=1`: `c/squelch_crc.c`, `timers.c`, `keys.c`, `display.c`,
-`freq.c` in fixed ROM, `fsk.c` in bank 2 (see "Done: FSK packet layer in
-C, bank 2" under Phase 4); fixed ROM ends at ~0x46F0 (~14.6 KB free). 157
-tests pass on both builds; `make -C firmware verify` still byte-identical
-for the release reference.
+1 = EPROM0 chip 0xC000 (menu, APRS/GPS; in the asm build also the FSK
+packets and repeater/CW; `C=1`: **3882 bytes free**, asm build 834), 2 =
+EPROM0 chip 0x8000 (`C=1`: `c/fsk.c` + `c/rptr.c`, 3857 bytes; **~12.5 KB
+free**). Phase 4 in `make C=1`: `c/squelch_crc.c`, `timers.c`, `keys.c`,
+`display.c`, `freq.c` in fixed ROM, `fsk.c`, `rptr.c` in bank 2 (see
+"Done: ... bank 2" under Phase 4); fixed ROM ends at ~0x4756 (~14.5 KB
+free). 173 tests pass on both builds; `make -C firmware verify` still
+byte-identical for the release reference.
 
-**Next task: the next bank-1 module to C in bank 2**, the same way as
-`fsk.c`. Candidates: the repeater state machine / CW (1.9 KB asm,
-`test_scan_rptr.py`, `BankDuty` guards), APRS/MPRS/GPS (4 KB), then the
-menu engine (8 KB, mostly REC tables; the tables could stay asm data in
-bank 1 if the engine that reads them stays there too). Per module: tests
-first, `#pragma bank 2`, entry points as plain `void f(void)` behind
-`far_X: call bank2_call / .dw _X` stubs under `#ifdef C_MODULES`,
-register interfaces through fixed-ROM shims, bank-1 data it reads moved
-out of bank 1 (link.py refuses bank-1 references from bank-2 C), a
-mutation run.
+**Next task: APRS/MPRS/GPS to C in bank 2** (4 KB asm; `test_fsk.py`
+MPRS receive, `test_signalling.py` GPS/APRS; widen the net first:
+MIC-E, locator maths edge cases, APRS formats), then the menu engine (8 KB,
+mostly REC tables; the tables could stay asm data in bank 1 if the engine
+that reads them stays there too). Per module: tests first (reference =
+the asm build when a fixed bug makes the release differ), `#pragma bank
+2`, entry points as plain `void f(void)` behind `far_X: call bank2_call /
+.dw _X` stubs under `#ifdef C_MODULES`, register interfaces through
+fixed-ROM shims, bank-1 data it reads moved out of bank 1 (link.py
+refuses bank-1 references from bank-2 C), a mutation run.
 Other open items: scanner to C (coroutine → state machine); the real-board
 bench test (EPROM programmer); `notes/hardware.md` open questions (IC27,
 EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
@@ -43,6 +43,10 @@ EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
   when it has work (see `far_repeater_run`: once per systick), and long
   busy-waits run in bank 0 (`bank0_call`); a bank hides the multiboard.
   `test_banking.BankDuty` measures it.
+- 16-bit variables an interrupt changes (`repeater_timer_*`): SDCC splits
+  volatile 16-bit loads/stores into bytes, so an interrupt between them
+  can see or leave a half value (0x0100 read as 0). Access them through
+  one-instruction shims (`ld hl, (nn)` / `ld (nn), hl`).
 - C: no stack frames where asm callees may clobber IX (statics instead);
   interrupt-context C: no IX/IY at all; asm results in flags need a value in
   A (or a shim); keep the asm's evaluation order for volatile/hardware
@@ -510,12 +514,51 @@ first, port, differential test against stock, size check, commit.
   link.py now refuses a C module referencing a symbol in a bank it does
   not run in (`ADDRESS_ONLY` lists the menu routine addresses `fsk.c`
   only compares); checked that it fires.
+- **Done: repeater state machine, CW and note sequences in C, bank 2**
+  (2026-09-28), `c/rptr.c`: `repeater_run` (suspend, /LOCAL, #x
+  commands, state dispatch), the nine states, messages (IDs with alerts
+  and MPRS bits, blips of every kind, UR 5x S-report, roger/QRT/hog),
+  the CW and note engine. Stays fixed asm: what interrupts reach (command
+  parsers, timer steps, suspend toggle), `repeater_init`, `cw_calc_delays`
+  / `cw_calc_blip` (moved to fixed ROM in both builds: `div248_full`
+  semantics for any input), the bank-0 waits. **States:** the asm stored
+  the code address after `call repeater_setstate`; C keeps a state number
+  in the low byte of `repeater_state` (0 = boot not entered; fixed
+  `repeater_init` stores it), entry actions then the poll at once, and
+  `go()` loops rather than nesting calls (the asm jumped). **CW
+  pre-emption:** the asm's SP longjmp became a return flag passed up
+  through `cw_slots` → `cw_chr` → `send_cw`/`send_cw_chr`/`send_notes`
+  (which skip their closing `silence_timer1`, as the longjmp did).
+  Shims: `rptr_tone` (start_marker_tone takes HL, D), `rptr_calc_blip`
+  (C), the timer accessors (see the 16-bit rule). `c_bss` 64 → 128 bytes.
+  2169 bytes of C for ~1.9 KB of asm. `test_scan_rptr.repeater_state_name`
+  reads the state number in C builds.
+  **Two v3_Z bugs fixed first** (in the asm, separate commits, see
+  "Firmware behaviour the tests pinned down"): CTCSS cut after every CW
+  message, and the CW slot/pitch overflow in `div248`.
+  **Safety net:** `test_rptr_diff.py` (13 tests, asm build vs `C=1`):
+  every state transition, the commands and S-reports, /LOCAL, suspend,
+  all blip kinds, alerts, MPRS ID bits, CTCSS output modes incl. the
+  CUSTOM epilog, MIC routing, access methods, empty bye, pre-emption.
+  difftest gained `tones` (8254 pitch runs), `probe` (per-build RAM/state)
+  and `trace` (value changes over time, change times within the timing
+  tolerance) steps. Mutation run: 27 mutants, 26 caught, 1 equivalent
+  (the pattern of a character no message sends); the first round had 7
+  survivors, each a scenario gap (report windows shorter than a report,
+  so the S digit was never compared; `TOPEN` running out mid-scenario;
+  all MPRS bits set at once; no reversed/bypassed MIC; pre-emption and
+  the CUSTOM epilog only visible between checkpoints). Scenario lessons:
+  checkpoints must not land on CW element edges (OUT0's tone bits at an
+  arbitrary instant), and pre-emption must happen mid-element, not near
+  a slot edge where the builds' few ms differ.
+  `test_banking.BankedC.test_repeater_runs_in_bank2`: breakpoint in
+  `_repeater_run` with bank 2 selected.
 - **What is left, and what gates it:**
   - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The remaining bank-1 modules (menu, APRS/GPS, repeater/CW) go to C
+  - The remaining bank-1 modules (menu, APRS/GPS) go to C
     in bank 2 like `fsk.c` (~14.7 KB free there). The real-board bench
     test still has to confirm both window pages.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.

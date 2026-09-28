@@ -6856,6 +6856,56 @@ cw_wait_tone:
 
 ;----------------------------------------------------------------------
 
+;  CW timing from the configuration (fixed ROM: the repeater code in bank 1,
+;  and c/rptr.c in bank 2, call them).
+;
+; ______________________________________________  46 slots aka dit-times
+; X XXX XXX X __X XXX __X XXX X __X X   X X X __ 
+; P             A       R         I     S
+; 46 slots / 5 chrs;  9.2  slots/chr.
+; N chrs/min; N chrs / 60 sec
+; 60 / ( 9.2 * N )  sec/slot
+; 100 ticks/sec
+; 652/N  ticks/slot
+
+cw_calc_delays:
+
+	; slot duration in ticks
+	; 652 ticks / sec
+	;  40 CPM : 16 ticks / slot
+	; 200 CPM :  3 ticks / slot
+
+	ld a, (cfg_cw_speed)
+	cp #40
+	jr nc, 1f
+	ld a, #40              ; be reasonable, we'd be here until next week
+1:
+	ld c, a
+	imm_ahl(652)          ; see above for maths. CPM into slept ticks
+	call div248_full
+	ld a, l
+	ld (cw_slot_ticks), a
+
+	; timer count for pitch
+
+	ld a, (cfg_cw_pitch)   ; 10 Hz units 00...2550 (cSEC in fact)
+	ld c, a
+	imm_ahl(403200)        ; timer CLK / 10
+	call div248_full
+	ld (cw_pitch_cnt), hl
+
+	ret
+
+cw_calc_blip:              ; C-reg has 10 Hz units 00...2550 (cSEC in fact)
+
+	imm_ahl(403200)        ; timer CLK / 10
+	call div248_full       ; /= C-reg
+	ld (cw_pitch_cnt), hl
+
+	ret
+
+;----------------------------------------------------------------------
+
 step_txpwr_up:
 	ld a, (cfg_txpwr)
 	add a, #26
@@ -12060,7 +12110,11 @@ repeater_init:
 	ld (repeater_req), a
 	ld (squelch_tightening), a
 	ld (txpwr_increment), a
+#ifdef C_MODULES
+	ld hl, #0			; c/rptr.c: ST_BOOT_NEW
+#else
 	ld hl, #repeater_boot
+#endif
 	ld (repeater_state), hl
 	ret
 
@@ -12079,10 +12133,42 @@ far_repeater_run:
 	cp (hl)
 	ret z                       ; no systick since the last run
 	ld (hl), a
+#ifdef C_MODULES
+	call bank2_call
+	.dw _repeater_run
+far_repeater_operator_ptt:	call bank2_call
+	.dw _repeater_operator_ptt
+
+;  c/rptr.c shims
+rptr_tone:			; A = ticks, DE = timer count
+	ex de, hl
+	ld d, a
+	jp start_marker_tone
+rptr_calc_blip:			; A = pitch (10 Hz)
+	ld c, a
+	jp cw_calc_blip
+rptr_other_running:		; A != 0: repeater_timer_other running
+	ld hl, (repeater_timer_other)
+	ld a, h
+	or l
+	ret
+rptr_id_running:
+	ld hl, (repeater_timer_ID)
+	ld a, h
+	or l
+	ret
+rptr_set_other:			; HL (one store: the timer steps in interrupts)
+	ld (repeater_timer_other), hl
+	ret
+rptr_set_id:
+	ld (repeater_timer_ID), hl
+	ret
+#else
 	call bank1_call
 	.dw repeater_run
 far_repeater_operator_ptt:	call bank1_call
 	.dw repeater_operator_ptt
+#endif
 
 ;
 ;  received dtmf string at hl (h fixed, l wraps over)
@@ -18835,6 +18921,7 @@ build_call_packet_buffer:
 #endif /* C_MODULES */
 
 ;----- Repeater main state machine (was fixed ROM) -----
+#ifndef C_MODULES	/* c/rptr.c, bank 2 */
 
 repeater_halt:
 	call repeater_aoff
@@ -19802,52 +19889,6 @@ cw_msg_qrt:		.ascii "QRT"
 ; tabled bits 1=dit, 0=dash. right aligned into byte.
 ; unused bits contain first one 1, then zeroes (0b10000000 terminate).
 ;
-; ______________________________________________  46 slots aka dit-times
-; X XXX XXX X __X XXX __X XXX X __X X   X X X __ 
-; P             A       R         I     S
-; 46 slots / 5 chrs;  9.2  slots/chr.
-; N chrs/min; N chrs / 60 sec
-; 60 / ( 9.2 * N )  sec/slot
-; 100 ticks/sec
-; 652/N  ticks/slot
-
-cw_calc_delays:
-
-	; slot duration in ticks
-	; 652 ticks / sec
-	;  40 CPM : 16 ticks / slot
-	; 200 CPM :  3 ticks / slot
-
-	ld a, (cfg_cw_speed)
-	cp #40
-	jr nc, 1f
-	ld a, #40              ; be reasonable, we'd be here until next week
-1:
-	ld c, a
-	imm_ahl(652)          ; see above for maths. CPM into slept ticks
-	call div248_full
-	ld a, l
-	ld (cw_slot_ticks), a
-
-	; timer count for pitch
-
-	ld a, (cfg_cw_pitch)   ; 10 Hz units 00...2550 (cSEC in fact)
-	ld c, a
-	imm_ahl(403200)        ; timer CLK / 10
-	call div248_full
-	ld (cw_pitch_cnt), hl
-
-	ret
-
-cw_calc_blip:              ; C-reg has 10 Hz units 00...2550 (cSEC in fact)
-
-	imm_ahl(403200)        ; timer CLK / 10
-	call div248_full       ; /= C-reg
-	ld (cw_pitch_cnt), hl
-
-	ret
-
-
 send_cw_prolog:
 
 	ld h, #0                  ; maybe do ctcss during blips (v3_Z had
@@ -20127,6 +20168,7 @@ cw_tab:
 	.db 0b00011000 ; oljy
 
 	.org cw_tab + 128
+#endif /* C_MODULES */
 
 ;======================================================================
 
@@ -20948,7 +20990,7 @@ bank_test_msg:	BUF(10)
 #endif
 
 #ifdef C_MODULES
-C_BSS_SIZE = 64
+C_BSS_SIZE = 128
 c_bss:	.ds C_BSS_SIZE	; the C modules' _DATA area is linked here (tools/link.py)
 c_bss_end:
 #endif
