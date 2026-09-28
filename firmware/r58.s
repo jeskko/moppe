@@ -16,6 +16,8 @@
 #define keycheck		_keycheck
 #define dokey_not_menu		_dokey_not_menu
 #define handle_key_during_tx	_handle_key_during_tx
+#define draw_upper_row		_draw_upper_row
+#define draw_lower_row		_draw_lower_row
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -7783,6 +7785,7 @@ draw_dpx_ind:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES
 draw_upper_row:
 
 	ld de, #CU53AN_segs_u_digit_5
@@ -7980,6 +7983,8 @@ draw_memory_info:
 	ld a, b
 	jp dpydig				; memory status
 
+#endif /* C_MODULES */
+
 set_dpx_ind_from_rx_tx_freq:
 	push de
 	call compare_tx_rx_freq
@@ -8055,6 +8060,7 @@ feedback_error:
 	.ascii " Error    "
 
 
+#ifndef C_MODULES
 draw_adjust_feedback:
 	ld b, #10
 	ld a, (cu_is_alfa)
@@ -8259,6 +8265,8 @@ draw_call_notice:
 	call sput
 	.asciz " CCIr"
 	ret
+
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -12430,6 +12438,37 @@ draw_word:
 	call dpyhexzb
 
 	ret
+
+#ifdef C_MODULES
+;----------------------------------------------------------------------
+;
+;  For c/display.c: the display cursor lives in dpy_cursor instead of DE.
+;  Each shim loads DE, calls the primitive (argument in A or HL as
+;  --sdcccall 1 passes it) and stores the advanced cursor.
+
+#define DPY_SHIM(name, fn) \
+name: @ ld de, (dpy_cursor) @ call fn @ ld (dpy_cursor), de @ ret
+
+	DPY_SHIM(dpy_ch, dpydig)
+	DPY_SHIM(dpy_div9, dpydiv9)
+	DPY_SHIM(dpy_div99, dpydiv99)
+	DPY_SHIM(dpy_val99, dpyval99)
+	DPY_SHIM(dpy_squelch_ind, draw_squelch_ind)
+	DPY_SHIM(dpy_menu_title, far_draw_menu_title)
+	DPY_SHIM(dpy_menu_lower_row, far_draw_menu_lower_row)
+
+dpy_freq:			; HL -> 24-bit value: draw_long of it
+	ld e, (hl)
+	inc hl
+	ld d, (hl)
+	inc hl
+	ld a, (hl)
+	ex de, hl		; AHL
+	ld de, (dpy_cursor)
+	call draw_long
+	ld (dpy_cursor), de
+	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -20720,6 +20759,7 @@ ctcss_idle_sample: BYTE	; stays 0: "no signal" while banked
 bank_hl:	WORD	; bank1_call temporaries
 bank_to:	WORD	; target bank (low byte)
 repeater_tick:	BYTE	; sec100 at the last far_repeater_run
+dpy_cursor:	WORD	; c/display.c: display cursor (DE in the assembler)
 bank_fn:	WORD
 bank_af:	WORD
 #ifdef BANK_TEST
