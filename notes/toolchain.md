@@ -82,6 +82,10 @@ overlap bank 1 in the .ihx (extended linear address records). Labels are
 ihx2bin maps 0x28000-0x2BFFF to file 0x8000-0xBFFF. Stubs: `far2_X: call
 bank2_call / .dw X`. Banked C (`#pragma bank N`, area `_CODE_N`) is placed
 by link.py after `bankN_end`; the emulator masks bank-2 symbols to 16 bits.
+link.py fails when a C module references a symbol inside a bank it does
+not run in (bank-2 C → bank 1, fixed C → either bank); calls between banks
+go through the fixed-ROM `far_*` stubs. `ADDRESS_ONLY` in link.py lists
+symbols C only compares as numbers.
 
 ### C modules (`make C=1`)
 

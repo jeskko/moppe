@@ -5696,7 +5696,50 @@ store_next_6bits:
 	inc de
 	ret
 
-; FSK packet dispatch, remote config and MPRS sending lives in bank 1 (search "BANK 1").
+; FSK packet dispatch, remote config and MPRS sending lives in bank 1
+; (search "BANK 1"), with C_MODULES in c/fsk.c, bank 2.
+#ifdef C_MODULES
+far_packet_for_whom:	call bank2_call
+	.dw _packet_for_whom
+far_send_remote_config_packets:	call bank2_call
+	.dw _send_remote_config_packets
+far_send_mprs_report_packet_maybe:	call bank2_call
+	.dw _send_mprs_report_packet_maybe
+far_send_mprs_report_packet:	call bank2_call
+	.dw _send_mprs_report_packet
+far_send_mprs_report_packet_1:	call bank2_call
+	.dw _send_mprs_report_packet_1
+far_send_call_packet:	call bank2_call
+	.dw _send_call_packet
+
+;  c/fsk.c shims: register interfaces as --sdcccall 1 passes them
+fsk_putchar:			; A: MBUS putchar takes C
+	ld c, a
+	jp putchar
+fsk_send:			; A: send_packet_buffer takes the length in B
+	ld b, a
+	jp send_packet_buffer
+fsk_tx_on_failed:		; A = 0xFF if tx_on returned carry
+	call tx_on
+	sbc a, a
+	ret
+fsk_mprs_not_yet:		; A = 0xFF if check_for_mprs_timer says not yet
+	call check_for_mprs_timer
+	sbc a, a
+	ret
+fsk_menu_ptr:			; DE = value pointer of the current menu record
+	ld ix, (menu_ptr)
+	call far_load_menu_ptr
+	ex de, hl
+	ret
+fsk_handle_mprs:		; A = packet_good: HL -> the packet in fsk_history
+	ld l, a
+	ld h, #HI(fsk_history)
+	jp far_handle_mprs_packets
+fsk_remote_config_execute:	; HL = ptr, DE = data; it takes them swapped
+	ex de, hl
+	jp far_remote_config_execute
+#else
 far_packet_for_whom:	call bank1_call
 	.dw packet_for_whom
 far_send_remote_config_packets:	call bank1_call
@@ -5707,6 +5750,7 @@ far_send_mprs_report_packet:	call bank1_call
 	.dw send_mprs_report_packet
 far_send_mprs_report_packet_1:	call bank1_call
 	.dw send_mprs_report_packet_1
+#endif
 
 mute_fsk_at_sync_maybe:
 	ld a, (cfg_fsk_silencer)
@@ -5761,8 +5805,10 @@ far_send_aprs_report_packet:	call bank1_call
 	.dw send_aprs_report_packet
 
 ; Config packet filling and the call packet lives in bank 1 (search "BANK 1").
+#ifndef C_MODULES
 far_send_call_packet:	call bank1_call
 	.dw send_call_packet
+#endif
 
 ;----------------------------------------------------------------------
 ;
@@ -17859,6 +17905,7 @@ stuffed_8bits:
 ; ix points to correct position in packet, 6 byte buffer for packed callsign
 ; hl points to string to pack into packet.
 ;
+#ifndef C_MODULES	/* c/fsk.c */
 packet_callsign_pack:
 
 	call 1f
@@ -17902,6 +17949,8 @@ packet_callsign_pack:
 	inc ix
 	inc ix
 	ret
+
+#endif /* C_MODULES */
 
 ;
 ;  ix points to packed callsign in packet buffer
@@ -18003,6 +18052,7 @@ mprs_degmin_pack:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES	/* c/fsk.c, bank 2 */
 packet_for_whom:
 	ld a, (packet_good)
 	ld l, a
@@ -18030,7 +18080,8 @@ handle_relay_packets:
 	ld b, #12
 1:
 	ld c, (hl)
-	inc hl
+	inc l			; in the ring (v3_Z: inc hl, sent gps_history
+				; bytes for a packet across its end)
 	push hl
 	call putchar
 	pop hl
@@ -18750,6 +18801,8 @@ build_call_packet_buffer:
 1:
 	ret
 
+
+#endif /* C_MODULES */
 
 ;----- Repeater main state machine (was fixed ROM) -----
 

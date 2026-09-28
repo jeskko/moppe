@@ -13,7 +13,11 @@ bank1_end (window addresses), _CODE_2 at bank2_end (virtual 0x28000 +
 offset, see ihx2bin.py).  After linking, the map is checked: _CODE must
 end by 0x8000 (the fixed ROM), _CODE_N by the end of its bank, _DATA must
 fit its block, and every other relocatable area must be empty (C code must
-not use initialised data, which would need a startup copy).
+not use initialised data, which would need a startup copy).  And no C
+module may reference a symbol in a bank it does not run in (a bank-2
+module cannot see bank 1, fixed code sees neither): calls go through the
+fixed-ROM far_* stubs.  ADDRESS_ONLY lists the exceptions, symbols C only
+compares as numbers.
 
 Writes <out>.ihx and <out>.map (sdldz80 -m -w).
 """
@@ -59,6 +63,43 @@ def map_areas(path):
         if m:
             areas[m.group(1)] = (int(m.group(2), 16), int(m.group(3), 16), m.group(4))
     return areas
+
+
+# bank windows as linked: bank 1 at the window addresses, bank 2 virtual
+WINDOWS = {"_CODE_1": (0x8000, 0xC000), "_CODE_2": (0x28000, 0x2C000)}
+# C compares these with pointers and never reads or calls them
+ADDRESS_ONLY = {"_menu_rfc_change", "_menu_sql_change", "_menu_sqB_change"}
+
+
+def map_symbols(path):
+    rx = re.compile(r"^\s+([0-9A-F]{8})\s+(\S+)")
+    return {m.group(2): int(m.group(1), 16)
+            for m in map(rx.match, open(path)) if m}
+
+
+def rel_refs(path):
+    """(code areas with bytes, symbols referenced) of a .rel"""
+    areas, refs = set(), set()
+    for line in open(path, errors="replace"):
+        m = re.match(r"A (\S+) size ([0-9A-Fa-f]+)", line)
+        if m and int(m.group(2), 16) and m.group(1).startswith("_CODE"):
+            areas.add(m.group(1))
+        m = re.match(r"S (\S+) Ref", line)
+        if m:
+            refs.add(m.group(1))
+    return areas, refs
+
+
+def cross_bank_refs(cmods, mapsyms):
+    bad = []
+    for path in cmods:
+        areas, refs = rel_refs(path)
+        for name in sorted(refs - ADDRESS_ONLY):
+            v = mapsyms.get(name)
+            for area, (lo, hi) in WINDOWS.items():
+                if v is not None and lo <= v < hi and area not in areas:
+                    bad.append("%s uses %s (0x%X, %s)" % (os.path.basename(path), name, v, area))
+    return bad
 
 
 def main():
@@ -113,6 +154,7 @@ def main():
                            % (size, syms["c_bss_end"] - syms["c_bss"]))
         else:
             bad.append("area %s is not empty (%d bytes)" % (name, size))
+    bad += cross_bank_refs(a.cmods, map_symbols(a.o + ".map"))
     if bad:
         sys.exit("link.py: " + "; ".join(bad))
 

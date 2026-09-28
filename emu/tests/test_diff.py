@@ -254,6 +254,91 @@ def _fsk_scenarios():
     ]
     return rx, tx
 
+def _fsk_edge_scenarios():
+    """The FSK layer's less travelled paths (c/fsk.c port): special config
+    pointers, replies while transmitting, packets across the end of the
+    fsk_history ring, call packets of every digit count and the 0* resend,
+    TX refused, 8/9-digit config entry, MPRS on demand, W/S positions and
+    symbol bits."""
+    from r58emu import load_symbols
+    from test_fsk import with_crc, REMOTE_ID, PASSWD
+    from test_signalling import nmea
+    sym = load_symbols(STOCK_LST)
+    a = sym["cfg_remote_dpy_secs"]
+    ptr = bytes([a & 0xFF, a >> 8])
+    setup = [
+        ("poke", "cfg_mycall_1", bytes([1, 2, 3, 4, 5, 0xFF, 0xFF, 0xFF])),
+        ("poke", "cfg_remote_id", REMOTE_ID),
+        ("poke", "cfg_remote_passwd", PASSWD),
+        ("poke", "cfg_remote_dpy_secs", 5),
+    ]
+    v = sym["version"]
+    rx = [("boot", 2.5), *setup, ("poke", "cfg_squelch_level", 77), *_enter("433500")]
+    # VERSION, RFC, SQL, SQL BI, other; each after a reply of text (the
+    # version string, queried by its address) so no byte is left 0xFF
+    for special in range(5):
+        rx += [("modem_rx", with_crc(bytes([0xAC]) + REMOTE_ID + bytes([v & 0xFF, v >> 8, 0xFF]))),
+               ("run", 1.0),
+               ("modem_rx", with_crc(bytes([0xAC]) + REMOTE_ID + bytes([special, 0, 0xFF]))),
+               ("run", 1.0), ("check", "query special %d" % special)]
+    rx += [
+        ("ptt", True), ("run", 0.3),
+        ("modem_rx", with_crc(bytes([0xAC]) + REMOTE_ID + ptr + b"\xFF")), ("run", 1.0),
+        ("check", "query while transmitting"),
+        ("ptt", False), ("run", 1.0),
+        ("check", "after ptt"),
+        ("poke", "fsk_hist_idx", 0xF9),
+        ("modem_rx", with_crc(bytes([0xAC]) + REMOTE_ID + ptr + b"\xFF")), ("run", 1.0),
+        ("check", "query across ring end"),
+        ("poke", "fsk_hist_idx", 0xF4),
+        ("modem_rx", with_crc(bytes([0xEC]) + REMOTE_ID + ptr + bytes([3, 4]) + b"\xFF" * 6, PASSWD)),
+        ("run", 1.0),
+        ("check", "enter across ring end"),
+        ("poke", "fsk_hist_idx", 0xFB),
+        ("modem_rx", with_crc(b"\xDC" + b"REMOTE 1" + b"\xFF" * 4)), ("run", 0.3),
+        ("check", "display config across ring end"), ("run", 6.0),
+        ("poke", "fsk_hist_idx", 0xFA),
+        ("modem_rx", with_crc([0xC9, 0x87, 0x65, 0x12, 0x34, 0x5F])), ("run", 0.5),
+        ("check", "call across ring end"),
+    ]
+    tx = [("boot", 2.5), *setup, *_enter("433500")]
+    for digits in ("1234", "7", "0", "1234567", "12345678"):
+        tx += [("keys", digits), ("press", "*"), ("run", 1.5),
+               ("check", "call %s*" % digits), ("run", 3.0)]
+    tx += [
+        ("poke", "cfg_tx_tot_minutes", 0),
+        ("keys", "55"), ("press", "*"), ("run", 1.0),
+        ("check", "call with TX refused"),
+        ("poke", "cfg_tx_tot_minutes", 10),
+        ("press", "E"), ("run", 0.3),
+    ]
+    for digits in ("12345678", "123456789"):
+        tx += [("keys", digits), ("run", 0.2),
+               ("ptt", True), ("run", 0.3), ("ptt", False), ("run", 1.0),
+               ("check", "config enter %d digits" % len(digits))]
+    tx += [
+        ("press", "E"), ("run", 0.3),
+        ("poke", "cfg_report_type", 0),
+        ("poke", "cfg_mprs_callsign", b"OH3XYZ\xff\xff"),
+        ("poke", "cfg_mprs_ssid", 11),
+        ("poke", "cfg_mprs_symbol", 0x0F),
+        ("serial_rx", 0, nmea("GPRMC,123519,A,3352.08,S,15112.34,W,000.0,000.0,280926,,")),
+        ("run", 0.5),
+        ("poke", "cfg_keyup_mprs", 1),
+        ("ptt", True), ("run", 0.5), ("ptt", False), ("run", 1.5),
+        ("check", "mprs all, S/W"),
+        ("poke", "cfg_keyup_mprs", 2),
+        ("poke", "cfg_mprs_seconds", bytes([100, 0])),
+        ("poke", "mprs_report_timer", bytes([10, 0])),
+        ("ptt", True), ("run", 0.5), ("ptt", False), ("run", 1.5),
+        ("check", "mprs on demand, not yet"),
+        ("poke", "mprs_report_timer", bytes([200, 0])),
+        ("ptt", True), ("run", 0.5), ("ptt", False), ("run", 1.5),
+        ("check", "mprs on demand, due"),
+    ]
+    return rx, tx
+
+
 class DiffTest(unittest.TestCase):
     """Stock (firmware/build) vs. candidate (default firmware/build-c,
     C=1) on the same scenario. An empty `run_diff()` result means the two
@@ -345,6 +430,12 @@ class DiffTest(unittest.TestCase):
 
     def test_fsk_send(self):
         self.diff(_fsk_scenarios()[1])
+
+    def test_fsk_edges_receive(self):
+        self.diff(_fsk_edge_scenarios()[0])
+
+    def test_fsk_edges_send(self):
+        self.diff(_fsk_edge_scenarios()[1])
 
     def test_fsk_p8n(self):
         rx, tx = _fsk_scenarios()

@@ -12,27 +12,25 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 ## Start here (next session, written 2026-09-28)
 
 **State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),
-1 = EPROM0 chip 0xC000 (menu, APRS/GPS, FSK packets, repeater/CW; **785
-bytes free**), 2 = EPROM0 chip 0x8000 (**wired for code, still empty,
-16 KB**, both cards; see "Bank 2 wiring" under Phase 3). Phase 4 in
+1 = EPROM0 chip 0xC000 (menu, APRS/GPS, repeater/CW, and in the asm build
+the FSK packets; `C=1`: **2001 bytes free**, asm build 785), 2 = EPROM0
+chip 0x8000 (`C=1`: `c/fsk.c`, 1688 bytes; **~14.7 KB free**). Phase 4 in
 `make C=1`: `c/squelch_crc.c`, `timers.c`, `keys.c`, `display.c`,
-`freq.c`; fixed ROM ends at ~0x46CB (~14.6 KB free). 153 tests pass on
-both builds; `make -C firmware verify` still byte-identical for the
-release reference.
+`freq.c` in fixed ROM, `fsk.c` in bank 2 (see "Done: FSK packet layer in
+C, bank 2" under Phase 4); fixed ROM ends at ~0x46F0 (~14.6 KB free). 157
+tests pass on both builds; `make -C firmware verify` still byte-identical
+for the release reference.
 
-**Next task: use bank 2.** Either
-- banked C: a module with `#pragma bank 2` and `__banked` entry points
-  (SDCC puts it in `_CODE_2`, link.py places it after `bank2_end`; fixed
-  C calls it through `___sdcc_bcall_ehl`, asm through a `far2_X` stub or
-  `ld e, #2 / ld hl, #fn / call ___sdcc_bcall_ehl`). Port the bank-1
-  modules to C this way, moving what no longer fits in bank 1; or
-- asm: move a block into the BANK2 section (same procedure as bank 1,
-  stubs `far2_X: call bank2_call / .dw X`) if fixed-ROM space is wanted
-  first. Watch for arithmetic on bank-2 labels that is not a plain 16-bit
-  use: they are 0x28000 + offset (e.g. `x - 0x8000` is wrong there).
-Check `__banked` argument passing before the first port: a banked
-function takes its arguments on the stack (the bank byte sits between),
-not in registers as `--sdcccall 1` otherwise does.
+**Next task: the next bank-1 module to C in bank 2**, the same way as
+`fsk.c`. Candidates: the repeater state machine / CW (1.9 KB asm,
+`test_scan_rptr.py`, `BankDuty` guards), APRS/MPRS/GPS (4 KB), then the
+menu engine (8 KB, mostly REC tables; the tables could stay asm data in
+bank 1 if the engine that reads them stays there too). Per module: tests
+first, `#pragma bank 2`, entry points as plain `void f(void)` behind
+`far_X: call bank2_call / .dw _X` stubs under `#ifdef C_MODULES`,
+register interfaces through fixed-ROM shims, bank-1 data it reads moved
+out of bank 1 (link.py refuses bank-1 references from bank-2 C), a
+mutation run.
 Other open items: scanner to C (coroutine → state machine); the real-board
 bench test (EPROM programmer); `notes/hardware.md` open questions (IC27,
 EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency).
@@ -151,6 +149,13 @@ decided otherwise):
 - Lower colon flickered off in ~10 % of frames while transmitting in the
   menu (clear-then-set in each redraw). **Fixed 2026-09-28.**
 - CFG_EXE (type 10) is defined but no record uses it.
+- FSK relay (5x packet → MBUS) walked `fsk_history` with `inc hl`, so a
+  packet stored across the end of the ring was sent with the
+  `gps_history` bytes that follow it. **Fixed 2026-09-28** (obvious bug:
+  `inc l`, in asm and C); `test_fsk.test_relay_across_ring_end`.
+- MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
+  southern latitude is sent as northern. Kept (asm and C) until the MPRS
+  format is known; **open question**.
 - CFGSnd sent the last NV byte twice instead of the checksum
   (`all_config_send` computed it in A, `putchar` sends C), so CFGGEt
   refused a plain CFGSnd dump. **Fixed 2026-09-28** (user decision);
@@ -457,16 +462,44 @@ first, port, differential test against stock, size check, commit.
   (`test_freq.Pair`), each symbol resolved in its own build's map.
 - Size (`C=1`): C modules 0xD08 bytes; fixed ROM ends at ~0x46C1, ~14.7 KB
   free.
+- **Done: FSK packet layer in C, bank 2** (2026-09-28), `c/fsk.c`
+  (`#pragma bank 2`): receive dispatch `packet_for_whom` and its call/
+  display/config/relay handlers, config ask/enter/DC reply,
+  `send_remote_config_packets`, MPRS sending, the call packet. The
+  first banked C module. Entry points are plain `void f(void)` functions;
+  the six `far_*` stubs call `bank2_call` under `C_MODULES` (all callers
+  ignore returned registers). Bank-1 routines it uses go through their
+  existing `far_*` stubs, which return to bank 2 (`far_handle_mprs_packets`,
+  `far_send_aprs_report_packet`, `far_load_menu_ptr`,
+  `far_remote_config_execute`, `far_leaved_setup`). Shims in fixed ROM
+  (`fsk_*`) for register interfaces: `putchar` (C), `send_packet_buffer`
+  (B), `tx_on`/`check_for_mprs_timer` (carry → A), `load_menu_ptr` (IX
+  in, HL out), `handle_mprs_packets` (HL), `remote_config_execute` (DE/HL
+  swapped). Stays asm in bank 1: `packet_callsign_unpack`,
+  `mprs_degmin_pack` (the APRS code uses them; the C file has its own
+  degmin and callsign packing). `onesies` (0xFF padding) moved into the C
+  file: bank-1 data is invisible from bank 2. 1688 bytes of C for 1216 of
+  asm (1.4×). No IX/IY in the generated code (two first drafts had frames:
+  an argument kept across calls, a second argument on the stack).
+  Safety net: `test_fsk.py`/`test_remote_config.py` as before, plus
+  `test_diff` `test_fsk_edges_receive/send` (special config pointers,
+  reply while transmitting, packets across the ring end, call packets of
+  1/4/7/8 digits and the 0* resend, TX refused, 8/9-digit config entry,
+  MPRS on demand, S/W position, symbol bits) and
+  `test_banking.BankedC` (breakpoint in `_packet_for_whom`: bank 2
+  selected, back to 0). Mutation run: 15 mutants, 14 caught, 1 equivalent
+  (8 digits copied by either branch).
+  link.py now refuses a C module referencing a symbol in a bank it does
+  not run in (`ADDRESS_ONLY` lists the menu routine addresses `fsk.c`
+  only compares); checked that it fires.
 - **What is left, and what gates it:**
   - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
     coroutine through `scanner_state`: needs an explicit state machine),
     memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
     functions.
-  - The bank-1 modules (menu, APRS/GPS, FSK, repeater/CW) need room for C
-    in a bank: bank 1 has 785 bytes free and C is ~1.9× the asm. **Bank 2
-    (EPROM0 chip 0x8000, both cards) provides it**; it is wired (Phase 3,
-    "Bank 2 wiring": `#pragma bank 2`, `bank2_call` stubs). Still gated
-    on the bench test on a real board.
+  - The remaining bank-1 modules (menu, APRS/GPS, repeater/CW) go to C
+    in bank 2 like `fsk.c` (~14.7 KB free there). The real-board bench
+    test still has to confirm both window pages.
   `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
 
 ### Future: EPROM1

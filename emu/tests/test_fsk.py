@@ -162,6 +162,16 @@ class FskRx(RadioTest):
         mbus = bytes(e[2] for e in r.take_events("MBUS_TX"))
         self.assertEqual(mbus, bytes([5]) + bytes(range(1, 12)))
 
+    def test_relay_across_ring_end(self):
+        """A 5x packet stored across the end of the fsk_history ring is
+        relayed from the ring too (v3_Z sent the gps_history bytes that
+        follow the ring instead; fixed 2026-09-28)."""
+        r = self.boot()
+        r.poke("fsk_hist_idx", 0xF8)
+        self.rx(with_crc([0x51, 0x23, 0x45, 0x67, 0x89, 0xAB]), 0.5)
+        mbus = bytes(e[2] for e in r.take_events("MBUS_TX"))
+        self.assertEqual(mbus, bytes([5]) + bytes(range(1, 12)))
+
     def mprs_rx(self, card=P8E, mbus=0):
         self.card = card
         r = self.boot()

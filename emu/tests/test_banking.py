@@ -203,6 +203,36 @@ class BankedFirmware(unittest.TestCase):
             self.check_bank_call(card, 1, at=NEST_AT, spin_bank=2, a_back=0x11)
 
 
+FW_C = os.path.join(ROOT, "firmware", "build-c")
+
+
+@unittest.skipUnless(os.path.exists(os.path.join(FW_C, "r58.bin")), "run `make -C firmware C=1`")
+class BankedC(unittest.TestCase):
+    """C code in bank 2 (c/fsk.c, #pragma bank 2) runs with bank 2
+    selected, entered through a far_ stub, and returns to bank 0."""
+
+    def test_fsk_dispatch_runs_in_bank2(self):
+        sys.path.insert(0, os.path.dirname(__file__))
+        from test_radio import make_sane_nv
+        from test_fsk import with_crc
+        for card in (P8E, P8N):
+            r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
+                      card=card, nv=make_sane_nv(card))
+            r.run(2.5)
+            self.assertGreaterEqual(r.sym["_packet_for_whom"], 0x8000)
+            self.assertLess(r.sym["_packet_for_whom"], 0xC000)
+            r.breakpoint("_packet_for_whom")
+            r.modem_rx(with_crc([0x51, 0x23, 0x45, 0x67, 0x89, 0xAB]))
+            self.assertEqual(r.run(0.5), "break")
+            self.assertEqual(r.peek("cur_bank"), 2)
+            self.assertEqual(r.latches()["out2"] & 0x0F, OUT2_BANK[2])
+            r.breakpoint("_packet_for_whom", False)
+            r.run(0.5)
+            self.assertEqual(r.peek("cur_bank"), 0)
+            mbus = bytes(e[2] for e in r.take_events("MBUS_TX"))
+            self.assertEqual(mbus, bytes([5]) + bytes(range(1, 12)))
+
+
 BANKTEST = os.path.join(ROOT, "firmware", "build-banktest")
 
 
