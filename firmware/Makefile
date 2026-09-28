@@ -21,7 +21,7 @@ SRC    ?= r58.s
 ifeq ($(C),1)
 BUILD  ?= build-c
 DEFS   += -DC_MODULES
-CMODS   = $(BUILD)/squelch_crc.rel $(BUILD)/timers.rel
+CMODS   = $(BUILD)/squelch_crc.rel $(BUILD)/timers.rel $(BUILD)/keys.rel
 else
 BUILD  ?= build
 endif

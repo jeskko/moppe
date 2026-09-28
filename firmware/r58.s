@@ -13,6 +13,9 @@
 #define once_per_minute		_once_per_minute
 #define once_per_hour		_once_per_hour
 #define battcheck		_battcheck
+#define keycheck		_keycheck
+#define dokey_not_menu		_dokey_not_menu
+#define handle_key_during_tx	_handle_key_during_tx
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -3813,6 +3816,7 @@ script_check:
 	dec a                    ; ld a, -1
 	ld (key), a
 
+	ld a, c                ; the C version takes the key in A
 	call dokey_not_menu     ; process the character
 
 	pop bc
@@ -3991,6 +3995,7 @@ redrawcheck:
 
 ;======================================================================
 
+#ifndef C_MODULES
 keycheck:
 
 	ld a, (key)
@@ -4003,6 +4008,8 @@ keycheck:
 	call no_feedback
 	call open_selective
 	jp redraw
+
+#endif /* C_MODULES */
 
 is_key_down:
 	ld a, (keydown)
@@ -4047,6 +4054,7 @@ cu_manipulated:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES
 dokey:				; whatever we call will do ret
 
 	ld a, (menu_active)
@@ -4179,8 +4187,11 @@ menu_input:
 
 	ret
 
+#endif /* C_MODULES */
+
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES
 handle_key_during_tx:
 
 	call clear_key
@@ -4201,6 +4212,8 @@ handle_key_during_tx:
 	jp nz, dtmf_cu58af
 
 	jp dtmf_bang_tone
+
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
