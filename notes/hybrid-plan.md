@@ -79,7 +79,8 @@ typematic timings.
   (menu edit of every record type in use, "???", backspace, low battery
   warning/power-down, TOT, typematic groups, CU58AF menu/frequency/volume
   layout). Still open: CCIR/DTMF *receive* decode of digit strings, FSK
-  receive/remote config, MBUS CFGSnd/CFGGEt.
+  receive/remote config (**covered 2026-09-28**, `test_fsk.py`), MBUS
+  CFGSnd/CFGGEt.
 - Grow the emulator where tests need it: FX429 RX bit timing, MBUS
   host-side helpers (CFGSnd/CFGGEt), maybe CTCSS slicer input.
 
@@ -213,15 +214,31 @@ decided otherwise):
   release for both `make` and `make C=1`; breakpoints in
   `gps_process_sentence`, `gps_own_locator`, `send_aprs_report_packet` and
   `encode_aprs_report_packet_normal` hit with `cur_bank` = 1 on P8E and
-  P8N. **Not covered by tests:** `handle_mprs_packets` (incoming MPRS 4x
-  packets; FSK receive is a Phase 0 gap). `tab_ax25_digi` is now read only
+  P8N. `handle_mprs_packets` (MPRS receive) has been covered by
+  `test_fsk.py` since the FSK move below. `tab_ax25_digi` is now read only
   from bank 1, so it could move there too.
-- **Next candidates:** remote config/FSK packet building and MBUS
-  CFGSnd/CFGGEt (`mbus_mprs_*` already moved with the APRS block). Check
-  first that none of it runs from the SIO/modem interrupt handlers
-  (`modem_handler`, sioa/siob). MBUS/CFGSnd and FSK receive are untested,
-  so add tests before moving them (Phase 0 gap). With ~4 KB left in bank
-  1, bigger moves need a second bank (P8N-only page, or EPROM1) or C.
+- **Done: FSK packet layer** (2026-09-28), 1.3 KB: `packet_callsign_pack`
+  … `send_mprs_report_packet_1` (receive dispatch `packet_for_whom`, call/
+  display/config/relay handlers, config ask/enter and the DC reply, MPRS
+  sending) and `map_special_ptrs` … `build_call_packet_buffer` (config
+  packet filling, call packet). Six stubs: `far_packet_for_whom`,
+  `far_send_remote_config_packets`, `far_send_mprs_report_packet{_maybe,,_1}`,
+  `far_send_call_packet`. Fixed: the modem ISR path (`modem_handler`,
+  `check_*_packet`, `check_packet`, `mute_fsk_at_sync/tag_maybe`), the
+  CRC routines (C modules in `C=1`), `send_packet_buffer`, `init_modem`.
+  Tests first: `test_fsk.py` (18 tests, pass on the release too) and FSK
+  receive/send scenarios in `test_diff.py`; all 110 tests pass, FSK tests
+  also on `C=1`; breakpoints in the moved code hit with `cur_bank` = 1.
+  Fixed ROM ends at 0x4A61 (**~13.4 KB free**), bank 1 at 0xB591
+  (**~2.6 KB free**). MBUS CFGSnd/CFGGEt (`all_config_send/get`) were
+  already in bank 1 with the menu (still untested).
+- **Next:** bank 1 is nearly full. Options: (a) more small mainline blocks
+  (scanner, repeater state machine, CW sequencing) into the last 2.6 KB;
+  (b) a second bank: the P8N-only EPROM0 page (P8E cannot reach it) or
+  EPROM1 (excludes the multiboard); (c) Phase 4, port to C, which may
+  shrink code. Needs a user decision before (b).
+- Note: MPRS receive takes ~0.2 s on a P8N (QRB/locator maths), all of it
+  in bank 1, i.e. with the multiboard DTMF/CTCSS readers off.
 - P8N has a second EPROM0 page (chip 0x8000, RS=1 RA14=0); P8E cannot reach
   it. Don't depend on it, or make it P8N-only.
 - Image layout: 64 KB file; 0x0000-0x7FFF fixed; 0x8000-0xBFFF unused

@@ -4597,7 +4597,7 @@ duplex_key:
 beep_or_fsk_send:
 	ld a, (digidx)
 	or a
-	jp nz, send_call_packet
+	jp nz, far_send_call_packet
 
 	jp beep1750               ; No digits, repeater beep
 
@@ -5581,7 +5581,7 @@ fskcheck:
 	ld a, (packet_rdy)
 	or a
 	ret z
-	call packet_for_whom
+	call far_packet_for_whom
 	xor a
 	ld (packet_rdy), a		; Ignores quick successive packets
 	ret
@@ -5657,663 +5657,17 @@ store_next_6bits:
 	inc de
 	ret
 
-;-------------------
-;
-; ix points to correct position in packet, 6 byte buffer for packed callsign
-; hl points to string to pack into packet.
-;
-packet_callsign_pack:
-
-	call 1f
-	call 1f
-	ret
-1:
-	call get_next_cfg_6bits        ;   543210
-	ld c, a                        ;   543210
-	call get_next_cfg_6bits        ;   fedcba
-	ld b, a
-	and #3                          ;       ba
-	rrca
-	rrca                           ; ba
-	or c                           ; ba543210
-	ld (ix + 0), a
-
-	srl b
-	srl b                          ;     fedc
-
-	call get_next_cfg_6bits        ;   543210
-	ld c, a
-	sla a
-	sla a
-	sla a
-	sla a                          ; 3210    
-	or b                           ; 3210fedc
-	ld (ix + 1), a
-
-	srl c
-	srl c
-	srl c
-	srl c                          ;       54
-
-	call get_next_cfg_6bits        ;   fedcba
-	sla a
-	sla a                          ; fedcba
-	or c                           ; fedcba54
-	ld (ix + 2), a
-
-	inc ix
-	inc ix
-	inc ix
-	ret
-
-;
-;  ix points to packed callsign in packet buffer
-;  de points to buffer to store string
-;
-packet_callsign_unpack:
-
-	call 1f
-	call 1f
-	ret
-1:
-	ld a, (ix + 0)          ; 10fedcba
-	call store_next_6bits
-
-	ld a, (ix + 0)          ; 10fedcba
-	rlca
-	rlca                    ; fedcba10
-	and #0x03                ;       10
-
-	ld b, (ix + 1)          ; dcba5432
-	sla b
-	sla b                   ; ba5432
-	or b                    ; ba543210
-	call store_next_6bits
-
-	ld a, (ix + 1)          ; dcba5432
-	and #0xF0                ; dcba
-	ld b, a
-
-	ld a, (ix + 2)          ; 543210fe
-	and #0x03                ;       fe
-	or b                    ; dcba  fe
-	rrca
-	rrca
-	rrca
-	rrca                    ;   fedcba
-	call store_next_6bits
-
-	ld a, (ix + 2)          ; 543210fe
-	srl a
-	srl a                   ;   543210
-	call store_next_6bits
-
-	inc ix
-	inc ix
-	inc ix
-	ret
-
-; iy has deg[3] min[2] decimal_min[2] unpacked bcd, pack into 3 bytes at ix
-
-mprs_degmin_pack:
-
-	ld a, (iy+0)
-	or a         ; 0xx degrees or 1xx degrees only
-	ld b, #0      ; 0xx
-	jr z, 1f
-	ld b, #100    ; 1xx
-1:
-	ld a, (iy+1)
-	add a, a        ; 2
-	ld c, a
-	add a, a        ; 4
-	add a, a        ; 8
-	add a, c        ; 8 + 2 = 10
-	add a, b        ; plus hundreds
-	add a, (iy+2)   ; plus ones
-
-	ld (ix+0), a ; degrees (0...180)
-
-	ld a, (iy+3)
-	add a, a        ; 2
-	ld c, a
-	add a, a        ; 4
-	add a, a        ; 8
-	add a, c        ; 8 + 2 = 10
-	add a, (iy+4)   ; plus ones
-
-	ld (ix+1), a ; minutes (0..59)
-
-	ld a, (iy+5)
-	add a, a        ; 2
-	ld c, a
-	add a, a        ; 4
-	add a, a        ; 8
-	add a, c        ; 8 + 2 = 10
-	add a, (iy+6)   ; plus ones
-
-	ld (ix+2), a ; decimal minutes (0..99)
-
-	ld a, (iy+7)
-	cp #'N'
-	ret z        ; North is 'positive'
-	cp #'W'
-	ret nz       ; not West is 'positive'
-
-	set 7, (ix+2) ; 'negative' sign in seconds-byte
-
-	ret
-
-;----------------------------------------------------------------------
-
-packet_for_whom:
-	ld a, (packet_good)
-	ld l, a
-	ld h, #HI(fsk_history)
-	ld a, (hl)
-
-	cp #0xC
-	jp z, handle_call_packet
-
-	cp #0xA
-	jr z, handle_config_packets    ; ask
-	cp #0xE
-	jr z, handle_config_packets    ; enter
-	cp #0xD
-	jp z, handle_display_packets
-	cp #0x4
-	jp z, far_handle_mprs_packets
-	cp #0x5
-	jr z, handle_relay_packets
-
-	ret
-
-handle_relay_packets:
-
-	ld b, #12
-1:
-	ld c, (hl)
-	inc hl
-	push hl
-	call putchar
-	pop hl
-	djnz 1b
-
-	ret
-
-
-handle_config_packets:
-
-	ld b, a                     ; remember msnibble of tag, Ask or Enter
-	inc l
-
-	ld a, (hl)
-	inc l
-	cp #0xC                      ; AC/EC ii DD ptr PTR possible data
-	ret nz
-
-	; destined to us ?
-
-	ld de, (cfg_remote_id)
-	ld a, d
-	or e
-	ret z                  ; remote id zero equals not used
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	cp e
-	ret nz
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	cp d
-	ret nz
-
-	; ours. get variable pointer (0xABCD is "CDAB")
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld e, a
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld d, a
-
-	push hl
-	pop ix
-
-	; Would be too easy :-)
-
-	ld hl, #cfg_remote_passwd + cfg_remote_passwd_size - 1
-	and a
-	sbc hl, de                          ; last - ptr
-	jr c, 1f                            ; CY -> after passwd
-	ld hl, #cfg_remote_passwd - SIZE_STR ; reply data length max
-	sbc hl, de
-	jr nc, 1f                           ; NC -> before passwd
-
-	ret                    ; refuse to reveal/modify passwd data
-1:
-
-	; Setting or just Asking ?
-
-	ld a, b          ; Ask or Enter
-	cp #0xE
-	jr nz, 1f
-
-	push de           ; save ptr
-	push ix
-	pop hl
-	call far_remote_config_execute         ; Enter: de=ptr, hl=data (wrap page)
-	call far_leaved_setup
-	pop de
-1:
-	; FSK reply in either case
-
-	jp send_display_config_packet ; ptr in DE
-
-
-handle_display_packets:
-	inc l
-	ld a, (hl)
-	cp #0xD
-	jp z, handle_display_data
-	cp #0xC
-	jr z, handle_display_config
-	ret
-
-handle_display_config:
-	ld de, (cfg_remote_id)
-	ld a, d
-	or e
-	ret z                     ; dont bother when remote id zeroed.
-
-	ld de, #remote_display_buffer
-	inc l
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-
-	ld a, #EOS
-	ld (de), a
-	inc de
-	ld (de), a  ; all 10 characters
-
-	ld a, #5
-	ld (display_buffer_time), a
-
-	xor a
-	ld (digidx), a            ; As an ack
-
-	jp redraw
-
-handle_display_data:
-	ld de, #remote_display_buffer
-	inc l
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-	ld a, (hl)
-	inc l
-	sla4
-	or (hl)
-	inc l
-	ld (de), a
-	inc de
-
-	ld a, #EOS
-	ld (de), a
-	inc de
-	ld (de), a    ; all 10 characters
-
-	ld a, #5
-	ld (display_buffer_time), a
-
-	jp redraw
-
-handle_call_packet:
-
-	ld a, l
-	add a, #6                 ; destination address offset
-	ld l, a
-	ld ix, #cfg_mycall_1
-
-	ld a, (hl)
-	inc l
-	cp (ix + 0)
-	ret nz
-	ld a, (hl)
-	inc l
-	cp (ix + 1)
-	ret nz
-	ld a, (hl)
-	inc l
-	cp (ix + 2)
-	ret nz
-	ld a, (hl)
-	inc l
-	cp (ix + 3)
-	ret nz
-	ld a, (hl)
-	inc l
-	cp (ix + 4)
-	ret nz
-
-	ld a, #1
-	call start_call_timer
-
-	call cu_lights_on
-	call cu_call_on
-	call redraw
-	call ding
-	ret
-
-; PTT in menu, send query or config packet
-
-send_remote_config_packets:
-
-	ld hl, (cfg_remote_id)
-	ld a, h
-	or l
-	ret z                     ; dont bother when remote id zeroed.
-
-	call mic_off_ccir_off
-
-	ld a, (digidx)
-	or a
-	jr z, send_remote_config_query
-
-	; Enter config then
-
-	ld ix, (menu_ptr)    ; current record
-	ld de, #outpacket
-
-	ld a, #0xEC
-	ld (de), a
-	inc de               ; "Enter Config" ...
-
-	ld hl, (cfg_remote_id)
-	ld a, l
-	ld (de), a
-	inc de             ; ... with this remote config identifier
-	ld a, h
-	ld (de), a
-	inc de
-
-	call fill_enter_config_packet
-	call append_secret_packet_crc
-
-	ld b, #LONG_PACLEN
-	call send_packet_buffer
-	ret
-
-send_remote_config_query:
-	ld ix, (menu_ptr)    ; current record
-	ld de, #outpacket
-
-	ld a, #0xAC
-	ld (de), a
-	inc de               ; "Ask Config" ...
-
-	ld hl, (cfg_remote_id)
-	ld a, l
-	ld (de), a
-	inc de             ; ... from this rig identifier
-	ld a, h
-	ld (de), a
-	inc de
-
-	call fill_query_config_packet
-	call append_short_packet_crc
-
-	ld b, #SHORT_PACLEN
-	call send_packet_buffer
-	ret
-
-; at DE is the variable XXX
-
-send_display_config_packet:
-
-	ld a, (txon)
-	or a
-	jr nz, 1f             ; in case tx already on, repeater ?
-
-	push de
-	call tx_on
-	pop de
-	jp c, tx_error
-
-	sub a              ; Z, must txoff
-1:
-	push af               ; txon flag for later
-
-	push de
-	call mic_off_ccir_off
-
-	pop hl             ; swap de to hl
-	ld de, #outpacket
-
-	ld a, #0xDC
-	ld (de), a
-	inc de
-
-	call fill_display_config_packet
-	call append_long_packet_crc
-
-	ld b, #LONG_PACLEN
-	call send_packet_buffer
-	call mdm_delay
-	ld b, #LONG_PACLEN
-	call send_packet_buffer
-
-	pop af
-	call z, tx_off       ; turned on, so turn off also
-	ret
-
-send_mprs_report_packet_maybe:
-
-	ld a, (cfg_keyup_mprs)
-	or a
-	ret z                              ; oFF.
-	dec a                              ; if 1
-	jr z, send_mprs_report_packet      ; ALL.
-
-	call check_for_mprs_timer          ; on_demand else. is there demand ?
-	ret c                              ; not yet
-
-	; fall thru
-
-send_mprs_report_packet:
-
-	ld hl, #0
-	ld (mprs_report_timer), hl
-
-	call mic_off_ccir_off
-
-	; fall thru
-
-send_mprs_report_packet_1:
-
-	ld a, (gps_speed)
-	ld (gps_reported_speed), a   ; remember what was the speed during report
-
-	ld a, (cfg_report_type)
-	or a
-	jp nz, far_send_aprs_report_packet
-
-	ld a, #0x40
-	ld (outpacket + 0), a        ; "MPRS #0" ...
-
-	ld hl, #cfg_mprs_callsign     ; unpacked callsign
-	ld ix, #outpacket + 1
-	call packet_callsign_pack
-
-	ld ix, #outpacket + 1
-	ld a, (ix+4)
-	and #0x0F                     ; SSID goes to 4 bits after packed 6 characters, top nibble of byte 4
-	ld b, a
-	ld a, (cfg_mprs_ssid)
-	sla a
-	sla a
-	sla a
-	sla a                        ; SSID in bits ????0000
-	or b
-	ld (ix+4), a                ; ssid inserted
-
-	xor a
-	ld (ix+5), a                ; routing/digipeating reserved byte zeroed
-
-	ld iy, #cfg_gps_latitude
-	ld ix, #outpacket + 1 + 6
-	call mprs_degmin_pack
-
-	ld iy, #cfg_gps_longitude
-	ld ix, #outpacket + 1 + 6 + 3
-	call mprs_degmin_pack
-
-	; 40 cc cc cc cc cs xx la la la lo lo lo
-	; 0  ------6---------- ---3---- ---3----
-
-	ld a, (cfg_mprs_symbol)          ; ----dcba
-	sla a                            ; ---dcba0
-	sla a                            ; --dcba00
-	sla a                            ; -dcba000
-	sla a                            ; dcba0000
-	and #0xC0                         ; dc000000
-	ld ix, #outpacket + 1 + 6
-	or (ix+1)
-	ld (ix+1), a                     ; hibits of symbol
-
-	ld a, (cfg_mprs_symbol)          ; ----dcba
-	rrca                             ; a----dcb
-	rrca                             ; ba----dc
-	and #0xC0                         ; ba000000
-	ld ix, #outpacket + 1 + 6 + 3
-	or (ix+1)
-	ld (ix+1), a                     ; lobits of symbol
-
-
-	call append_long_packet_crc
-
-	ld b, #LONG_PACLEN
-	call send_packet_buffer      ; once.
-	ret
-
-	; following called from fsk interrupt
+; FSK packet dispatch, remote config and MPRS sending lives in bank 1 (search "BANK 1").
+far_packet_for_whom:	call bank1_call
+	.dw packet_for_whom
+far_send_remote_config_packets:	call bank1_call
+	.dw send_remote_config_packets
+far_send_mprs_report_packet_maybe:	call bank1_call
+	.dw send_mprs_report_packet_maybe
+far_send_mprs_report_packet:	call bank1_call
+	.dw send_mprs_report_packet
+far_send_mprs_report_packet_1:	call bank1_call
+	.dw send_mprs_report_packet_1
 
 mute_fsk_at_sync_maybe:
 	ld a, (cfg_fsk_silencer)
@@ -6367,240 +5721,9 @@ far_handle_mprs_packets:	call bank1_call
 far_send_aprs_report_packet:	call bank1_call
 	.dw send_aprs_report_packet
 
-map_special_ptrs:
-	ld a, h
-	cp #HI(version)
-	jr nz, 1f
-	ld a, l
-	cp #LO(version)
-	jr nz, 1f
-	ld hl, #0                     ; VERSION = 0
-	ret
-1:
-	ld a, h
-	cp #HI(menu_rfc_change)
-	jr nz, 1f
-	ld a, l
-	cp #LO(menu_rfc_change)
-	jr nz, 1f
-	ld hl, #1                     ; RFC = 1
-	ret
-1:
-	ld a, h
-	cp #HI(menu_sql_change)
-	jr nz, 1f
-	ld a, l
-	cp #LO(menu_sql_change)
-	jr nz, 1f
-	ld hl, #2                     ; SQL = 2
-	ret
-1:
-	ld a, h
-	cp #HI(menu_sqB_change)
-	jr nz, 1f
-	ld a, l
-	cp #LO(menu_sqB_change)
-	jr nz, 1f
-	ld hl, #3                     ; SQL BI = 3
-	ret
-1:
-	ret     ; unchanged
-
-onesies: .db 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
-
-fill_enter_config_packet:
-
-	call far_load_menu_ptr       ; variable is specified by RAM address
-	call map_special_ptrs    ; or page 0 pseudoptr
-
-	ld a, l
-	ld (de), a
-	inc de
-	ld a, h
-	ld (de), a
-	inc de       ; ptr
-
-	ld bc, #8                 ; assume will copy 8 chars, b clear
-	ld hl, #digbuf
-	ld a, (digidx)           ; depending on number of characters:
-	cp #8
-	jr c, 1f                 ; less than 8, padding
-	jr z, 2f                 ; exact 8
-	jr 3f                    ; 9 or more -> means 0 characters (silly)
-1:
-	ld c, a                  ; valid chars
-	ld a, #8
-	sub c                    ; this much padding
-	ldir                     ; copy
-	ld c, a                  ; padding now
-3:
-	ld hl, #onesies
-2:
-	ldir                     ; copy
-	ret
-
-fill_query_config_packet:
-
-	call far_load_menu_ptr       ; variable is specified by RAM address
-	call map_special_ptrs
-
-	ld a, l
-	ld (de), a
-	inc de
-	ld a, h
-	ld (de), a
-	inc de
-	ld hl, #onesies
-	ldi
-	ldi
-	ldi
-	ret
-
-fill_display_config_packet:
-	ld a, h
-	or a
-	ld a, l
-	jr z, 1f        ; special variables look like they live in page 0
-5:
-	ldi
-	ldi
-3:
-	ldi
-	ldi
-	ldi
-	ldi
-	ldi
-	ldi
-	ret
-1:
-	cp #0                    ; VERSION = 0
-	jr nz, 1f
-	ld hl, #version
-	jr 5b
-1:
-	cp #1                    ; RFC = 1
-	jr nz, 1f
-	ld hl, #rfc
-	ldi
-	ld hl, #ad_rssi
-	ldi
-	ld hl, #onesies
-	jr 3b
-1:
-	cp #2                    ; SQL = 2
-	jr nz, 1f
-	ld hl, #cfg_squelch_level
-	ldi
-	call read_squelcher_value
-	ld (de), a
-	inc de
-	ld hl, #onesies
-	jr 3b
-1:
-	cp #3                    ; SQL BI = 3
-	jr nz, 1f
-	ld hl, #cfg_squelch_BIG
-	ldi
-	ld a, (ad_rssi)         ; sql_bi w/ RSSI, not: call read_squelcher_value
-	ld (de), a
-	inc de
-	ld hl, #onesies
-	jr 3b
-1:
-	ld hl, #onesies
-	jr 5b
-
-	;--------------------------------------------------
-
-send_call_packet:
-
-	call tx_on
-	jp c, tx_error
-
-	call mic_off_ccir_off
-
-	call waitkey
-
-	call build_call_packet_buffer
-	call append_short_packet_crc
-
-	ld b, #SHORT_PACLEN
-	call send_packet_buffer
-	call mdm_delay
-	ld b, #SHORT_PACLEN
-	call send_packet_buffer
-	call mdm_delay
-	ld b, #SHORT_PACLEN
-	call send_packet_buffer
-
-	call tx_off
-	call clear_buffer
-
-	ret
-
-build_call_packet_buffer:
-
-	ld hl, #digbuf
-	ld a, (digidx)
-	ld b, a
-	cp #1
-	jr nz, 1f
-	ld a, (hl)
-	cp #0
-	ret z				; 0* = send it again
-1:
-	ld de, #outpacket
-	ld ix, #cfg_mycall_1
-	ld a, #0xC0
-	or (ix + 0)
-	ld (de), a
-	inc de
-	ld a, (ix + 1)
-	sla4
-	or (ix + 2)
-	ld (de), a
-	inc de
-	ld a, (ix + 3)
-	sla4
-	or (ix + 4)
-	ld (de), a
-	inc de
-	ld c, #3
-1:
-	inc c
-	ld a, (hl)
-	inc hl
-	rla
-	rla
-	rla
-	rla
-	or #0xF
-	ld (de), a
-	inc de
-	dec b
-	jr z, 1f
-	and #0xF0
-	or (hl)
-	inc hl
-	dec de
-	ld (de), a
-	inc de
-	dec b
-	jr z, 1f
-	ld a, c
-	cp #6
-	jr nz, 1b
-1:
-	ld a, c
-	cp #6
-	jr z, 1f
-	ld a, #0xFF
-	ld (de), a
-	inc de
-	inc c
-	jr 1b
-1:
-	ret
+; Config packet filling and the call packet lives in bank 1 (search "BANK 1").
+far_send_call_packet:	call bank1_call
+	.dw send_call_packet
 
 ;----------------------------------------------------------------------
 ;
@@ -7226,7 +6349,7 @@ pttcheck:
 
 	ld a, (menu_active)
 	or a
-	call nz, send_remote_config_packets
+	call nz, far_send_remote_config_packets
 
 	; ! Voice ID ?
 	;
@@ -7236,7 +6359,7 @@ pttcheck:
 
 	; MPRS report at PTT release ?
 
-	call send_mprs_report_packet_maybe
+	call far_send_mprs_report_packet_maybe
 
 	; EOT
 
@@ -7350,7 +6473,7 @@ spontaneous_mprs_check:
 	call tx_on_legal_or_not      ; error ignored
 	call redraw
 
-	call send_mprs_report_packet
+	call far_send_mprs_report_packet
 
 	call tx_off
 	call redraw
@@ -13485,7 +12608,7 @@ repeater_send_id_greet:
 
 	ld a, (repeater_cfg_mprs_id)
 	and #0x01
-	call nz, send_mprs_report_packet_1
+	call nz, far_send_mprs_report_packet_1
 
 	ret
 
@@ -13504,7 +12627,7 @@ repeater_send_id_during:
 
 	ld a, (repeater_cfg_mprs_id)
 	and #0x02
-	call nz, send_mprs_report_packet_1
+	call nz, far_send_mprs_report_packet_1
 
 	ret
 
@@ -13523,7 +12646,7 @@ repeater_send_id_bye:
 
 	ld a, (repeater_cfg_mprs_id)
 	and #0x04
-	call nz, send_mprs_report_packet_1
+	call nz, far_send_mprs_report_packet_1
 
 	ret
 
@@ -13755,7 +12878,7 @@ repeater_check_report_req:
 
 	ld a, (repeater_cfg_mprs_id)
 	and #0x08
-	call nz, send_mprs_report_packet_1
+	call nz, far_send_mprs_report_packet_1
 
 	ret
 
@@ -19832,6 +18955,905 @@ stuffed_8bits:
 
 ;----------------------------------------------------------------------
 	;--------------------------------------------------
+
+
+;----- FSK packet dispatch, remote config and MPRS sending (was fixed ROM) -----
+
+;-------------------
+;
+; ix points to correct position in packet, 6 byte buffer for packed callsign
+; hl points to string to pack into packet.
+;
+packet_callsign_pack:
+
+	call 1f
+	call 1f
+	ret
+1:
+	call get_next_cfg_6bits        ;   543210
+	ld c, a                        ;   543210
+	call get_next_cfg_6bits        ;   fedcba
+	ld b, a
+	and #3                          ;       ba
+	rrca
+	rrca                           ; ba
+	or c                           ; ba543210
+	ld (ix + 0), a
+
+	srl b
+	srl b                          ;     fedc
+
+	call get_next_cfg_6bits        ;   543210
+	ld c, a
+	sla a
+	sla a
+	sla a
+	sla a                          ; 3210    
+	or b                           ; 3210fedc
+	ld (ix + 1), a
+
+	srl c
+	srl c
+	srl c
+	srl c                          ;       54
+
+	call get_next_cfg_6bits        ;   fedcba
+	sla a
+	sla a                          ; fedcba
+	or c                           ; fedcba54
+	ld (ix + 2), a
+
+	inc ix
+	inc ix
+	inc ix
+	ret
+
+;
+;  ix points to packed callsign in packet buffer
+;  de points to buffer to store string
+;
+packet_callsign_unpack:
+
+	call 1f
+	call 1f
+	ret
+1:
+	ld a, (ix + 0)          ; 10fedcba
+	call store_next_6bits
+
+	ld a, (ix + 0)          ; 10fedcba
+	rlca
+	rlca                    ; fedcba10
+	and #0x03                ;       10
+
+	ld b, (ix + 1)          ; dcba5432
+	sla b
+	sla b                   ; ba5432
+	or b                    ; ba543210
+	call store_next_6bits
+
+	ld a, (ix + 1)          ; dcba5432
+	and #0xF0                ; dcba
+	ld b, a
+
+	ld a, (ix + 2)          ; 543210fe
+	and #0x03                ;       fe
+	or b                    ; dcba  fe
+	rrca
+	rrca
+	rrca
+	rrca                    ;   fedcba
+	call store_next_6bits
+
+	ld a, (ix + 2)          ; 543210fe
+	srl a
+	srl a                   ;   543210
+	call store_next_6bits
+
+	inc ix
+	inc ix
+	inc ix
+	ret
+
+; iy has deg[3] min[2] decimal_min[2] unpacked bcd, pack into 3 bytes at ix
+
+mprs_degmin_pack:
+
+	ld a, (iy+0)
+	or a         ; 0xx degrees or 1xx degrees only
+	ld b, #0      ; 0xx
+	jr z, 1f
+	ld b, #100    ; 1xx
+1:
+	ld a, (iy+1)
+	add a, a        ; 2
+	ld c, a
+	add a, a        ; 4
+	add a, a        ; 8
+	add a, c        ; 8 + 2 = 10
+	add a, b        ; plus hundreds
+	add a, (iy+2)   ; plus ones
+
+	ld (ix+0), a ; degrees (0...180)
+
+	ld a, (iy+3)
+	add a, a        ; 2
+	ld c, a
+	add a, a        ; 4
+	add a, a        ; 8
+	add a, c        ; 8 + 2 = 10
+	add a, (iy+4)   ; plus ones
+
+	ld (ix+1), a ; minutes (0..59)
+
+	ld a, (iy+5)
+	add a, a        ; 2
+	ld c, a
+	add a, a        ; 4
+	add a, a        ; 8
+	add a, c        ; 8 + 2 = 10
+	add a, (iy+6)   ; plus ones
+
+	ld (ix+2), a ; decimal minutes (0..99)
+
+	ld a, (iy+7)
+	cp #'N'
+	ret z        ; North is 'positive'
+	cp #'W'
+	ret nz       ; not West is 'positive'
+
+	set 7, (ix+2) ; 'negative' sign in seconds-byte
+
+	ret
+
+;----------------------------------------------------------------------
+
+packet_for_whom:
+	ld a, (packet_good)
+	ld l, a
+	ld h, #HI(fsk_history)
+	ld a, (hl)
+
+	cp #0xC
+	jp z, handle_call_packet
+
+	cp #0xA
+	jr z, handle_config_packets    ; ask
+	cp #0xE
+	jr z, handle_config_packets    ; enter
+	cp #0xD
+	jp z, handle_display_packets
+	cp #0x4
+	jp z, far_handle_mprs_packets
+	cp #0x5
+	jr z, handle_relay_packets
+
+	ret
+
+handle_relay_packets:
+
+	ld b, #12
+1:
+	ld c, (hl)
+	inc hl
+	push hl
+	call putchar
+	pop hl
+	djnz 1b
+
+	ret
+
+
+handle_config_packets:
+
+	ld b, a                     ; remember msnibble of tag, Ask or Enter
+	inc l
+
+	ld a, (hl)
+	inc l
+	cp #0xC                      ; AC/EC ii DD ptr PTR possible data
+	ret nz
+
+	; destined to us ?
+
+	ld de, (cfg_remote_id)
+	ld a, d
+	or e
+	ret z                  ; remote id zero equals not used
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	cp e
+	ret nz
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	cp d
+	ret nz
+
+	; ours. get variable pointer (0xABCD is "CDAB")
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld e, a
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld d, a
+
+	push hl
+	pop ix
+
+	; Would be too easy :-)
+
+	ld hl, #cfg_remote_passwd + cfg_remote_passwd_size - 1
+	and a
+	sbc hl, de                          ; last - ptr
+	jr c, 1f                            ; CY -> after passwd
+	ld hl, #cfg_remote_passwd - SIZE_STR ; reply data length max
+	sbc hl, de
+	jr nc, 1f                           ; NC -> before passwd
+
+	ret                    ; refuse to reveal/modify passwd data
+1:
+
+	; Setting or just Asking ?
+
+	ld a, b          ; Ask or Enter
+	cp #0xE
+	jr nz, 1f
+
+	push de           ; save ptr
+	push ix
+	pop hl
+	call far_remote_config_execute         ; Enter: de=ptr, hl=data (wrap page)
+	call far_leaved_setup
+	pop de
+1:
+	; FSK reply in either case
+
+	jp send_display_config_packet ; ptr in DE
+
+
+handle_display_packets:
+	inc l
+	ld a, (hl)
+	cp #0xD
+	jp z, handle_display_data
+	cp #0xC
+	jr z, handle_display_config
+	ret
+
+handle_display_config:
+	ld de, (cfg_remote_id)
+	ld a, d
+	or e
+	ret z                     ; dont bother when remote id zeroed.
+
+	ld de, #remote_display_buffer
+	inc l
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+
+	ld a, #EOS
+	ld (de), a
+	inc de
+	ld (de), a  ; all 10 characters
+
+	ld a, #5
+	ld (display_buffer_time), a
+
+	xor a
+	ld (digidx), a            ; As an ack
+
+	jp redraw
+
+handle_display_data:
+	ld de, #remote_display_buffer
+	inc l
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+	ld a, (hl)
+	inc l
+	sla4
+	or (hl)
+	inc l
+	ld (de), a
+	inc de
+
+	ld a, #EOS
+	ld (de), a
+	inc de
+	ld (de), a    ; all 10 characters
+
+	ld a, #5
+	ld (display_buffer_time), a
+
+	jp redraw
+
+handle_call_packet:
+
+	ld a, l
+	add a, #6                 ; destination address offset
+	ld l, a
+	ld ix, #cfg_mycall_1
+
+	ld a, (hl)
+	inc l
+	cp (ix + 0)
+	ret nz
+	ld a, (hl)
+	inc l
+	cp (ix + 1)
+	ret nz
+	ld a, (hl)
+	inc l
+	cp (ix + 2)
+	ret nz
+	ld a, (hl)
+	inc l
+	cp (ix + 3)
+	ret nz
+	ld a, (hl)
+	inc l
+	cp (ix + 4)
+	ret nz
+
+	ld a, #1
+	call start_call_timer
+
+	call cu_lights_on
+	call cu_call_on
+	call redraw
+	call ding
+	ret
+
+; PTT in menu, send query or config packet
+
+send_remote_config_packets:
+
+	ld hl, (cfg_remote_id)
+	ld a, h
+	or l
+	ret z                     ; dont bother when remote id zeroed.
+
+	call mic_off_ccir_off
+
+	ld a, (digidx)
+	or a
+	jr z, send_remote_config_query
+
+	; Enter config then
+
+	ld ix, (menu_ptr)    ; current record
+	ld de, #outpacket
+
+	ld a, #0xEC
+	ld (de), a
+	inc de               ; "Enter Config" ...
+
+	ld hl, (cfg_remote_id)
+	ld a, l
+	ld (de), a
+	inc de             ; ... with this remote config identifier
+	ld a, h
+	ld (de), a
+	inc de
+
+	call fill_enter_config_packet
+	call append_secret_packet_crc
+
+	ld b, #LONG_PACLEN
+	call send_packet_buffer
+	ret
+
+send_remote_config_query:
+	ld ix, (menu_ptr)    ; current record
+	ld de, #outpacket
+
+	ld a, #0xAC
+	ld (de), a
+	inc de               ; "Ask Config" ...
+
+	ld hl, (cfg_remote_id)
+	ld a, l
+	ld (de), a
+	inc de             ; ... from this rig identifier
+	ld a, h
+	ld (de), a
+	inc de
+
+	call fill_query_config_packet
+	call append_short_packet_crc
+
+	ld b, #SHORT_PACLEN
+	call send_packet_buffer
+	ret
+
+; at DE is the variable XXX
+
+send_display_config_packet:
+
+	ld a, (txon)
+	or a
+	jr nz, 1f             ; in case tx already on, repeater ?
+
+	push de
+	call tx_on
+	pop de
+	jp c, tx_error
+
+	sub a              ; Z, must txoff
+1:
+	push af               ; txon flag for later
+
+	push de
+	call mic_off_ccir_off
+
+	pop hl             ; swap de to hl
+	ld de, #outpacket
+
+	ld a, #0xDC
+	ld (de), a
+	inc de
+
+	call fill_display_config_packet
+	call append_long_packet_crc
+
+	ld b, #LONG_PACLEN
+	call send_packet_buffer
+	call mdm_delay
+	ld b, #LONG_PACLEN
+	call send_packet_buffer
+
+	pop af
+	call z, tx_off       ; turned on, so turn off also
+	ret
+
+send_mprs_report_packet_maybe:
+
+	ld a, (cfg_keyup_mprs)
+	or a
+	ret z                              ; oFF.
+	dec a                              ; if 1
+	jr z, send_mprs_report_packet      ; ALL.
+
+	call check_for_mprs_timer          ; on_demand else. is there demand ?
+	ret c                              ; not yet
+
+	; fall thru
+
+send_mprs_report_packet:
+
+	ld hl, #0
+	ld (mprs_report_timer), hl
+
+	call mic_off_ccir_off
+
+	; fall thru
+
+send_mprs_report_packet_1:
+
+	ld a, (gps_speed)
+	ld (gps_reported_speed), a   ; remember what was the speed during report
+
+	ld a, (cfg_report_type)
+	or a
+	jp nz, far_send_aprs_report_packet
+
+	ld a, #0x40
+	ld (outpacket + 0), a        ; "MPRS #0" ...
+
+	ld hl, #cfg_mprs_callsign     ; unpacked callsign
+	ld ix, #outpacket + 1
+	call packet_callsign_pack
+
+	ld ix, #outpacket + 1
+	ld a, (ix+4)
+	and #0x0F                     ; SSID goes to 4 bits after packed 6 characters, top nibble of byte 4
+	ld b, a
+	ld a, (cfg_mprs_ssid)
+	sla a
+	sla a
+	sla a
+	sla a                        ; SSID in bits ????0000
+	or b
+	ld (ix+4), a                ; ssid inserted
+
+	xor a
+	ld (ix+5), a                ; routing/digipeating reserved byte zeroed
+
+	ld iy, #cfg_gps_latitude
+	ld ix, #outpacket + 1 + 6
+	call mprs_degmin_pack
+
+	ld iy, #cfg_gps_longitude
+	ld ix, #outpacket + 1 + 6 + 3
+	call mprs_degmin_pack
+
+	; 40 cc cc cc cc cs xx la la la lo lo lo
+	; 0  ------6---------- ---3---- ---3----
+
+	ld a, (cfg_mprs_symbol)          ; ----dcba
+	sla a                            ; ---dcba0
+	sla a                            ; --dcba00
+	sla a                            ; -dcba000
+	sla a                            ; dcba0000
+	and #0xC0                         ; dc000000
+	ld ix, #outpacket + 1 + 6
+	or (ix+1)
+	ld (ix+1), a                     ; hibits of symbol
+
+	ld a, (cfg_mprs_symbol)          ; ----dcba
+	rrca                             ; a----dcb
+	rrca                             ; ba----dc
+	and #0xC0                         ; ba000000
+	ld ix, #outpacket + 1 + 6 + 3
+	or (ix+1)
+	ld (ix+1), a                     ; lobits of symbol
+
+
+	call append_long_packet_crc
+
+	ld b, #LONG_PACLEN
+	call send_packet_buffer      ; once.
+	ret
+
+	; following called from fsk interrupt
+
+
+;----- Config packet filling and the call packet (was fixed ROM) -----
+
+map_special_ptrs:
+	ld a, h
+	cp #HI(version)
+	jr nz, 1f
+	ld a, l
+	cp #LO(version)
+	jr nz, 1f
+	ld hl, #0                     ; VERSION = 0
+	ret
+1:
+	ld a, h
+	cp #HI(menu_rfc_change)
+	jr nz, 1f
+	ld a, l
+	cp #LO(menu_rfc_change)
+	jr nz, 1f
+	ld hl, #1                     ; RFC = 1
+	ret
+1:
+	ld a, h
+	cp #HI(menu_sql_change)
+	jr nz, 1f
+	ld a, l
+	cp #LO(menu_sql_change)
+	jr nz, 1f
+	ld hl, #2                     ; SQL = 2
+	ret
+1:
+	ld a, h
+	cp #HI(menu_sqB_change)
+	jr nz, 1f
+	ld a, l
+	cp #LO(menu_sqB_change)
+	jr nz, 1f
+	ld hl, #3                     ; SQL BI = 3
+	ret
+1:
+	ret     ; unchanged
+
+onesies: .db 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+
+fill_enter_config_packet:
+
+	call far_load_menu_ptr       ; variable is specified by RAM address
+	call map_special_ptrs    ; or page 0 pseudoptr
+
+	ld a, l
+	ld (de), a
+	inc de
+	ld a, h
+	ld (de), a
+	inc de       ; ptr
+
+	ld bc, #8                 ; assume will copy 8 chars, b clear
+	ld hl, #digbuf
+	ld a, (digidx)           ; depending on number of characters:
+	cp #8
+	jr c, 1f                 ; less than 8, padding
+	jr z, 2f                 ; exact 8
+	jr 3f                    ; 9 or more -> means 0 characters (silly)
+1:
+	ld c, a                  ; valid chars
+	ld a, #8
+	sub c                    ; this much padding
+	ldir                     ; copy
+	ld c, a                  ; padding now
+3:
+	ld hl, #onesies
+2:
+	ldir                     ; copy
+	ret
+
+fill_query_config_packet:
+
+	call far_load_menu_ptr       ; variable is specified by RAM address
+	call map_special_ptrs
+
+	ld a, l
+	ld (de), a
+	inc de
+	ld a, h
+	ld (de), a
+	inc de
+	ld hl, #onesies
+	ldi
+	ldi
+	ldi
+	ret
+
+fill_display_config_packet:
+	ld a, h
+	or a
+	ld a, l
+	jr z, 1f        ; special variables look like they live in page 0
+5:
+	ldi
+	ldi
+3:
+	ldi
+	ldi
+	ldi
+	ldi
+	ldi
+	ldi
+	ret
+1:
+	cp #0                    ; VERSION = 0
+	jr nz, 1f
+	ld hl, #version
+	jr 5b
+1:
+	cp #1                    ; RFC = 1
+	jr nz, 1f
+	ld hl, #rfc
+	ldi
+	ld hl, #ad_rssi
+	ldi
+	ld hl, #onesies
+	jr 3b
+1:
+	cp #2                    ; SQL = 2
+	jr nz, 1f
+	ld hl, #cfg_squelch_level
+	ldi
+	call read_squelcher_value
+	ld (de), a
+	inc de
+	ld hl, #onesies
+	jr 3b
+1:
+	cp #3                    ; SQL BI = 3
+	jr nz, 1f
+	ld hl, #cfg_squelch_BIG
+	ldi
+	ld a, (ad_rssi)         ; sql_bi w/ RSSI, not: call read_squelcher_value
+	ld (de), a
+	inc de
+	ld hl, #onesies
+	jr 3b
+1:
+	ld hl, #onesies
+	jr 5b
+
+	;--------------------------------------------------
+
+send_call_packet:
+
+	call tx_on
+	jp c, tx_error
+
+	call mic_off_ccir_off
+
+	call waitkey
+
+	call build_call_packet_buffer
+	call append_short_packet_crc
+
+	ld b, #SHORT_PACLEN
+	call send_packet_buffer
+	call mdm_delay
+	ld b, #SHORT_PACLEN
+	call send_packet_buffer
+	call mdm_delay
+	ld b, #SHORT_PACLEN
+	call send_packet_buffer
+
+	call tx_off
+	call clear_buffer
+
+	ret
+
+build_call_packet_buffer:
+
+	ld hl, #digbuf
+	ld a, (digidx)
+	ld b, a
+	cp #1
+	jr nz, 1f
+	ld a, (hl)
+	cp #0
+	ret z				; 0* = send it again
+1:
+	ld de, #outpacket
+	ld ix, #cfg_mycall_1
+	ld a, #0xC0
+	or (ix + 0)
+	ld (de), a
+	inc de
+	ld a, (ix + 1)
+	sla4
+	or (ix + 2)
+	ld (de), a
+	inc de
+	ld a, (ix + 3)
+	sla4
+	or (ix + 4)
+	ld (de), a
+	inc de
+	ld c, #3
+1:
+	inc c
+	ld a, (hl)
+	inc hl
+	rla
+	rla
+	rla
+	rla
+	or #0xF
+	ld (de), a
+	inc de
+	dec b
+	jr z, 1f
+	and #0xF0
+	or (hl)
+	inc hl
+	dec de
+	ld (de), a
+	inc de
+	dec b
+	jr z, 1f
+	ld a, c
+	cp #6
+	jr nz, 1b
+1:
+	ld a, c
+	cp #6
+	jr z, 1f
+	ld a, #0xFF
+	ld (de), a
+	inc de
+	inc c
+	jr 1b
+1:
+	ret
 
 #ifdef BANK_TEST
 bank_test_ping:
