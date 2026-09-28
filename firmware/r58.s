@@ -9,6 +9,10 @@
 #define append_short_packet_crc	_append_short_packet_crc
 #define append_long_packet_crc	_append_long_packet_crc
 #define append_secret_packet_crc	_append_secret_packet_crc
+#define once_per_second		_once_per_second
+#define once_per_minute		_once_per_minute
+#define once_per_hour		_once_per_hour
+#define battcheck		_battcheck
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -2334,6 +2338,7 @@ dosir:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES
 once_per_second:
 
 	ld a, (gps_valid_seconds)
@@ -2584,6 +2589,8 @@ once_per_hour:
 
 	call re_enable_modem
 	ret
+
+#endif /* C_MODULES */
 
 ;======================================================================
 
@@ -3889,6 +3896,12 @@ idlefn_check:
 
 ;----------------------------------------------------------------------
 
+#ifdef C_MODULES
+alert_tone_1s:			; for c/timers.c battcheck: 300 Hz for 1 s
+	ld hl, #MT_300HZ
+	ld d, #100
+	jp start_marker_tone
+#else
 ; Battery dangerously low.
 ; Twiddle here for a moment, waiting voltage to revive, return back then.
 ; After a couple of seconds turn off power relay.
@@ -3960,6 +3973,8 @@ battcheck:
 	call start_marker_tone
 
 	ret
+
+#endif /* C_MODULES */
 
 ;======================================================================
 

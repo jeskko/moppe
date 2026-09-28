@@ -294,6 +294,33 @@ key handling → display composition → frequency/band/synth maths →
 scanner → FSK/remote config → APRS/GPS → repeater → CW. For each: tests
 first, port, differential test against stock, size check, commit.
 
+- **Done: timers and battery check** (2026-09-28), `c/timers.c`:
+  `once_per_second`, `once_per_minute`, `once_per_hour` (systick,
+  interrupt context) and `battcheck` (+ static `battcheck_lobatt`). Tests
+  first: `test_timers.py` (15 tests, every branch; pass on the release).
+  The alert tone goes through a 3-line asm shim `alert_tone_1s`
+  (`start_marker_tone` takes HL and D, which `--sdcccall 1` cannot pass).
+  All 134 tests pass on `C=1`, differential tests too. Size: the `C=1`
+  image ends ~50 bytes after the stock one (all C modules, 0x3BE bytes,
+  replacing their asm).
+- Porting checklist (from this module):
+  - Interrupt-context C: no parameters, no stack locals (static instead),
+    so no IX frame; check the generated asm for `ix`/`iy`/`exx`.
+  - Mainline C that calls asm routines: the same, since the asm may
+    clobber IX (rule 2), unless the routine is audited.
+  - Asm routines that return a flag: C needs the value in A; check every
+    return path (`is_ptt_pressed` leaves A != 0 when pressed).
+  - Keep the asm's evaluation order where hardware or volatile RAM is
+    read (`battcheck_lobatt` tests the deadline before the voltage) and
+    where it tail-jumps (`jp c, powerdown_now` skips the rest).
+  - Assembler constants: copy the expression, not the comment
+    (`#80 * 256 / 156` is 8 V in tenths; a VOLTS(8) that dropped the 10
+    was caught by the low-battery tests).
+- **Next module:** key handling (`keycheck`, `dokey`, typematic), covered by
+  test_radio/test_menu_power key and typematic tests; then display
+  composition. Porting code that is in bank 1 needs C in a bank (SDCC
+  `--codeseg` + `__banked`), not done yet; the fixed ROM has room for now.
+
 ### Future: EPROM1
 - P8E: 27C010, 8 × 16 KB pages, A14/A15/A16 = OUT2 bits 0/1/3. Bit 3 is
   also held at 1 today, so the "current" EPROM1 page is 4 when unused.
