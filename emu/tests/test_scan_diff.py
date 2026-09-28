@@ -48,7 +48,12 @@ CAND = (os.environ.get("R58_SCAN_CAND_ROM", os.path.join(FW, "build-c", "r58.bin
         os.environ.get("R58_SCAN_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
 
 MEM_SIZE = 12
-STEP_TOL = 0.015            # per stay; the C build is up to ~6 ms slower per step
+# per stay: 15 ms + 10 %.  A mainloop pass of the C build can take up to
+# ~14 ms longer on a P8N (a redraw falls in it), and a step may cross one
+# more 10 ms systick; longer stays (settling, patience, tails) scale.  A
+# one-pass stay (a rejected channel, a band wrap) is therefore not told
+# apart from none: the mutation run's two yield mutants are timing-only.
+STEP_TOL = (0.015, 0.1)
 # a channel visit: a band frequency, or a memory recalled
 CHANGED = [("changed_frequency", "_changed_frequency"), ("go_mem_a", "_go_mem_a")]
 
@@ -91,7 +96,15 @@ def state(r):
 
 def stopped_state(r):
     return state(r) + (r.peek("vip_list", 30), r.peek("vip_idx"), r.peek("scan_paused"),
-                       r.peek("squelch_muted") & 1, r.peek24("rx_freq"), r.peek("mem_idx"))
+                       r.peek("squelch_muted") & 1, r.peek24("rx_freq"), r.peek("mem_idx"),
+                       r.peek("scan_patience"))
+
+
+def paused(label):
+    """both builds sit on the same signal: the audio and pause state"""
+    return [("probe", label + " paused",
+             lambda r: (r.peek("scan_paused"), r.peek("squelch_muted") & 1, r.peek24("rx_freq"),
+                        r.peek("vip_freq", 3)))]
 
 
 def at(label):
@@ -159,6 +172,16 @@ class ScanDiff(unittest.TestCase):
         steps += start("6") + visits("band 6", 1.0) + stop() + at("stopped 6")
         self.diff(steps)
 
+    def test_band_slices_2(self):
+        """slices whose frequencies differ only in the top byte (145 and
+        433 MHz, 0x02.... / 0x06....), a start with low bytes 0 (65536), a
+        band nested in another (sorted by start, not end)"""
+        steps = [("boot", 2.5)]
+        steps += band(1, 433400, 433500) + band(2, 145000, 145100) + band(3, 65536, 65600)
+        steps += band(4, 434000, 434700) + band(5, 434100, 434200) + band(6, 0, 0)
+        steps += start("12345") + visits("five bands", 5.0) + stop() + at("stopped")
+        self.diff(steps)
+
     def test_band_steps_s8b(self):
         steps = [("boot", 2.5)] + band(1, 51490, 51610, step=1) + band(2, 50000, 50100, step=4)
         steps += start("12") + visits("s8b", 3.0) + stop() + at("stopped")
@@ -172,6 +195,18 @@ class ScanDiff(unittest.TestCase):
             steps += memory(n, f, fl)
         for digits in ("0", "7", "89", "9", "01", "3", "1"):
             steps += start(digits) + visits("mask %s" % digits, 2.5) + stop() + at("stop %s" % digits)
+        self.diff(steps)
+
+    def test_memory_edges(self):
+        """block 0x alone (mask bit 6), consecutive memories, a scan from
+        mem_idx 130 and up (point_ix_memory_a clamps it to 99)"""
+        steps = [("boot", 2.5)] + band(1, 0, 0) + band(2, 0, 0)
+        for n, f in ((4, 433100), (5, 433125), (6, 433150), (90, 433200), (99, 433225)):
+            steps += memory(n, f)
+        steps += start("7") + [("press", "7", 0.2), ("press", "0", 0.2), ("run", 0.05)]
+        steps += visits("block 0x only", 2.0) + stop() + at("stopped 0x")
+        steps += [("poke", "mem_idx", 140), ("poke", "mem_flags", 5)]
+        steps += start("9") + visits("from 140", 2.0) + stop() + at("stopped 9x")
         self.diff(steps)
 
     def test_no_channels(self):
@@ -205,12 +240,16 @@ class ScanDiff(unittest.TestCase):
             self.diff(steps)
 
     def test_busy_channels_settle_longer(self):
-        """a signal on every channel: each step waits twice the settling
-        time before the squelch is looked at; patience 0 moves on"""
+        """a signal on every channel, patience 0: it moves on at once.  The
+        settling time is meant to double while the squelch is open, but
+        every frequency change closes it first (close_squelch), so it
+        never does (notes/open-bugs.md)"""
         w = World({433400 + 25 * i: None for i in range(8)})
-        steps = [("boot", 2.5)] + SQL + band(1, 433400, 433600, listen=0)
-        steps += start("1") + visits("busy", 3.0, w) + stop() + at("stopped")
-        self.diff(steps)
+        for rate in (2, 10):
+            steps = [("boot", 2.5)] + SQL + [("poke", "cfg_scan_rate_kvik", rate)]
+            steps += band(1, 433400, 433600, listen=0)
+            steps += start("1") + visits("busy %d" % rate, 3.0, w) + stop() + at("stopped")
+            self.diff(steps)
 
     def test_auto_reject(self):
         w = World({433425: None, 433475: None, 433525: None, 433550: None})
@@ -231,7 +270,7 @@ class ScanDiff(unittest.TestCase):
         steps += band(1, 433400, 433600, listen=255)
         steps += start("1")
         for i in range(4):
-            steps += visits("to a signal %d" % i, 1.5, w)
+            steps += visits("to a signal %d" % i, 1.5, w) + paused("signal %d" % i)
             steps += [("press", "S", 1.5), ("run", 0.1)] + visits("rejected %d" % i, 0.3, w)
         steps += [("press", "S", 2.6), ("run", 0.1)] + visits("cleared", 1.5, w)
         steps += stop() + at("stopped")
@@ -240,6 +279,24 @@ class ScanDiff(unittest.TestCase):
                   ("press", "S", 1.5), ("run", 0.1)] + at("reject vfo")
         steps += [("press", "S", 1.5), ("run", 0.1)] + at("reject vfo again")
         steps += start("1") + visits("skips 433425", 2.0) + stop() + at("stopped again")
+        self.diff(steps)
+
+    def test_stale_temp_reject(self):
+        """a temporary reject whose minutes ran out (0) no longer rejects"""
+        steps = [("boot", 2.5)] + band(1, 433400, 433600)
+        steps += [("poke", "tmp_rejects", f24(433450) + b"\x00" + f24(433500) + b"\x03")]
+        steps += start("1") + visits("stale and live", 2.0) + stop() + at("stopped")
+        self.diff(steps)
+
+    def test_reject_key_rejects_the_vip(self):
+        """long S while scanning on: the reject is the last channel that had
+        a signal (vip_freq), not the one the scanner is on"""
+        w = World({433450: 1.0})
+        steps = [("boot", 2.5)] + SQL + [("poke", "cfg_unreject_mins", 5)]
+        steps += band(1, 433400, 433600, sctail=0, listen=255)
+        steps += start("1") + visits("signal, then on", 3.0, w)
+        steps += [("press", "S", 1.5), ("run", 0.1)] + visits("rejected the vip", 2.0, w)
+        steps += stop() + at("stopped")
         self.diff(steps)
 
     def test_permanent_rejects(self):
@@ -259,6 +316,10 @@ class ScanDiff(unittest.TestCase):
         steps += [("poke", "squelch_forced", 1)] + visits("forced", 3.0, w)
         steps += [("poke", "squelch_forced", 0)] + visits("unforced", 3.0, w)
         steps += stop() + at("stopped")
+        # forced while scanning past quiet channels: it stays on the next
+        steps += start("1") + visits("quiet", 0.5)
+        steps += [("poke", "squelch_forced", 1)] + visits("forced while scanning", 2.0)
+        steps += stop() + at("stopped again")
         self.diff(steps)
 
     def test_fsk_carrier_skip(self):

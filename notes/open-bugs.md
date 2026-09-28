@@ -76,6 +76,11 @@ is inside A again, steps to 433500, and so on for ever; later slices are
 never scanned. Seen 2026-09-29 in `test_scan_diff.test_band_slices` (both
 builds). A configuration error, but silent.
 
+**The busy-channel settling time never doubles** (`scan_did_step`, C
+`scanner_run`): "make it double long if channel is busy" tests
+`squelch_open`, but every frequency change (`temporary_change_rx_freq`)
+has just closed the squelch, so it is always 0 there. Harmless; kept.
+
 ## Menu
 
 **Remote config while a DC reply is shown writes the reply buffer**

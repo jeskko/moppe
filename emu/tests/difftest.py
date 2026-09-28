@@ -69,8 +69,10 @@ A scenario is a list of steps, each a tuple `(kind, *args)`:
                                    a little slower per step lags, so its
                                    window starts earlier and ends some
                                    values short: up to VISIT_LAG + 20 %);
-                                   with step_tol the
-                                   times between visits must also agree
+                                   with step_tol (seconds, or (seconds,
+                                   fraction) = abs + fraction of the
+                                   stay) the times between visits must
+                                   also agree
     ("probe", label, fn)           compare fn(radio) of both sides (state no
                                    display/NV/latch shows, e.g. a state
                                    machine's state resolved per build)
@@ -476,9 +478,11 @@ def _diff_visits(label, a, b, step_tol):
         if hi <= lo or hi - lo < max(len(va), len(vb)) * 0.8 - VISIT_LAG:
             continue
         if vb[lo:hi] == va[lo + shift:hi + shift]:
+            tol_abs, tol_rel = step_tol if isinstance(step_tol, tuple) else (step_tol, 0)
             if step_tol is None or all(
-                    abs((b[i][0] - b[i - 1][0]) - (a[i + shift][0] - a[i + shift - 1][0])) <= step_tol
-                    for i in range(lo + 1, hi)):
+                    abs(db - da) <= tol_abs + tol_rel * max(da, db)
+                    for da, db in ((a[i + shift][0] - a[i + shift - 1][0], b[i][0] - b[i - 1][0])
+                                   for i in range(lo + 1, hi))):
                 best = shift
                 break
     if best is not None:

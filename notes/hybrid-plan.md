@@ -9,35 +9,42 @@ so its socket is normally free.
 Background: notes/rewrite-evaluation.md (measurements, constraints, proof of
 concept), notes/hardware.md (memory decode), notes/emulator.md.
 
-## Start here (next session, written 2026-09-28)
+## Start here (next session, written 2026-09-29)
 
-**State.** Phases 0-3 done; Phase 4 has the setup menu engine in C now
-(`c/menu.c`, bank 1). Banks: 0 = power-on (EPROM1 socket / multiboard),
-1 = EPROM0 chip 0xC000 (the menu; in the asm build also APRS/MPRS, GPS,
-FSK packets and repeater/CW, 834 bytes free; `C=1`: REC records, TAB/STR
-tables and band defaults as asm data 0x8000-0x97E7, then `c/menu.c`,
-3074 bytes; **7191 bytes free**), 2 = EPROM0 chip 0x8000 (`C=1`:
-`c/fsk.c`, `rptr.c`, `gps.c`, `aprs.c`, 11832 bytes; **~4.4 KB free**).
-Fixed ROM (`C=1`: squelch/CRC, timers, keys, display, freq in C, the
-shims and stubs, `_HOME`) ends at 0x4A0A (**~13.5 KB free**). 222 tests
-pass on both builds; `make -C firmware verify` still byte-identical, and
-the asm build is unchanged by the menu port.
+**State.** Phases 0-3 done; Phase 4 has ported the timers, keys dispatch,
+display composition, frequency logic and the scanner (fixed ROM), the
+FSK layer, repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup
+menu engine (bank 1). `C=1` sizes: fixed ROM ends at 0x4C55 (**~13.2 KB
+free**), bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C
+statics use **179 of the 192-byte `c_bss`** (raise `C_BSS_SIZE` in r58.s
+for the next module). 248 tests pass on both builds (`test_aprs_send`
+now at 30 ms tolerance, see Phase 4); `make -C firmware verify`
+byte-identical; the asm build changes only by the bug fixes.
 
-**Next task: the scanner to C** (1.2 KB of fixed-ROM asm, a coroutine
-through `scanner_state`: needs an explicit state machine). Simplest in
-fixed ROM (room enough, no bank-duty question); in a bank it would need
-the `far_repeater_run` kind of guard, since it runs on every mainloop pass
-while scanning. `load_num_tmp_rejects`/`unreject_timer` stay fixed
-(interrupts). Tests first: the scanner cases in `test_scan_rptr.py` pass
-on the release; a differential scenario set (asm build vs `C=1`) for
-scan rates, listen/tail times, rejects and auto-reject, memory scan
-masks, FSK-carrier skip, stop by key/PTT is still to write. After that:
-memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
-functions (see "What is left" under Phase 4).
+**What is left** (assembler still in the `C=1` build, rough sizes from the
+map, 2026-09-29):
+| Part | ~bytes | Notes |
+|---|---|---|
+| Key handlers keys.c dispatches to (execute, monitor, duplex key, volume/squelch/memory up-down-default, digit entry and backspace, scanner key, call/beep) | 900 | mainline; `test_diff` every-key scenarios cover the dispatch |
+| Memories and VIP list (store/recall, `go_mem_a`, `leave_memories`, `remember_vip`/`next_vip`) | 550 | mainline; with the key handlers |
+| PTT/TX flow (`pttcheck`, `tx_on`/`tx_off`, legality, APRS/MPRS on PTT, CCIR on PTT, tune tone) | 700 | timing: TX keying order, PLL delay |
+| CCIR/DTMF decoding and commands | 1300 | partly systick/interrupt context: only the mainline parts can go |
+| CTCSS set-up (decoder start/stop, encoder methods i8254/RFC DAC/FX465) | 700 | the DDS/DSP interrupt parts stay |
+| GPS I/O (`gps_check` gatherer, `gps_configure`, Aisin Seiki lat/lon) | 500 | the SiRF BREAK bit-bang stays |
+| Mainloop, idle functions, hook, lights, ignition | 300 | |
+| RFC table (fill, lookup), MBUS relay, small NV helpers | 400 | |
+| Frequency arithmetic kernel (`freq2div`/`div2freq`, `div248`, `channel_step_parms`) | 600 | kept asm on purpose (carry semantics, register results); optional |
+| **Stays assembler by design** | ~7000 | interrupts/systick/keypad/SIO/modem capture (~1.5 KB), handset drivers and display primitives (~2 KB), DTMF/AX.25 PWM, NV copy loops, boot and hardware init, bank trampolines, page-aligned tables (~3.7 KB) |
+
+**Next task: the key handlers with the memories/VIP list** (they call
+each other; ~1.4 KB, mainline, fixed ROM). Tests first: differential
+scenarios for memory store/recall/hide/scan flags, VIP walking, every
+long/short key outside the menu with digits typed and not, and the
+feedback texts. Then the PTT/TX flow, then the mainline halves of
+CCIR/DTMF and CTCSS, GPS I/O, the rest.
 Other open items: the real-board bench test (EPROM programmer);
 `notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
-modem CLK frequency); the bugs left in place: **notes/open-bugs.md** (the
-menu ones found in the port are there; CtCSSt on memories is fixed).
+modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
 Earlier handoffs: notes/hybrid-plan-history.md.
 
 **Rules learned this session (details in Phase 3/4 below):**
@@ -76,6 +83,15 @@ Earlier handoffs: notes/hybrid-plan-history.md.
   `awk '/^_[a-zA-Z0-9_]+:/{fn=$1} /\(ix\)|enter_ix/{c[fn]++} END{for(f in c) print f, c[f]}' build-c/X.asm`.
   Byte loops over NV with static pointers are about twice as slow as the
   asm (ALLrSt powered off 59 ms late): use a leaf with register pointers.
+- From the scanner port: the C build's mainline is slower per pass
+  (~1-10 % per scan step, up to ~14 ms a pass on a P8N), so timed stimuli
+  meet different states in the two builds. `test_scan_diff.py` compares
+  what the scanner does instead: the channel visits (difftest `visits`,
+  breakpoints on routines), aligned for a lag, each stay within a
+  tolerance, with channel-bound signals (`World`) and full checkpoints
+  only when stopped. Loops that run per channel or per memory slot must
+  not call helpers per item (a library divide and multiply per memory
+  slot cost ~0.3 ms each; the port skips unscanned memory blocks whole).
 - `tools/mutate.py --jobs N` builds each mutant in its own temporary copy
   of the firmware tree (TMPDIR), so mutants run in parallel and the repo
   is never modified; `R58_NV_CACHE` gives each its own SAnE NV cache.
@@ -693,11 +709,38 @@ first, port, differential test against stock, size check, commit.
   exactly on `end_menu`, no DPX value with bit 22 set, ALLrSt only with
   synth card 0, `rfctab`'s last byte already 0, no 16-bit alias of 666
   (66202), the memory CTCSS scenario ending on its original value.
+- **Done: the scanner in C, fixed ROM** (2026-09-29), `c/scan.c`: the
+  temporary/permanent reject lists, `add_reject`/`clear_rejects`, scan
+  masks (digits before S, toggles while scanning), the sorted slice table
+  and the scan itself. The asm coroutine (`scanner_state` = the return
+  address after each `call scanner_ret`) became a state number (low byte)
+  per resume point, with the same straight-line code between them, so
+  every mainloop pass does what the asm did in it. Stays asm:
+  `load_num_tmp_rejects`/`unreject_timer` (the minute timer), the
+  `scanner_key` UI, VIP list, `go_mem_a`. 1799 bytes of C for 1212 of
+  asm (1.5×); no IX frame except in C-only leaves. Memory scanning skips
+  unscanned 10-memory blocks whole (the asm tested each memory's block
+  bit), so a memory step is now a little faster than the asm's.
+  Two v3_Z findings: `add_reject` compared the wrong byte (**fixed**,
+  separate commit), overlapping bands loop between two channels (kept,
+  open-bugs), and the busy-channel double settling never happens (kept).
+  Safety net: `test_scan_diff.py` (21 tests, asm build vs `C=1`; see the
+  rule above): band slices (unsorted, overlapping, touching, empty, end
+  below start, top-byte boundaries, nested), S8B steps, memory blocks and
+  their digits, from `mem_idx` ≥ 130, no channels, stale/live/permanent
+  rejects, the reject key on the VIP and the VFO, slot reuse, clearing,
+  auto-reject, patience/tail incl. 0 and 255, forced squelch (paused and
+  while scanning), the FSK-carrier skip, toggles, stop keys and PTT, the
+  idle start, P8N. `test_scan_rptr.Rejects`. Mutation run: 49 mutants,
+  44 caught; not caught: 2 equivalent (the 9x block start, the dead
+  doubling), 3 timing-only (a step one or two mainloop passes early:
+  dropped yields, the ≥ 130 clamp), which the per-stay tolerance cannot
+  separate from the C build's pass-time spread.
+  `test_aprs_diff`: tolerance 30 ms (TX_OFF of the C APRS path was 20.0 ms
+  late, the known ~10 ms plus a systick, already at the 20 ms edge
+  before the scanner port).
 - **What is left, and what gates it:**
-  - Fixed-ROM modules that can go to C now: scanner (1.2 KB asm, a
-    coroutine through `scanner_state`: needs an explicit state machine),
-    memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
-    functions.
+  - See "What is left" in "Start here".
   - The real-board bench test still has to confirm both window pages.
 
 ### Future: EPROM1

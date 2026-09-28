@@ -55,3 +55,34 @@ Other open items: the scanner to C (coroutine → state machine); the
 real-board bench test (EPROM programmer); `notes/hardware.md` open
 questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK frequency);
 the bugs left in place: **notes/open-bugs.md**.
+
+## Handoff before the scanner port (written 2026-09-28)
+
+**State.** Phases 0-3 done; Phase 4 has the setup menu engine in C now
+(`c/menu.c`, bank 1). Banks: 0 = power-on (EPROM1 socket / multiboard),
+1 = EPROM0 chip 0xC000 (the menu; in the asm build also APRS/MPRS, GPS,
+FSK packets and repeater/CW, 834 bytes free; `C=1`: REC records, TAB/STR
+tables and band defaults as asm data 0x8000-0x97E7, then `c/menu.c`,
+3074 bytes; **7191 bytes free**), 2 = EPROM0 chip 0x8000 (`C=1`:
+`c/fsk.c`, `rptr.c`, `gps.c`, `aprs.c`, 11832 bytes; **~4.4 KB free**).
+Fixed ROM (`C=1`: squelch/CRC, timers, keys, display, freq in C, the
+shims and stubs, `_HOME`) ends at 0x4A0A (**~13.5 KB free**). 222 tests
+pass on both builds; `make -C firmware verify` still byte-identical, and
+the asm build is unchanged by the menu port.
+
+**Next task: the scanner to C** (1.2 KB of fixed-ROM asm, a coroutine
+through `scanner_state`: needs an explicit state machine). Simplest in
+fixed ROM (room enough, no bank-duty question); in a bank it would need
+the `far_repeater_run` kind of guard, since it runs on every mainloop pass
+while scanning. `load_num_tmp_rejects`/`unreject_timer` stay fixed
+(interrupts). Tests first: the scanner cases in `test_scan_rptr.py` pass
+on the release; a differential scenario set (asm build vs `C=1`) for
+scan rates, listen/tail times, rejects and auto-reject, memory scan
+masks, FSK-carrier skip, stop by key/PTT is still to write. After that:
+memories/VIP list, the PTT/TX flow (`pttcheck`), MBUS relay, idle
+functions (see "What is left" under Phase 4).
+Other open items: the real-board bench test (EPROM programmer);
+`notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
+modem CLK frequency); the bugs left in place: **notes/open-bugs.md** (the
+menu ones found in the port are there; CtCSSt on memories is fixed).
+Earlier handoffs: notes/hybrid-plan-history.md.

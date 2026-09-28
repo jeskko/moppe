@@ -14,7 +14,7 @@ mutants.py defines MUTANTS = [(old, new), ...]; each `old` must occur
 exactly once in the module.  The mutated build is passed to the tests as
 the candidate/default ROM through every env variable the tests read
 (R58_ROM/LST, R58_CAND_*, R58_RPTR_CAND_*, R58_GPS_CAND_*, R58_APRS_CAND_*,
-R58_MENU_CAND_*), so differential tests compare the asm build (reference)
+R58_MENU_CAND_*, R58_SCAN_CAND_*), so differential tests compare the asm build (reference)
 with the mutant.  --jobs N runs N mutants at once.  A test that fails
 without any mutant makes every result meaningless: run the tests on the
 unmutated build first.
@@ -31,7 +31,7 @@ import tempfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BUILD = "build-mut"
 ENV_PREFIXES = ("R58", "R58_CAND", "R58_RPTR_CAND", "R58_GPS_CAND", "R58_APRS_CAND",
-                "R58_MENU_CAND")
+                "R58_MENU_CAND", "R58_SCAN_CAND")
 # what `make C=1` needs, copied per mutant (tools/ is shared, read only)
 FIRMWARE_FILES = ("Makefile", "asm.h", "r58.s", "c")
 

@@ -62,6 +62,13 @@
 #define sane_defaults		_sane_defaults
 #define wipe_rfctab		_wipe_rfctab
 #define do_reboot		_do_reboot
+/* c/scan.c */
+#define scanner_start		_scanner_start
+#define scanner_run		_scanner_run
+#define scanner_stop		_scanner_stop
+#define toggle_scan_mask		_toggle_scan_mask
+#define add_reject		_add_reject
+#define clear_rejects		_clear_rejects
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -4892,6 +4899,7 @@ unreject_timer:
 	djnz 2b
 	ret
 
+#ifndef C_MODULES	/* c/scan.c: rejects, scan masks, slices, the scan */
 is_freq_rejected_temp:
 	ld c, a        ; CHL has freq
 
@@ -5669,6 +5677,8 @@ scan_did_step:
 	jr nz, 2b				; No signal for N seconds...
 
 	jp scan_do_step			; ... so Next.
+
+#endif /* C_MODULES */
 
 ;======================================================================
 ; 
@@ -20893,6 +20903,19 @@ scan_slices:     BUF(num_bandrecs * 2 * SIZE_FREQ)
 NUM_TMP_REJECTS = 20
 reject_idx:		BYTE
 tmp_rejects:		BUF((SIZE_FREQ + 1) * NUM_TMP_REJECTS) ; freq(3) + timer(1)
+#ifdef C_MODULES
+;  c/scan.c hard-codes these
+	ASSERT_EQ(NUM_TMP_REJECTS, 20)
+	ASSERT_EQ(mem_SIZE, 12)
+	ASSERT_EQ(mem_FLAGS, 6)
+	ASSERT_EQ(MEM_VALID, 0x01)
+	ASSERT_EQ(MEM_SCANNABLE, 0x04)
+	ASSERT_EQ(num_bandrecs, 6)
+	ASSERT_EQ(MDM + MDMCTRL, 0xA3)
+	ASSERT_EQ(MDM_DCD, 0x04)
+	ASSERT_EQ(cfg_reject_9 + 3 - cfg_reject_0, 30)
+	ASSERT_EQ(cfg_reject_19 + 3 - cfg_reject_10, 30)
+#endif
 
 adj_feedback:	WORD
 call_dpyed:      BYTE
