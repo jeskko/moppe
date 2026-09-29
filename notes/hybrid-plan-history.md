@@ -3,6 +3,30 @@
 Superseded "Start here" handoffs and session narrative moved out of
 hybrid-plan.md (which keeps the current state).
 
+## Handoff at the end of Phase 4, before the asm was dropped (written 2026-09-29)
+
+**State. Phase 4 is done as far as the plan's rule goes** ("assembler
+only for what is timing critical or awkward in C"). In `make C=1` the
+C modules are: timers, squelch/CRC, keys (dispatch, handlers, memories,
+VIP list, TX split/shift), display (rows and indicators), frequency logic
+(+ the RFC fill), scanner, PTT/TX flow, mainloop and its checks (fixed
+ROM); FSK, repeater/CW, GPS parsing, MPRS/APRS (bank 2); the setup menu
+engine (bank 1). Sizes: fixed ROM ends at 0x4F21 incl. the C code
+(**~12.3 KB free**), bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**;
+C statics 220 of the 256-byte `c_bss`. **301 tests** pass on both builds;
+`make -C firmware verify` byte-identical; the asm build differs from the
+release only by the bug fixes (latest: the CTCSS TX tone with the RFC
+DAC/FX465 methods, 2026-09-29).
+
+**Next task: to be decided (user).** Options: make `C=1` the default
+build and drop the `#ifndef C_MODULES` asm (keep a pinned release
+reference for `make verify` and the differential tests); the real-board
+bench test (EPROM programmer); the open bugs (**notes/open-bugs.md**);
+new features in the free space (bank 1/2, EPROM1 later).
+Other open items: `notes/hardware.md` open questions (IC27, EPROM0 pin 1 =
+CPU A15 assumed, modem CLK frequency).
+Earlier handoffs: notes/hybrid-plan-history.md.
+
 ## Handoff during the small-cluster ports (written 2026-09-29)
 
 **State.** Phases 0-3 done; Phase 4 has ported the timers, the key

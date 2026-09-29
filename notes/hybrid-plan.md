@@ -11,20 +11,26 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 ## Start here (next session, written 2026-09-29)
 
-**State. Phase 4 is done as far as the plan's rule goes** ("assembler
-only for what is timing critical or awkward in C"). In `make C=1` the
-C modules are: timers, squelch/CRC, keys (dispatch, handlers, memories,
-VIP list, TX split/shift), display (rows and indicators), frequency logic
-(+ the RFC fill), scanner, PTT/TX flow, mainloop and its checks (fixed
-ROM); FSK, repeater/CW, GPS parsing, MPRS/APRS (bank 2); the setup menu
-engine (bank 1). Sizes: fixed ROM ends at 0x4F21 incl. the C code
-(**~12.3 KB free**), bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**;
-C statics 220 of the 256-byte `c_bss`. **301 tests** pass on both builds;
-`make -C firmware verify` byte-identical; the asm build differs from the
-release only by the bug fixes (latest: the CTCSS TX tone with the RFC
-DAC/FX465 methods, 2026-09-29).
+**State (2026-09-29).** Phase 4 is done as far as the plan's rule goes
+("assembler only for what is timing critical or awkward in C"), and the
+**C modules are the only build**: `make` links r58.s with `c/*.c`; the
+assembler alternatives are gone from r58.s (21 356 → 11 019 lines; the
+binary stayed byte-identical to the former `make C=1`). The last commit
+with them is git tag **`asm-final`**; `make ref` builds it into
+`firmware/build-ref/`, the reference of the module differential tests
+(`test_*_diff.py`, `test_diff.DiffTest`), and it differs from the release
+only by the bug fixes. `make verify` still rebuilds the release from
+`r58.asm`. Sizes: fixed ROM ends at 0x4F10 incl. the C code (~12.2 KB
+free), bank 1 7191 bytes free, bank 2 ~4.4 KB free; C statics 220 of the
+256-byte `c_bss`. **301 tests** pass. Removed with the asm: 50 unused
+`#define x _x` renames, six stubs without callers, the second copy of the
+300 Hz marker shim (`marker_300hz_1s`).
 
-**What stays assembler** (`python3 tools/asmleft.py` after `make C=1`:
+Differential tests against `build-ref` only make sense for behaviour the
+reference has: a bug fix or a new feature differs from it on purpose (then
+the test pins the new behaviour on its own, as the bug-fix tests do).
+
+**What stays assembler** (`python3 tools/asmleft.py` after `make`:
 fixed-ROM asm 0x0100-0x2CA0, ~11.2 KB: data 2073, reachable from
 interrupts 3463, mainline hardware 2322, mainline plain 3309):
 | Part | Why |
@@ -38,14 +44,17 @@ interrupts 3463, mainline hardware 2322, mainline plain 3309):
 | Maths helpers (`bin_bcd`, `a2i*`, `mul248`, the GPS unit conversions), `aisin_seiki_parse_latlon` (IX/IY) | register interfaces for asm and C shims |
 | Boot (`main`, `cu58af_init`, hardware init), bank trampolines, page-aligned tables | fixed addresses, raw CPU |
 
-**Next task: to be decided (user).** Options: make `C=1` the default
-build and drop the `#ifndef C_MODULES` asm (keep a pinned release
-reference for `make verify` and the differential tests); the real-board
-bench test (EPROM programmer); the open bugs (**notes/open-bugs.md**);
-new features in the free space (bank 1/2, EPROM1 later).
-Other open items: `notes/hardware.md` open questions (IC27, EPROM0 pin 1 =
-CPU A15 assumed, modem CLK frequency).
-Earlier handoffs: notes/hybrid-plan-history.md.
+**Next task: to be decided (user).** The 2026-09-29 code review
+(findings not yet applied): a shared C header `c/r58.h` (162 symbols are
+declared in several files, with differing sizes and volatile), the
+remaining glue in r58.s (shim naming after the first caller, ~40 two-line
+bank stubs that a macro could write), duplicated C (`mprs_degmin_pack` ×3 in bank 2, `copy3` ×4,
+`menu_next/prev`, aprs.c's mirror/format blocks), test boilerplate in the
+`test_*_diff.py` files. Also: the real-board bench test (EPROM
+programmer); the open bugs (**notes/open-bugs.md**); new features in the
+free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
+open questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK
+frequency). Earlier handoffs: notes/hybrid-plan-history.md.
 
 **Rules learned this session (details in Phase 3/4 below):**
 - Moving code to a bank: `tools/bankxref.py` (external users),
@@ -356,8 +365,8 @@ notes/open-bugs.md):
   the normal firmware plus `bank_test` early at boot. The lower row shows
   `b1b2 PASS` (on a CU53AN the S look like 5, B like b) when both window
   pages are right; `b1 ssss 00` = bank 1's 16-bit byte sum was ssss
-  (`make banktest` prints both pages' sums, currently bank 1 FB75, bank 2
-  BE64; C000 = an erased page); `b1 CA11 vv` = sum fine but
+  (`make banktest` prints both pages' sums, currently bank 1 24B0, bank 2
+  ED48, from the C build since 2026-09-29; C000 = an erased page); `b1 CA11 vv` = sum fine but
   `bank_test_ping` returned vv; `b2 ssss 00` = bank 1 fine but bank 2's
   sum was ssss (bank 1's sum = RA14 does not select the page); `b2 CA11
   vv` = bank 2's sum fine but `bank_test_ping2`, called through a far2

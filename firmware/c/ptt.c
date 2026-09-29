@@ -8,7 +8,7 @@
  * OUT1, TX power, synth load, the PLL delay in halts; the result in carry
  * for their asm callers), ptt_ccir_xmit and the CCIR/marker tone routines
  * (OUT0 and 8254 writes with interrupts off), check_for_mprs_timer (carry),
- * locate_tx_band (IX).  Shims in r58.s: ptt_error_tone, ptt_tone_count,
+ * locate_tx_band (IX).  Shims in r58.s: marker_300hz_1s, ptt_tone_count,
  * ptt_1750_tone, ptt_tx_band_step; fsk_tx_on_failed/fsk_mprs_not_yet turn
  * carry into A.
  *
@@ -40,7 +40,7 @@ extern void open_selective(void), cu_manipulated(void), ctcss_maybe(void),
 	update_tx_vco_band(void), determine_tx_div_split(void),
 	close_squelch(void), tx_on_legal_or_not(void);
 extern void handle_key_during_tx(uint8_t k);
-extern void ptt_error_tone(void);		/* 300 Hz marker, 1 s */
+extern void marker_300hz_1s(void);		/* 300 Hz marker, 1 s */
 extern void ptt_tone_count(uint16_t count);	/* 8254 counter 1 */
 extern void ptt_1750_tone(void);
 extern void ptt_tx_band_step(void);		/* tx_refdiv, tx_bstep_cfg */
@@ -111,7 +111,7 @@ void pttcheck(void)
 /* TX refused: a 300 Hz marker, then wait for PTT to go up */
 void tx_error(void)
 {
-	ptt_error_tone();
+	marker_300hz_1s();
 	do
 		waitkey();
 	while (is_ptt_pressed());

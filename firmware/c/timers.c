@@ -39,7 +39,7 @@ extern void clear_clock_icon(void);
 extern void draw_clock_icon(void);
 extern void no_feedback(void);
 extern void redraw(void);
-extern void alert_tone_1s(void);		/* 300 Hz for 1 s (r58.s shim) */
+extern void marker_300hz_1s(void);	/* 300 Hz for 1 s (r58.s shim) */
 
 #define PA_HOOK		0x02
 #define PB_EXIN2	0x04			/* aka /IGN */
@@ -193,5 +193,5 @@ void battcheck(void)
 	if (alert_timer)
 		return;
 	alert_timer = 60;		/* 1 s tone every 60 s */
-	alert_tone_1s();
+	marker_300hz_1s();
 }

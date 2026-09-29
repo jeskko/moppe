@@ -5,27 +5,13 @@
 
 /* routines replaced by C (c/*.c); C symbols carry a leading underscore */
 #define squelch			_squelch
-#define append_short_packet_crc	_append_short_packet_crc
-#define append_long_packet_crc	_append_long_packet_crc
-#define append_secret_packet_crc	_append_secret_packet_crc
 #define once_per_second		_once_per_second
 #define once_per_minute		_once_per_minute
 #define once_per_hour		_once_per_hour
 #define battcheck		_battcheck
-#define keycheck		_keycheck
-#define dokey_not_menu		_dokey_not_menu
-#define handle_key_during_tx	_handle_key_during_tx
 #define draw_upper_row		_draw_upper_row
 #define draw_lower_row		_draw_lower_row
-#define changed_frequency		_changed_frequency
 #define changed_frequency_duplex_okay		_changed_frequency_duplex_okay
-#define temporary_change_rx_freq		_temporary_change_rx_freq
-#define locate_band		_locate_band
-#define set_duplex_from_tx_rx		_set_duplex_from_tx_rx
-#define step_duplex_state		_step_duplex_state
-#define step_channel_up		_step_channel_up
-#define step_channel_down		_step_channel_down
-#define update_tx_vco_band		_update_tx_vco_band
 /* c/menu.c (bank 1): the stub targets and the DYN/RST record routines */
 #define init_menu		_init_menu
 #define update_gpio12_foo		_update_gpio12_foo
@@ -63,52 +49,16 @@
 #define do_reboot		_do_reboot
 /* c/scan.c */
 #define scanner_start		_scanner_start
-#define scanner_run		_scanner_run
 #define scanner_stop		_scanner_stop
 #define toggle_scan_mask		_toggle_scan_mask
-#define add_reject		_add_reject
-#define clear_rejects		_clear_rejects
 /* c/keys.c: key handlers, memories, VIP list */
 #define execute			_execute
-#define monitor_audio		_monitor_audio
-#define up_freq			_up_freq
-#define dn_freq			_dn_freq
-#define def_sqlv		_def_sqlv
-#define up_sqlv			_up_sqlv
-#define dn_sqlv			_dn_sqlv
-#define up_vola			_up_vola
-#define dn_vola			_dn_vola
-#define fill_implied		_fill_implied
-#define insdig_or_scan_toggle	_insdig_or_scan_toggle
-#define insdig			_insdig
 #define backspace		_backspace
-#define insdig_punct		_insdig_punct
-#define insdig_alpha		_insdig_alpha
-#define duplex_key		_duplex_key
-#define beep_or_fsk_send	_beep_or_fsk_send
-#define scanner_key		_scanner_key
-#define def_vola		_def_vola
-#define def_memo		_def_memo
-#define def_freq		_def_freq
-#define remember_vip		_remember_vip
-#define next_vip		_next_vip
-#define up_memo			_up_memo
-#define dn_memo			_dn_memo
-#define save_memory_ctcss	_save_memory_ctcss
-#define go_mem_a		_go_mem_a
-#define leave_memories		_leave_memories
 /* c/ptt.c: the PTT/TX flow */
-#define pttcheck		_pttcheck
 #define tx_error		_tx_error
-#define beep1750		_beep1750
-#define tx_tune_tone_maybe	_tx_tune_tone_maybe
-#define aprs_ptt_check		_aprs_ptt_check
-#define spontaneous_mprs_check	_spontaneous_mprs_check
 /* c/display.c: the indicators */
 #define draw_dpx_ind		_draw_dpx_ind
 #define draw_ctcss_and_mute_and_gps_ind	_draw_ctcss_and_mute_and_gps_ind
-#define draw_squelch_ind	_draw_squelch_ind
-#define set_dpx_ind_from_rx_tx_freq	_set_dpx_ind_from_rx_tx_freq
 /* c/freq.c: the RFC table fill */
 #define rfc_fill_blanks		_rfc_fill_blanks
 
@@ -3337,17 +3287,6 @@ gps_configure_SiRF_tailored:
 
 
 ; GPS sentence processing: c/gps.c, bank 2.
-far_gps_process_aisin_seiki:	; DE -> after a 0x0D in gps_history, kept
-	push de
-	ld a, e
-	call 1f
-	pop de
-	ret
-1:
-	call bank2_call
-	.dw _gps_process_aisin_seiki
-far_gps_process_sentence:	; C = length
-	ld a, c
 gpsc_sentence:			; c/mainloop.c: A = length
 	call bank2_call
 	.dw _gps_process_sentence
@@ -3403,7 +3342,7 @@ gpio2_command:
 
 ;----------------------------------------------------------------------
 
-alert_tone_1s:			; for c/timers.c battcheck: 300 Hz for 1 s
+marker_300hz_1s:		; c/timers.c battcheck, c/ptt.c tx_error: 300 Hz, 1 s
 	ld hl, #MT_300HZ
 	ld d, #100
 	jp start_marker_tone
@@ -3673,8 +3612,6 @@ far_send_mprs_report_packet_maybe:	call bank2_call
 	.dw _send_mprs_report_packet_maybe
 far_send_mprs_report_packet:	call bank2_call
 	.dw _send_mprs_report_packet
-far_send_mprs_report_packet_1:	call bank2_call
-	.dw _send_mprs_report_packet_1
 far_send_call_packet:	call bank2_call
 	.dw _send_call_packet
 
@@ -4053,10 +3990,6 @@ check_for_mprs_timer:
 	ret                         ; timer at or above threshold = no carry
 
 ;  c/ptt.c shims
-ptt_error_tone:			; tx_error's 300 Hz marker
-	ld hl, #MT_300HZ
-	ld d, #100
-	jp start_marker_tone
 ptt_1750_tone:
 	ld hl, #MT_1750HZ
 ptt_tone_count:			; HL = 8254 counter 1 count
@@ -9375,18 +9308,8 @@ far_menu_prev:	call bank1_call
 	.dw menu_prev
 far_decoder_hist_rewind:	call bank1_call
 	.dw decoder_hist_rewind
-; c/menu.c: remote_config_execute takes the pointer in HL, the data in DE;
-; load_menu_ptr is menu_value_ptr (menu_ptr's value, in DE), fsk_menu_ptr
-far_remote_config_execute:	; DE = ptr, HL = data
-	ex de, hl
-	call bank1_call
-	.dw _remote_config_execute
 far_leaved_setup:	call bank1_call
 	.dw leaved_setup
-far_draw_menu_title:	call bank1_call
-	.dw draw_menu_title
-far_draw_menu_lower_row:	call bank1_call
-	.dw draw_menu_lower_row
 
 ; read by the APRS code, so not in the bank with the other menu tables
 	TAB(tab_ax25_digi)      ; must be literal as used in packet, chr by chr
