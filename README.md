@@ -83,6 +83,6 @@ firmware. Not covered, because it is not ours to license:
 
 | Path | Origin |
 |---|---|
-| `firmware/r58.asm`, the original code in `firmware/r58.s` | The R58 community ham firmware v3_Z ALs (OH5NXO et al.), distributed through the OH3TR archive; its authors' terms apply. `firmware/c/` ports parts of it to C, so the same applies to the logic carried over. |
+| `firmware/r58.asm`, the original code in `firmware/r58.s` | The R58 community ham firmware (OH5NXO et al.; archive at OH3TR); the v3_Z ALs version (OH1E and OH5NXO, 2018, decimal CTCSS tones) is published at <https://titanix.net/DMR/r58/> without a license, so its authors' terms apply. `firmware/c/` ports parts of it to C, so the same applies to the logic carried over. |
 | `tools/as80/` | The "jas" assembler (1996-97) from the old R58 development kit, patched to build on modern systems (notes/toolchain.md). |
 | `emu/tests/zex/zexdoc.com`, `zexall.com` | Frank D. Cringle's Z80 instruction exercisers (GPL). |
