@@ -22,27 +22,30 @@ bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
 `make -C firmware verify` byte-identical; the asm build changes only by
 the bug fixes.
 
-**What is left** (assembler still in the `C=1` build, rough sizes from the
-map, 2026-09-29):
-| Part | ~bytes | Notes |
+**What is left** (measured 2026-09-29 with `python3 tools/asmleft.py`
+after `make C=1`): fixed-ROM asm 0x0100-0x2F58, **~11.9 KB**: data 2030,
+reachable from interrupts 3463, mainline touching hardware (out/in, DI,
+halt, exx) 2321, mainline plain code 4049. The earlier estimates were too
+high: CCIR/DTMF and CTCSS are nearly all interrupt context or hardware.
+| Part | ~bytes | Status |
 |---|---|---|
-| CCIR/DTMF: sending (`ptt_ccir_xmit`, `ccir_from_digbuf(_or_setup)`, the DTMF tone keys), decoding and commands | 1400 | partly systick/interrupt context: only the mainline parts can go; the OUT0/8254 writers stay |
-| CTCSS set-up (decoder start/stop, encoder methods i8254/RFC DAC/FX465) | 700 | the DDS/DSP interrupt parts stay |
-| GPS I/O (`gps_check` gatherer, `gps_configure`, Aisin Seiki lat/lon) | 500 | the SiRF BREAK bit-bang stays |
-| Mainloop, idle functions, hook, lights, ignition | 300 | |
-| RFC table (fill, lookup), MBUS relay, small NV helpers | 400 | |
-| Small asm kept for asm callers: `set_vola(_a)` (OUT0, DI), `set_tx_freq`, `set_duplex_shift_*`, `step_audio_dst`, `mute_squelch_selective`, `compare_tx_rx_freq`, `point_ix_memory`, `a2i*`, `is_key_down`/`waitkey`, the feedback stubs, `check_for_mprs_timer` (carry) | 350 | port with their asm callers |
-| TX keying: `tx_on`/`tx_off`/`tx_on_legal_or_not` (OUT1, TX power, synth load, PLL delay in halts; carry result for six asm callers), `update_txpwr`, `real_txpwr` | 150 | kept asm on purpose (hardware sequence) |
-| Frequency arithmetic kernel (`freq2div`/`div2freq`, `div248`, `channel_step_parms`) | 600 | kept asm on purpose (carry semantics, register results); optional |
-| **Stays assembler by design** | ~7000 | interrupts/systick/keypad/SIO/modem capture (~1.5 KB), handset drivers and display primitives (~2 KB), DTMF/AX.25 PWM, NV copy loops, boot and hardware init, bank trampolines, page-aligned tables (~3.7 KB) |
+| CCIR/DTMF: decoders, series matching, `dtmf_commands`, `ccir_repeater_cmd`, GPIO commands | ~900 | systick: stays asm |
+| CCIR/DTMF sending (`ptt_ccir_xmit`, `ccir_from_digbuf(_or_setup)`, `dtmf_bang_tone`, `dtmf_cu58af`/`i2c_dtmf`), `ccircheck` | ~400 | **decided 2026-09-29: stays asm** (OUT0/8254 writes with DI, cycle-counted DTMF, the handset bus; a C version would be shims around shims) |
+| CTCSS: `ctcss_off`/`ctcss_maybe`/FX465/8254/DAC set-up | ~400 | hardware: stays asm |
+| CTCSS maths: `calculate_sintab`, `ctcss_hz_to_phase_inc`, `ctcss_dec_start(stop)` | 110 | portable |
+| Mainloop and its checks: `mainloop`, `gps_check` (+ Aisin Seiki `gps_check_aisin_seiki`, `aisin_seiki_parse_latlon`), `script_check`, `idlefn_check`, `bus_rf_relay`, `dim_lights_if_idle`, `cu_lights_off`, `redrawcheck`, `ccircheck` | 430 | portable (per-pass cost matters: scanner speed, bank duty) |
+| Indicators: `draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`, `draw_squelch_ind` | 210 | portable (the single-bit icon setters stay: interrupts use some) |
+| RFC table: `rfc_fill_blanks`, `rfc_fill_one_hole`, `get_rfc_hl` | 145 | portable |
+| `set_tx_freq`, `set_duplex_shift_*`, `compare_tx_rx_freq`, `point_ix_memory` | 130 | portable once no asm caller needs their registers |
+| Frequency kernel (`determine_rx_div`, `freq2div`, `channel_step_parms`, `locate_tx_band`, `div248`, ...) | ~500 | kept asm on purpose (carry semantics, register results); optional |
+| TX keying `tx_on`/`tx_off` | 150 | kept asm on purpose |
+| Display primitives (`draw_word`, `dpydig`, `draw_long`, `dpyval*`, strings), maths helpers (`bin_bcd`, `a2i`, `mul248`), boot (`main`, `cu58af_init`), bank trampolines | ~1500 | stays by design |
 
-**Next task: the mainline halves of CCIR/DTMF** (sending: `ptt_ccir_xmit`,
-`ccir_from_digbuf(_or_setup)`, `ccircheck` and the command/history side
-that runs from the mainloop; the decoders' systick parts and the OUT0/8254
-writers stay asm). Tests first: CCIR/DTMF digit strings sent and received
-(`test_signalling.py` covers some), shortcuts, histories, the repeater's
-CCIR/DTMF commands, timing of tone lengths. Then CTCSS set-up, GPS I/O,
-the rest.
+**Next task: to be decided (user).** The portable remainder is ~1.1 KB in
+small clusters (table above). Either port them (the mainloop group first,
+then indicators, RFC, CTCSS maths), or call Phase 4 done and move on
+(e.g. make `C=1` the default build and drop the dead asm, the bench
+test, open bugs).
 Other open items: the real-board bench test (EPROM programmer);
 `notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
 modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
