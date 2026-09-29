@@ -15,8 +15,10 @@ list (duplicates, the 10-entry ring, PTT remembering the channel).
 Checkpoints compare display, icons, latches, events and NV (memories and
 the VIP list are NV); probes add the RAM they leave behind (digit buffer,
 VIP index, feedback text, squelch forcing, ...).  Holds are chosen clear
-of the key timers: `key_time` steps about once a second from ~1.2 s of
-hold (1 at 1.2 s, 2 at 2.2 s, 3 at 3.2 s), `keydown` counts 10 ms ticks.
+of the key timers: `key_time` steps about once a second, for '#', 'R',
+'S' from ~1.2 s of hold (1 at 1.2 s, 2 at 2.2 s, 3 at 3.2 s), for a held
+digit from the long press on (1 at ~0.6 s, 2 at 1.65 s, 3 at 2.65 s, 4 at
+3.65 s); `keydown` counts 10 ms ticks.
 
     R58_KEYS_REF_ROM / R58_KEYS_REF_LST    reference (default build/)
     R58_KEYS_CAND_ROM / R58_KEYS_CAND_LST  candidate (default build-c/)
@@ -124,7 +126,7 @@ def script(ks, label):
             ("hook", True), ("run", 0.5)] + at(label) + [("hook", False), ("run", 0.5)]
 
 
-BOOT = [("boot", 2.5)]
+BOOT = [("boot", 2.5)]		# copy before +=
 
 
 class KeysDiff(unittest.TestCase):
@@ -140,7 +142,8 @@ class KeysDiff(unittest.TestCase):
         s += key("C", label="one erased") + key("C") + key("C") + key("C") + key("C", label="C on empty")
         s += [("keys", "1234567890123456")] + at("16 digits")
         s += key("7", label="17th ignored")
-        s += held("C", 0.8, "C repeating", mid=False)
+        s += held("C", 0.8, "C before its repeat", mid=False)
+        s += [("keys", "123456")] + held("C", 1.5, "C repeating (from ~1.1 s)", mid=False)
         s += key("C", label="C on empty again")
         s += [("keys", "98")] + held("C", 0.25, "C held just past 200 ms")
         self.diff(s)
@@ -154,10 +157,10 @@ class KeysDiff(unittest.TestCase):
         self.diff(s)
 
     def test_vip_walk(self):
-        s = BOOT
+        s = list(BOOT)
         s += memory(3, 433300) + memory(17, 433425, 431825) + memory(88, 145500)
         for d in ("433500", "3", "433600", "17", "433500", "88", "145525", "3", "433700",
-                  "433725", "433750", "433775", "433800"):
+                  "433725", "367964", "51000", "433775", "433800"):
             s += enter(d)
         for i in range(12):
             s += key("#", label="vip %d" % i)
@@ -176,6 +179,10 @@ class KeysDiff(unittest.TestCase):
 
     def test_store_memory(self):
         s = BOOT + enter("433525")
+        # slots with old contents: the store overwrites band byte and the
+        # two spare bytes, keeps the CTCSS bytes
+        for m in (0, 5, 99, 129):
+            s += memory(m, 145000 + m, 145600, flags=0x07, ctcss_t=3, ctcss_r=4)
         for digits, secs in (("5", 1.7), ("", 2.7), ("0", 3.7), ("129", 1.7), ("130", 1.7),
                              ("250", 2.7), ("1234", 1.7), ("", 1.7)):
             s += [("keys", digits)] + held("#", secs, "store %r %.1f" % (digits, secs))
@@ -187,7 +194,7 @@ class KeysDiff(unittest.TestCase):
         self.diff(s)
 
     def test_memory_up_down(self):
-        s = BOOT
+        s = list(BOOT)
         s += memory(0, 433100) + memory(4, 433200, flags=0x03) + memory(7, 433300, flags=0x01)
         s += memory(8, 433325, 431725, flags=0x05, ctcss_t=5, ctcss_r=9)
         s += memory(128, 433400) + memory(129, 433425, flags=0x00) + memory(64, 145500, flags=0x07)
@@ -211,8 +218,8 @@ class KeysDiff(unittest.TestCase):
         self.diff(s)
 
     def test_default_memory(self):
-        s = BOOT + memory(11, 433275) + memory(99, 433475)
-        for m in (11, 99, 135, 0):
+        s = BOOT + memory(11, 433275) + memory(99, 433475) + memory(129, 433450, flags=0x03)
+        for m in (11, 99, 129, 130, 135, 0):
             s += [("poke", "cfg_def_memory", m), ("keys", "3")]
             s += held("8", 1.0, "def memory %d" % m)
         s += [("poke", "cfg_def_memory", 11), ("poke", "cfg_idlefn", 2),
@@ -226,9 +233,11 @@ class KeysDiff(unittest.TestCase):
         s += key("1", 0.65, "sq up") + key("1", 0.65, "sq up") + key("1", 0.65, "sq up at 255")
         s += [("poke", "cfg_squelch_level", 1)]
         s += key("4", 0.65, "sq down") + key("4", 0.65, "sq down at 0")
+        s += key("B", label="forced") + key("4", 0.65, "sq down unforces")
         s += key("B", label="forced") + key("1", 0.65, "sq up unforces")
         s += [("keys", "44")] + key("7", 0.65, "sq default")
-        s += [("poke", "cfg_squelch_level", 40)] + held("7", 2.7, "sq store default")
+        s += [("poke", "cfg_squelch_level", 40)] + held("7", 1.3, "sq still default")
+        s += [("poke", "cfg_squelch_level", 40)] + held("7", 2.1, "sq store default")
         s += key("B", label="forced") + key("7", 0.65, "sq default unforces")
         self.diff(s)
 
@@ -252,6 +261,8 @@ class KeysDiff(unittest.TestCase):
         s += scan + key("#", label="# stops") + scan + key("C", label="C stops")
         s += scan + key("1", label="digit toggles mask") + key("#", label="stopped")
         s += scan + key("*", label="star while scanning") + key("#")
+        s += scan + key("E", label="menu while scanning") + key("1", label="menu digit stops")
+        s += key("E", label="menu left")
         # R does not stop the scanner: compare once '#' has
         s += scan + [("press", "R", 1.7), ("run", 0.3)] + key("#", label="R while scanning")
         self.diff(s, ignore=("SYNTH", "rx_loads", "tx_loads", "ctrl_loads"))
@@ -295,14 +306,20 @@ class KeysDiff(unittest.TestCase):
         s = BOOT + enter("433500")
         s += held("S", 1.7, "reject") + enter("433525") + held("S", 1.7, "reject 2")
         s += enter("433500") + held("S", 2.7, "cleared")
-        s += held("S", 0.5, "start") + key("#", label="stopped")
-        s += [("keys", "1")] + held("S", 0.5, "start with mask") + key("3", label="toggle mask")
+        # while scanning only probes: the C scanner steps at another speed
+        # (test_scan_diff.py); stopping returns to the last VIP
+        scanning = [("probe", "scanning", lambda r: (r.peek16("scan_mask"), r.peek("scan_on")))]
+        s += [("key_down", "S"), ("run", 0.5)] + at("start held") + [("key_up",), ("run", 0.4)]
+        s += scanning + key("#", label="stopped")
+        s += [("keys", "1"), ("key_down", "S"), ("run", 0.5)] + at("start with mask held")
+        s += [("key_up",), ("run", 0.4)] + scanning + [("press", "3"), ("run", 0.3)] + scanning
         s += key("#", label="stopped")
-        self.diff(s)
+        self.diff(s, ignore=("SYNTH", "rx_loads", "tx_loads", "ctrl_loads"))
 
     def test_star(self):
         s = BOOT + enter("433500") + held("*", 0.6, "beep 1750")
         s += [("keys", "1234")] + key("*", label="call packet") + [("run", 1.0)] + at("sent")
+        s += [("keys", "5")] + key("*", label="call packet, one digit") + [("run", 1.0)] + at("sent 1")
         s += [("poke", "cfg_tx_band_start", f24(440000))] + held("*", 0.6, "beep refused")
         self.diff(s)
 
@@ -310,12 +327,12 @@ class KeysDiff(unittest.TestCase):
 
     def test_menu_letters(self):
         s = BOOT + key("E", label="menu")
-        for d, secs in (("2", 0.6), ("2", 1.7), ("2", 2.7), ("2", 3.7), ("9", 4.7), ("0", 0.6),
-                        ("0", 2.7), ("0", 5.7), ("0", 8.7), ("1", 0.6), ("5", 0.6)):
+        for d, secs in (("2", 0.8), ("2", 2.1), ("2", 3.1), ("2", 4.1), ("9", 5.1), ("0", 0.8),
+                        ("0", 3.1), ("0", 6.1), ("0", 9.1), ("1", 0.8), ("5", 0.8)):
             s += held(d, secs, "letter %s %.1f" % (d, secs), mid=False)
         s += key("C", label="erased") + keys("1234567890", label="digits")
-        s += held("7", 0.6, "letter at 15", mid=False) + held("8", 0.6, "letter at 16", mid=False)
-        s += held("8", 0.6, "full", mid=False) + held("C", 0.8, "cleared", mid=False) + key("E", label="menu left")
+        s += held("7", 0.8, "letter at 15", mid=False) + held("8", 0.8, "letter at 16", mid=False)
+        s += held("8", 0.8, "full", mid=False) + held("C", 0.8, "cleared", mid=False) + key("E", label="menu left")
         self.diff(s)
 
     # ---- other handsets and cards
@@ -323,7 +340,7 @@ class KeysDiff(unittest.TestCase):
     def test_cu58af(self):
         s = BOOT + memory(3, 433300) + enter("433525") + enter("3")
         s += [("keys", "16")] + held("R", 2.7, "shift pos")
-        s += held("S", 2.7, "cleared") + key("2", 0.65, "up") + held("7", 2.7, "stored")
+        s += held("S", 2.7, "cleared") + key("2", 0.65, "up") + held("7", 2.1, "stored")
         s += [("keys", "8")] + held("#", 3.7, "store hidden") + key("#") + key("#")
         s += key("+") + key("-") + key("B") + key("B")
         # key releases are seen once per display refresh, 25 ms on this

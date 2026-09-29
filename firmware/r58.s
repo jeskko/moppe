@@ -69,6 +69,35 @@
 #define toggle_scan_mask		_toggle_scan_mask
 #define add_reject		_add_reject
 #define clear_rejects		_clear_rejects
+/* c/keys.c: key handlers, memories, VIP list */
+#define execute			_execute
+#define monitor_audio		_monitor_audio
+#define up_freq			_up_freq
+#define dn_freq			_dn_freq
+#define def_sqlv		_def_sqlv
+#define up_sqlv			_up_sqlv
+#define dn_sqlv			_dn_sqlv
+#define up_vola			_up_vola
+#define dn_vola			_dn_vola
+#define fill_implied		_fill_implied
+#define insdig_or_scan_toggle	_insdig_or_scan_toggle
+#define insdig			_insdig
+#define backspace		_backspace
+#define insdig_punct		_insdig_punct
+#define insdig_alpha		_insdig_alpha
+#define duplex_key		_duplex_key
+#define beep_or_fsk_send	_beep_or_fsk_send
+#define scanner_key		_scanner_key
+#define def_vola		_def_vola
+#define def_memo		_def_memo
+#define def_freq		_def_freq
+#define remember_vip		_remember_vip
+#define next_vip		_next_vip
+#define up_memo			_up_memo
+#define dn_memo			_dn_memo
+#define save_memory_ctcss	_save_memory_ctcss
+#define go_mem_a		_go_mem_a
+#define leave_memories		_leave_memories
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -4293,6 +4322,7 @@ handle_key_during_tx:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES	/* c/keys.c: the key handlers up to set_vola */
 execute:
 	ld a, (scan_on)
 	or a
@@ -4446,6 +4476,7 @@ up_vola:
 dn_vola:
 	ld a, #-1
 	jr 1f
+#endif /* C_MODULES */
 set_vola:
 	xor a
 1:
@@ -4505,6 +4536,7 @@ set_vola_a:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES	/* c/keys.c */
 fill_implied:
 
 	; 3 or 4 digits, use implied for initial part of frequency
@@ -4528,6 +4560,7 @@ fill_implied:
 	ld (digidx), a      ; abs. freq now
 
 	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -4545,6 +4578,7 @@ clear_key:
 	pop af
 	ret
 
+#ifndef C_MODULES	/* c/keys.c: digit entry to def_freq */
 insdig_or_scan_toggle:
 	ld e, a
 	ld a, (scan_on)
@@ -4763,6 +4797,7 @@ def_freq:
 	load_ahl(cfg_def_frequency)
 	save_ahl(rx_freq)
 	jp changed_frequency
+#endif /* C_MODULES */
 
 	; tx_freq - rx_freq into ahl and CY and Z
 
@@ -4778,6 +4813,7 @@ compare_tx_rx_freq:
 
 ;======================================================================
 ;
+#ifndef C_MODULES	/* c/keys.c: the VIP list */
 ;  Push current memory/frequency
 ;  into vip_list, forgetting oldest record.
 ;  Duplicates raise into head of list.
@@ -4863,6 +4899,7 @@ next_vip:
 	save_ahl(rx_freq)
 	call leave_memories
 	jp changed_frequency
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -6219,6 +6256,7 @@ mdm_delay:
 
 ;======================================================================
 
+#ifndef C_MODULES	/* c/keys.c: memories, except point_ix_memory */
 save_memory:
 	ld a, (digidx)
 	or a
@@ -6364,6 +6402,7 @@ save_memory_ctcss:
 	ld a, (mem_ctcss_rx_hz)
 	ld (ix + mem_CTCSSr), a
 	ret
+#endif /* C_MODULES */
 
 ;======================================================================
 
@@ -6388,6 +6427,7 @@ point_ix_memory_a:
 	pop ix
 	ret
 
+#ifndef C_MODULES	/* c/keys.c */
 go_mem_a:
 	cp #130
 	jr c, 1f
@@ -6428,6 +6468,7 @@ leave_memories:
 	xor a
 	ld (mem_flags), a
 	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -12803,6 +12844,17 @@ menu_a2i:			; AHL -> HLDE (32 bits)
 menu_a2i_word:			; HL -> DE
 	call a2i_word
 	ex de, hl
+	ret
+keys_a2i:			; c/keys.c: digits -> 24 bits at HL
+	push hl
+	call a2i		; AHL, keeps BC/DE/IX
+	ex de, hl
+	pop hl
+	ld (hl), e
+	inc hl
+	ld (hl), d
+	inc hl
+	ld (hl), a
 	ret
 #endif /* C_MODULES */
 
@@ -20915,6 +20967,15 @@ tmp_rejects:		BUF((SIZE_FREQ + 1) * NUM_TMP_REJECTS) ; freq(3) + timer(1)
 	ASSERT_EQ(MDM_DCD, 0x04)
 	ASSERT_EQ(cfg_reject_9 + 3 - cfg_reject_0, 30)
 	ASSERT_EQ(cfg_reject_19 + 3 - cfg_reject_10, 30)
+;  c/keys.c hard-codes these too
+	ASSERT_EQ(end_memories - memories, 130 * 12)
+	ASSERT_EQ(mem_CTCSSt, 7)
+	ASSERT_EQ(mem_BAND, 8)
+	ASSERT_EQ(mem_CTCSSr, 9)
+	ASSERT_EQ(mem_FOO2, 10)
+	ASSERT_EQ(mem_FOO3, 11)
+	ASSERT_EQ(MEM_HIDDEN, 0x02)
+	ASSERT_EQ(VIP_COUNT, 10)
 #endif
 
 adj_feedback:	WORD
@@ -21163,7 +21224,7 @@ bank_test_msg:	BUF(10)
 #endif
 
 #ifdef C_MODULES
-C_BSS_SIZE = 192
+C_BSS_SIZE = 224
 c_bss:	.ds C_BSS_SIZE	; the C modules' _DATA area is linked here (tools/link.py)
 c_bss_end:
 #endif

@@ -3,6 +3,44 @@
 Superseded "Start here" handoffs and session narrative moved out of
 hybrid-plan.md (which keeps the current state).
 
+## Handoff before the key handler port (written 2026-09-29)
+
+**State.** Phases 0-3 done; Phase 4 has ported the timers, keys dispatch,
+display composition, frequency logic and the scanner (fixed ROM), the
+FSK layer, repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup
+menu engine (bank 1). `C=1` sizes: fixed ROM ends at 0x4C55 (**~13.2 KB
+free**), bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C
+statics use **179 of the 192-byte `c_bss`** (raise `C_BSS_SIZE` in r58.s
+for the next module). 248 tests pass on both builds (`test_aprs_send`
+now at 30 ms tolerance, see Phase 4); `make -C firmware verify`
+byte-identical; the asm build changes only by the bug fixes.
+
+**What is left** (assembler still in the `C=1` build, rough sizes from the
+map, 2026-09-29):
+| Part | ~bytes | Notes |
+|---|---|---|
+| Key handlers keys.c dispatches to (execute, monitor, duplex key, volume/squelch/memory up-down-default, digit entry and backspace, scanner key, call/beep) | 900 | mainline; `test_diff` every-key scenarios cover the dispatch |
+| Memories and VIP list (store/recall, `go_mem_a`, `leave_memories`, `remember_vip`/`next_vip`) | 550 | mainline; with the key handlers |
+| PTT/TX flow (`pttcheck`, `tx_on`/`tx_off`, legality, APRS/MPRS on PTT, CCIR on PTT, tune tone) | 700 | timing: TX keying order, PLL delay |
+| CCIR/DTMF decoding and commands | 1300 | partly systick/interrupt context: only the mainline parts can go |
+| CTCSS set-up (decoder start/stop, encoder methods i8254/RFC DAC/FX465) | 700 | the DDS/DSP interrupt parts stay |
+| GPS I/O (`gps_check` gatherer, `gps_configure`, Aisin Seiki lat/lon) | 500 | the SiRF BREAK bit-bang stays |
+| Mainloop, idle functions, hook, lights, ignition | 300 | |
+| RFC table (fill, lookup), MBUS relay, small NV helpers | 400 | |
+| Frequency arithmetic kernel (`freq2div`/`div2freq`, `div248`, `channel_step_parms`) | 600 | kept asm on purpose (carry semantics, register results); optional |
+| **Stays assembler by design** | ~7000 | interrupts/systick/keypad/SIO/modem capture (~1.5 KB), handset drivers and display primitives (~2 KB), DTMF/AX.25 PWM, NV copy loops, boot and hardware init, bank trampolines, page-aligned tables (~3.7 KB) |
+
+**Next task: the key handlers with the memories/VIP list** (they call
+each other; ~1.4 KB, mainline, fixed ROM). Tests first: differential
+scenarios for memory store/recall/hide/scan flags, VIP walking, every
+long/short key outside the menu with digits typed and not, and the
+feedback texts. Then the PTT/TX flow, then the mainline halves of
+CCIR/DTMF and CTCSS, GPS I/O, the rest.
+Other open items: the real-board bench test (EPROM programmer);
+`notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
+modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
+Earlier handoffs: notes/hybrid-plan-history.md.
+
 ## Handoff before the menu engine port (written 2026-09-28)
 
 **State.** Phases 0-3 done. Banks: 0 = power-on (EPROM1 socket / multiboard),

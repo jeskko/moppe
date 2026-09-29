@@ -11,36 +11,36 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 ## Start here (next session, written 2026-09-29)
 
-**State.** Phases 0-3 done; Phase 4 has ported the timers, keys dispatch,
-display composition, frequency logic and the scanner (fixed ROM), the
-FSK layer, repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup
-menu engine (bank 1). `C=1` sizes: fixed ROM ends at 0x4C55 (**~13.2 KB
-free**), bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C
-statics use **179 of the 192-byte `c_bss`** (raise `C_BSS_SIZE` in r58.s
-for the next module). 248 tests pass on both builds (`test_aprs_send`
-now at 30 ms tolerance, see Phase 4); `make -C firmware verify`
-byte-identical; the asm build changes only by the bug fixes.
+**State.** Phases 0-3 done; Phase 4 has ported the timers, the key
+dispatch and handlers with the memories and VIP list, display
+composition, frequency logic and the scanner (fixed ROM), the FSK layer,
+repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup menu engine
+(bank 1). `C=1` sizes: fixed ROM ends at 0x4DC3 (**~12.6 KB free**),
+bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
+**199 of the 224-byte `c_bss`**. 267 tests pass on both builds;
+`make -C firmware verify` byte-identical; the asm build changes only by
+the bug fixes.
 
 **What is left** (assembler still in the `C=1` build, rough sizes from the
 map, 2026-09-29):
 | Part | ~bytes | Notes |
 |---|---|---|
-| Key handlers keys.c dispatches to (execute, monitor, duplex key, volume/squelch/memory up-down-default, digit entry and backspace, scanner key, call/beep) | 900 | mainline; `test_diff` every-key scenarios cover the dispatch |
-| Memories and VIP list (store/recall, `go_mem_a`, `leave_memories`, `remember_vip`/`next_vip`) | 550 | mainline; with the key handlers |
-| PTT/TX flow (`pttcheck`, `tx_on`/`tx_off`, legality, APRS/MPRS on PTT, CCIR on PTT, tune tone) | 700 | timing: TX keying order, PLL delay |
+| PTT/TX flow (`pttcheck`, `tx_on`/`tx_off`, legality, APRS/MPRS on PTT, CCIR on PTT, tune tone, `beep1750`) | 750 | timing: TX keying order, PLL delay |
 | CCIR/DTMF decoding and commands | 1300 | partly systick/interrupt context: only the mainline parts can go |
 | CTCSS set-up (decoder start/stop, encoder methods i8254/RFC DAC/FX465) | 700 | the DDS/DSP interrupt parts stay |
 | GPS I/O (`gps_check` gatherer, `gps_configure`, Aisin Seiki lat/lon) | 500 | the SiRF BREAK bit-bang stays |
 | Mainloop, idle functions, hook, lights, ignition | 300 | |
 | RFC table (fill, lookup), MBUS relay, small NV helpers | 400 | |
+| Small key-side asm kept for asm callers: `set_vola(_a)` (OUT0, DI), `set_tx_freq`, `set_duplex_shift_*`, `step_audio_dst`, `mute_squelch_selective`, `compare_tx_rx_freq`, `point_ix_memory`, `a2i*`, `is_key_down`/`waitkey`, the feedback stubs | 350 | port with their asm callers (frequency kernel, PTT) |
 | Frequency arithmetic kernel (`freq2div`/`div2freq`, `div248`, `channel_step_parms`) | 600 | kept asm on purpose (carry semantics, register results); optional |
 | **Stays assembler by design** | ~7000 | interrupts/systick/keypad/SIO/modem capture (~1.5 KB), handset drivers and display primitives (~2 KB), DTMF/AX.25 PWM, NV copy loops, boot and hardware init, bank trampolines, page-aligned tables (~3.7 KB) |
 
-**Next task: the key handlers with the memories/VIP list** (they call
-each other; ~1.4 KB, mainline, fixed ROM). Tests first: differential
-scenarios for memory store/recall/hide/scan flags, VIP walking, every
-long/short key outside the menu with digits typed and not, and the
-feedback texts. Then the PTT/TX flow, then the mainline halves of
+**Next task: the PTT/TX flow** (`pttcheck` … `tx_error`, `tx_on`/`tx_off`,
+`beep1750`, `tx_tune_tone_maybe`; fixed ROM, mainline). Tests first:
+differential scenarios for TX keying order and timing (OUT0/OUT1 latch
+sequence, PLL settle, TX refused out of band and with TX limits, TOT),
+digits on PTT (CCIR), APRS/MPRS on key-up, the 1750 Hz beep, the tune
+tone in the menu, the repeater-mode PTT path. Then the mainline halves of
 CCIR/DTMF and CTCSS, GPS I/O, the rest.
 Other open items: the real-board bench test (EPROM programmer);
 `notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
@@ -95,6 +95,18 @@ Earlier handoffs: notes/hybrid-plan-history.md.
 - `tools/mutate.py --jobs N` builds each mutant in its own temporary copy
   of the firmware tree (TMPDIR), so mutants run in parallel and the repo
   is never modified; `R58_NV_CACHE` gives each its own SAnE NV cache.
+  **A new differential test file needs its `R58_X_CAND` prefix in
+  `ENV_PREFIXES`** (mutate.py), or it silently tests the unmutated build
+  and every mutant "survives".
+- From the key handler port: key timing in scenarios. `key_time` steps
+  about once a second: for '#'/'R'/'S' at ~1.2/2.2/3.2 s of hold, for a
+  held digit at ~0.6/1.65/2.65/3.65 s (from the long press); pick holds
+  mid-step. A repeating key starts a 30 ms blip (OUT0 bit 6) per repeat,
+  so compare only RAM mid-hold there. **CU58AF:** the handset signals only
+  changes (/INT) and the firmware reads a release 90-100 ms after it; a
+  press before that read is lost (both builds), so scenario gaps after a
+  release need >= 150 ms (`test_menu_diff` walk had 100 ms and flipped
+  on a 2 ms systick phase shift).
 
 ## Ground rules
 
@@ -739,6 +751,45 @@ first, port, differential test against stock, size check, commit.
   `test_aprs_diff`: tolerance 30 ms (TX_OFF of the C APRS path was 20.0 ms
   late, the known ~10 ms plus a systick, already at the 20 ms edge
   before the scanner port).
+- **Done: key handlers, memories and VIP list in C, fixed ROM**
+  (2026-09-29), in `c/keys.c` with the dispatch: `execute` ('#': entry,
+  implied digits, VIP walk, memory store by hold length), `monitor_audio`,
+  the long-digit functions (squelch/memory/frequency up, down, default;
+  volume default), `up/dn_vola`, digit entry, backspace and the menu's
+  letters/punctuation, `duplex_key`, `scanner_key`, `beep_or_fsk_send`;
+  `save_memory`, memory up/down (`step_memory`), `go_mem(_a)`,
+  `save_memory_ctcss` (bank-1 menu calls it directly), `leave_memories`,
+  `remember_vip`, `next_vip`, `fill_implied` (also called by the asm
+  `set_tx_freq`). The hold-length loops share `held_until(n)`. Stay asm
+  (asm callers need their registers or they disable interrupts):
+  `set_vola(_a)`, `force/unforce_squelch`, `clear_buffer`/`clear_key`,
+  `compare_tx_rx_freq`, `point_ix_memory(_a)`, `is_key_down`/`waitkey`,
+  the feedback stubs, `set_tx_freq`/`set_duplex_shift_*`, `beep1750`,
+  `step_audio_dst`, `mute_squelch_selective`. New shim `keys_a2i` (digits
+  → 24 bits at HL). `back_to_last_vip` had no callers and is gone in C.
+  1537 bytes of C for 1171 of asm (1.3×); no IX frame except the C-only
+  leaf `copy3`; `c_bss` 192 → 224 bytes (199 used). Memory layout,
+  `VIP_COUNT` and `MEM_HIDDEN` asserted in r58.s.
+  Safety net first: `test_keys_diff.py` (19 tests, asm build vs `C=1`):
+  digit entry/backspace (incl. the clear-all repeat, from ~1.1 s), '#'
+  entries of every length with two implied prefixes, the VIP walk (ring
+  wrap, duplicates, a frequency differing only in its top byte, one below
+  65536 kHz), PTT remembering the channel, memory store per hold length
+  into slots with old contents and out-of-range indexes, up/down over
+  hidden/invalid slots, wrap and none valid, default memory incl. 130 and
+  the idle function, squelch/frequency/volume keys at their limits and
+  unforcing, monitor short/long/forced/duplex, the duplex key's hold
+  lengths, scanner key, star with 0/1/4 digits and refused, menu letters,
+  keys that stop the scanner (incl. a menu digit), CU58AF (30 ms
+  tolerance: key releases are seen once per 25 ms display refresh), P8N.
+  Mutation run (`tools/mutants/keys.py`): 70 mutants, 69 caught, 1
+  equivalent (`go_mem_a`'s `set_channel_step`, which `locate_band`
+  already calls, in the asm too). The first round had 7 survivors, each
+  a scenario gap (listed above as the "incl." cases), after a first run
+  that tested nothing (mutate.py lacked the test's env prefix).
+  Test fixes on the way: `test_menu_diff` CU58AF walk gaps (see the rule
+  in "Start here"); a scenario list extended in place (`s = BOOT; s +=`)
+  had leaked one test's steps into the next.
 - **What is left, and what gates it:**
   - See "What is left" in "Start here".
   - The real-board bench test still has to confirm both window pages.
