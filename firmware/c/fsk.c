@@ -36,7 +36,8 @@ extern uint8_t fsk_history[256], outpacket[16], digbuf[16],
 extern uint16_t cfg_remote_id, mprs_report_timer;
 extern const uint8_t version[8];
 /* compared as addresses only (bank 1 routines) */
-extern const uint8_t menu_rfc_change[], menu_sql_change[], menu_sqB_change[];
+extern void menu_rfc_change(uint8_t d), menu_sql_change(uint8_t d),
+	menu_sqB_change(uint8_t d);
 
 /* firmware routines (assembler) */
 extern void redraw(void), cu_lights_on(void), cu_call_on(void), ding(void),

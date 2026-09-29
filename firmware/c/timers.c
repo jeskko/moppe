@@ -167,19 +167,24 @@ static void battcheck_lobatt(void)
 }
 
 /* The routines called here do not preserve IX, so no stack locals. */
-static uint8_t low, warn;
+static uint8_t low, warn, v;
 
 void battcheck(void)
 {
 	/* after a transmission the voltage sags, so lower thresholds */
-	low = txtail_timer ? VOLTS(8) : VOLTS(9);
-	warn = txtail_timer ? VOLTS(9) : VOLTS(10);
-
-	if (ad_batt < low) {
+	if (txtail_timer) {
+		low = VOLTS(8);
+		warn = VOLTS(9);
+	} else {
+		low = VOLTS(9);
+		warn = VOLTS(10);
+	}
+	v = ad_batt;			/* one reading for both thresholds */
+	if (v < low) {
 		battcheck_lobatt();
 		return;
 	}
-	if (ad_batt >= warn) {
+	if (v >= warn) {
 		clear_clock_icon();
 		return;
 	}

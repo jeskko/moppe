@@ -126,7 +126,8 @@ static void parameters_from_band(void)
 /* from a memory's rx/tx pair */
 void set_duplex_from_tx_rx(void)
 {
-	f = (get24(tx_freq) - get24(rx_freq)) & MASK24;
+	f = get24(tx_freq);
+	f = (f - get24(rx_freq)) & MASK24;
 	if (f) {
 		put24(duplex_shift, f);
 		duplex_state = DPX_DUPLEX;
@@ -174,7 +175,8 @@ static void set_legal_tx_flag(void)
 
 void update_rx_vco_band(void)
 {
-	if (get24(rx_freq) < get24(cfg_rx_vco_center))
+	f = get24(rx_freq);
+	if (f < get24(cfg_rx_vco_center))
 		synth_ctrl |= 0x01;		/* "1" = low band */
 	else
 		synth_ctrl &= ~0x01;
@@ -182,7 +184,8 @@ void update_rx_vco_band(void)
 
 void update_tx_vco_band(void)
 {
-	if (get24(tx_freq) < get24(cfg_tx_vco_center))
+	f = get24(tx_freq);
+	if (f < get24(cfg_tx_vco_center))
 		synth_ctrl |= 0x02;
 	else
 		synth_ctrl &= ~0x02;
@@ -193,8 +196,9 @@ static void determine_qsy_kHz(void)
 {
 	f = get24(rx_freq);
 	g = get24(rx_freq_previous);
-	put24(last_qsy_kHz, f >= g ? f - g : g - f);
-	scan_settling_time = get24(last_qsy_kHz) < get24(cfg_scan_large_qsy) ?
+	g = f >= g ? f - g : g - f;
+	put24(last_qsy_kHz, g);
+	scan_settling_time = g < get24(cfg_scan_large_qsy) ?
 		cfg_scan_rate_kvik : cfg_scan_rate_slow;
 	put24(rx_freq_previous, f);
 }
@@ -242,16 +246,22 @@ void step_duplex_state(void)
 void step_channel_up(void)
 {
 	/* one more, to land on the right slice when stepping to its end */
-	put24(rx_freq, get24(rx_freq) + band_step_hz + 1);
+	f = get24(rx_freq);
+	f += band_step_hz;
+	f++;
+	put24(rx_freq, f);
 	changed_frequency();
 }
 
 void step_channel_down(void)
 {
 	/* step from 1 below, with the step of the slice we land in */
-	put24(rx_freq, get24(rx_freq) - 1);
+	f = get24(rx_freq) - 1;
+	put24(rx_freq, f);
 	locate_band();
-	put24(rx_freq, get24(rx_freq) - (uint16_t)(channel_step_parms(band_step) - 1));
+	f = get24(rx_freq);
+	f -= (uint16_t)(channel_step_parms(band_step) - 1);
+	put24(rx_freq, f);
 	changed_frequency();
 }
 

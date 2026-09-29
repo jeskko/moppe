@@ -39,13 +39,13 @@
 #define DIGBUF_SIZE	16
 #define KEYDOWN_LONG	20		/* 10 ms ticks: 200 ms */
 
-extern uint8_t key, menu_active, cu_is_alfa, scan_on, digidx, digbuf[DIGBUF_SIZE],
+extern uint8_t menu_active, cu_is_alfa, scan_on, digidx, digbuf[DIGBUF_SIZE],
 	vip_idx, vip_list[3 * VIP_COUNT], vip_freq[3], mem_idx, mem_flags,
 	memories[NUM_MEMORIES * MEM_SIZE], rx_freq[3], tx_freq[3], volume,
 	cfg_def_volume, cfg_def_memory, cfg_def_frequency[3], cfg_squelch_level,
 	cfg_def_squelch, squelch_forced, band_step, mem_ctcss_tx_hz,
 	mem_ctcss_rx_hz, cfg_implied[3];
-extern volatile uint8_t key_time, keydown;	/* keypad interrupt */
+extern volatile uint8_t key, key_time, keydown;	/* keypad interrupt */
 
 extern void clear_key(void);			/* preserves A */
 extern void no_feedback(void);
@@ -170,9 +170,9 @@ static uint8_t pending;			/* static: no stack frame */
 
 void keycheck(void)
 {
-	if (key == 0xFF)
+	pending = key;			/* read once: the keypad interrupt writes it */
+	if (pending == 0xFF)
 		return;
-	pending = key;
 	clear_key();
 	dokey(pending);
 	no_feedback();
