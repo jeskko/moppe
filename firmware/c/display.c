@@ -1,7 +1,7 @@
 /*
- * Display composition in C (Phase 4, notes/hybrid-plan.md).  Built with
- * `make C=1`; replaces draw_upper_row and draw_lower_row of r58.s and the
- * routines only they use (see the C_MODULES blocks there).
+ * Display composition in C (Phase 4, notes/hybrid-plan.md).  Replaces
+ * draw_upper_row and draw_lower_row of r58.s and the routines only they
+ * use (the assembler originals are in git tag asm-final).
  *
  * The assembler threads a display cursor through DE: on a CU53AN it walks
  * a ROM table of segment-bit positions, on a CU58AF a RAM character

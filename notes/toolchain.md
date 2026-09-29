@@ -14,11 +14,18 @@ r58.s --cpp -traditional--> --tools/asmpp.py--> r58.pp.s --sdasz80--> r58.rel
 twice: `build-release/` (`r58.asm` converted afresh by as80tosdas.py and
 built with this toolchain) and `build-as80/` (`r58.asm` with as80). Both
 must be byte-identical. `build-release` is also the reference build of the
-differential tests. `r58.s` itself differs from the release since Phase 2
-(notes/hybrid-plan.md). `r58.s` was produced from `r58.asm` by
-`tools/as80tosdas.py` (one-shot converter, kept for re-running on other
-as80 sources such as the ALr variant), then the `C_MODULES` blocks were
-edited by hand for the linked C objects; `r58.asm` is now reference only.
+differential tests against the release (`test_diff.py`). `r58.s` itself
+differs from the release since Phase 2 (notes/hybrid-plan.md). `r58.s` was
+produced from `r58.asm` by `tools/as80tosdas.py` (one-shot converter, kept
+for re-running on other as80 sources such as the ALr variant), then edited
+by hand; `r58.asm` is now reference only.
+
+`make ref` builds `build-ref/` from git tag `asm-final` (`git archive` of
+firmware/ and tools/ into `build-ref/src`): the last commit with the
+assembler alternative to every C module, including the bug fixes. It is the
+reference of the module differential tests (`test_*_diff.py`,
+`test_diff.DiffTest`). The C modules became the only build on 2026-09-29;
+until then `make` built the assembler and `make C=1` the C version.
 
 ### Source dialect
 
@@ -87,7 +94,7 @@ not run in (bank-2 C → bank 1, fixed C → either bank); calls between banks
 go through the fixed-ROM `far_*` stubs. `ADDRESS_ONLY` in link.py lists
 symbols C only compares as numbers.
 
-### C modules (`make C=1`)
+### C modules
 
 `c/*.c` → `sdcc -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size -c` →
 `.rel`, linked with the firmware by `tools/link.py`:
@@ -101,10 +108,11 @@ symbols C only compares as numbers.
 - SDCC runtime helpers come from SDCC's `z80.lib`, searched in every build
   (the assembler uses its banked-call trampoline `___sdcc_bcall_ehl`).
 - C → firmware names: C `x` is `_x`; `tools/cglue.py` emits `_x = x` for
-  every `_x` the C objects reference (`build-c/cglue.inc`, included by
+  every `_x` the C objects reference (`build/cglue.inc`, included by
   r58.s).
-- Firmware → C: a `#define squelch _squelch` block at the top of r58.s
-  under `C_MODULES`, and the assembler version under `#ifndef C_MODULES`.
+- Firmware → C: a `#define squelch _squelch` block at the top of r58.s.
+- The modules are linked in the order of `MODULES` in the Makefile, which
+  sets the layout: add new ones at the end.
 
 See notes/rewrite-evaluation.md for the register rules C code must follow.
 

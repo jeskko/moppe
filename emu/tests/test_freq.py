@@ -1,5 +1,5 @@
 """
-Frequency, band and duplex logic (c/freq.c with `make C=1`): the release
+Frequency, band and duplex logic (c/freq.c): the release
 and the build under test side by side through band edges, slice
 boundaries, the duplex cycle, split, TX legality (band, out-of-band
 spots, /LOCAL), memories with a shift, and QSY sizes, comparing the RAM

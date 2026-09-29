@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Mutation check for a C port (notes/hybrid-plan.md, "Safety net"): apply
-each mutant (a source replacement) to a C module, build `make C=1` in a
+each mutant (a source replacement) to a C module, build `make` in a
 temporary copy of the firmware tree, run the given tests against that
 build, and report which mutants no test caught.  The module in the
 repository is never modified.  Run from the repository root:
@@ -37,7 +37,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BUILD = "build-mut"
 ENV_PREFIXES = ("R58", "R58_CAND", "R58_RPTR_CAND", "R58_GPS_CAND", "R58_APRS_CAND",
                 "R58_MENU_CAND", "R58_SCAN_CAND", "R58_KEYS_CAND", "R58_PTT_CAND", "R58_MAIN_CAND", "R58_DPY_CAND", "R58_RFC_CAND")
-# what `make C=1` needs, copied per mutant (tools/ is shared, read only)
+# what `make` needs, copied per mutant (tools/ is shared, read only)
 FIRMWARE_FILES = ("Makefile", "asm.h", "r58.s", "c")
 
 
@@ -53,7 +53,7 @@ def run_mutant(i, old, new, rel, orig, tests):
         with open(os.path.join(tmp, rel), "w") as f:
             f.write(orig.replace(old, new))
         label = (new.strip() or "(deleted) " + old.strip()).replace("\n", " ")[:50]
-        r = subprocess.run(["make", "-s", "-C", fw, "C=1", "BUILD=" + BUILD],
+        r = subprocess.run(["make", "-s", "-C", fw, "BUILD=" + BUILD],
                            capture_output=True, text=True)
         if r.returncode:
             return i, None, "%d BUILD FAILED %s" % (i, r.stderr[-200:])

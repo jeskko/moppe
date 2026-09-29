@@ -1,10 +1,11 @@
 /*
  * GPS sentence processing in C, in ROM bank 2 (Phase 4,
- * notes/hybrid-plan.md).  Built with `make C=1`; replaces the bank-1
- * assembler from gps_process_aisin_seiki to gps_information_has_been_updated
- * (see the C_MODULES blocks in r58.s) except the two APRS symbol tables in
- * it.  The byte gatherer gps_check stays fixed (it runs on every mainloop
- * pass); it calls these once per complete sentence through far_* stubs.
+ * notes/hybrid-plan.md).  Replaces the bank-1 assembler from
+ * gps_process_aisin_seiki to gps_information_has_been_updated (the
+ * assembler originals are in git tag asm-final) except the two APRS
+ * symbol tables in it.  The byte gatherer gps_check stays fixed (it
+ * runs on every mainloop pass); it calls these once per complete
+ * sentence through far_* stubs.
  *
  * Kept from the assembler on purpose (test_gps_diff.py pins them):
  * number fields only reject characters below '0' (a letter is stored as

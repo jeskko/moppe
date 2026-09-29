@@ -1,9 +1,9 @@
 /*
- * Frequency, band and duplex logic in C (Phase 4, notes/hybrid-plan.md).
- * Built with `make C=1`; replaces changed_frequency and its chain,
- * locate_band, the duplex logic, the TX-legality check, channel stepping,
- * the QSY size check and the VCO band bits of r58.s (see the C_MODULES
- * blocks there).
+ * Frequency, band and duplex logic in C (Phase 4,
+ * notes/hybrid-plan.md).  Replaces changed_frequency and its chain,
+ * locate_band, the duplex logic, the TX-legality check, channel
+ * stepping, the QSY size check and the VCO band bits of r58.s (the
+ * assembler originals are in git tag asm-final).
  *
  * Frequencies are 24-bit little-endian values in kHz; duplex shifts are
  * 24-bit two's complement, so sums wrap at 24 bits as in the assembler.

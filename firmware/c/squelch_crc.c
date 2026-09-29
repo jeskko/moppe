@@ -1,11 +1,11 @@
 /*
  * Squelch state machine and FSK packet CRCs in C (SDCC, --sdcccall 1).
  *
- * Proof of concept for mixing C into r58.asm: built with `make C=1`, it
- * replaces `squelch` and the three `append_*_packet_crc` routines of the
- * assembler source (see the C_MODULES blocks there).  The C code owns no
- * RAM: every variable lives in r58.asm and is declared extern here; the
- * small helpers it calls stay in assembler because other code uses them.
+ * The first C module (the proof of concept of the hybrid build): replaces
+ * `squelch` and the three `append_*_packet_crc` routines of r58.s (the
+ * assembler originals are in git tag asm-final).  Firmware variables live
+ * in r58.s and are declared extern here; the small helpers it calls stay
+ * in assembler because other code uses them.
  */
 #include <stdint.h>
 

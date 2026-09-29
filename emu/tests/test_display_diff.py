@@ -8,7 +8,7 @@ forced-squelch star (draw_squelch_ind: an icon on the CU53AN, a character
 on the CU58AF).  Checkpoints compare the raw segments.
 
     R58_DPY_REF_ROM / R58_DPY_REF_LST    reference (default build/)
-    R58_DPY_CAND_ROM / R58_DPY_CAND_LST  candidate (default build-c/)
+    R58_DPY_CAND_ROM / R58_DPY_CAND_LST  candidate (default build/)
 """
 import os
 import sys
@@ -21,16 +21,16 @@ from r58emu import P8E, P8N, CU53AN, CU58AF  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_DPY_REF_ROM", os.path.join(FW, "build", "r58.bin")),
-       os.environ.get("R58_DPY_REF_LST", os.path.join(FW, "build", "r58.map")))
-CAND = (os.environ.get("R58_DPY_CAND_ROM", os.path.join(FW, "build-c", "r58.bin")),
-        os.environ.get("R58_DPY_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
+REF = (os.environ.get("R58_DPY_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
+       os.environ.get("R58_DPY_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
+CAND = (os.environ.get("R58_DPY_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
+        os.environ.get("R58_DPY_CAND_LST", os.path.join(FW, "build", "r58.map")))
 
 
 def setUpModule():
     for rom, lst in (REF, CAND):
         if not (os.path.exists(rom) and os.path.exists(lst)):
-            raise unittest.SkipTest("build not found (%s); run make -C firmware [C=1]" % rom)
+            raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
 
 
 def at(label):

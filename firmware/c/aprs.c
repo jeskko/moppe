@@ -1,10 +1,11 @@
 /*
  * MPRS receive and APRS sending in C, in ROM bank 2 (Phase 4,
- * notes/hybrid-plan.md).  Built with `make C=1`; replaces the bank-1
- * assembler from handle_mprs_packets to stuffed_8bits, the APRS symbol
- * tables and packet_callsign_unpack / mprs_degmin_pack (see the C_MODULES
- * blocks in r58.s).  Called directly by c/fsk.c (a 4x packet, the report
- * when cfg_report_type is set) and c/gps.c (gps_own_locator).
+ * notes/hybrid-plan.md).  Replaces the bank-1 assembler from
+ * handle_mprs_packets to stuffed_8bits, the APRS symbol tables and
+ * packet_callsign_unpack / mprs_degmin_pack (the assembler originals
+ * are in git tag asm-final).  Called directly by c/fsk.c (a 4x packet,
+ * the report when cfg_report_type is set) and c/gps.c
+ * (gps_own_locator).
  *
  * Arithmetic follows the assembler exactly, test_aprs_diff.py compares
  * them: 24-bit values (AHL) wrap at 24 bits (mod24), digits are stored as

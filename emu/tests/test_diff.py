@@ -4,15 +4,16 @@ firmware build against a candidate build on the same scripted scenarios
 and check the emulator agrees on every observable at each checkpoint.
 
 Run from the repository root:
-    make -C firmware && make -C firmware C=1 && make -C emu
+    make -C firmware && make -C firmware verify ref && make -C emu
     python3 -m unittest discover -s emu/tests -v
 
 The reference is the released v3_Z ALs firmware as built by `make -C
 firmware verify` (`firmware/build-release/`, byte-identical to the
 release); override with R58_REF_ROM/R58_REF_LST. The candidate defaults to
 the current source, `firmware/build/`; set R58_CAND_ROM/R58_CAND_LST for
-another build, e.g. `firmware/build-c/r58.{bin,map}` (`make -C firmware
-C=1`). The module is skipped if either build is missing.
+another build. DiffTest compares the pinned assembler build
+(`firmware/build-ref/`, `make -C firmware ref`) with the current one. The
+module is skipped if either build is missing.
 
 NV starting images come from test_radio.make_sane_nv(), which always
 builds from the *stock* firmware (it is cached per card/cu/synth_card,
@@ -156,7 +157,7 @@ def _keys(keys, hold=0.15, label=None):
 
 
 # Every key code through the key dispatch (keycheck/dokey/menu_input/
-# handle_key_during_tx, in C with C=1): short keys, long digits (0x80-0x89),
+# handle_key_during_tx, in C): short keys, long digits (0x80-0x89),
 # the menu's keys, keys while transmitting, and 'K'/'T', which no handset
 # has and only a hook script (script_check -> dokey_not_menu) sends.
 SCN_EVERY_KEY = [
@@ -186,7 +187,7 @@ def _show(label, *pokes):
             ("run", 0.3), ("check", label)]
 
 
-# Display states of draw_upper_row/draw_lower_row (c/display.c with C=1)
+# Display states of draw_upper_row/draw_lower_row (c/display.c)
 # that other scenarios do not reach, set up by poking what they display.
 SCN_DISPLAY_STATES = [
     ("boot", 2.5),
@@ -340,8 +341,8 @@ def _fsk_edge_scenarios():
 
 
 class DiffTest(unittest.TestCase):
-    """Stock (firmware/build) vs. candidate (default firmware/build-c,
-    C=1) on the same scenario. An empty `run_diff()` result means the two
+    """The pinned assembler build (firmware/build-ref) vs. the current one
+    (firmware/build) on the same scenario. An empty `run_diff()` result means the two
     builds produced the same display, icons, synth registers, held output
     latches, event sequence (within a timing tolerance) and NV image at
     every ("check", ...) step."""

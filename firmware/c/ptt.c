@@ -1,8 +1,8 @@
 /*
- * PTT and TX flow in C (Phase 4, notes/hybrid-plan.md).  Built with
- * `make C=1`; replaces pttcheck, tx_error, beep1750, tx_tune_tone_maybe,
- * aprs_ptt_check and spontaneous_mprs_check of r58.s (see the C_MODULES
- * blocks there).  Fixed ROM, mainline only.
+ * PTT and TX flow in C (Phase 4, notes/hybrid-plan.md).  Replaces
+ * pttcheck, tx_error, beep1750, tx_tune_tone_maybe, aprs_ptt_check and
+ * spontaneous_mprs_check of r58.s (the assembler originals are in git
+ * tag asm-final).  Fixed ROM, mainline only.
  *
  * Stay assembler: tx_on/tx_off/tx_on_legal_or_not (the keying sequence:
  * OUT1, TX power, synth load, the PLL delay in halts; the result in carry

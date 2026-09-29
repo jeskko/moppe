@@ -1,9 +1,9 @@
 /*
  * The mainloop and its per-pass checks in C (Phase 4,
- * notes/hybrid-plan.md).  Built with `make C=1`; replaces mainloop,
- * gps_check (the NMEA and Aisin Seiki gatherers), script_check,
- * idlefn_check, bus_rf_relay, dim_lights_if_idle, redrawcheck and
- * ccircheck of r58.s (see the C_MODULES blocks there).  Fixed ROM.
+ * notes/hybrid-plan.md).  Replaces mainloop, gps_check (the NMEA and
+ * Aisin Seiki gatherers), script_check, idlefn_check, bus_rf_relay,
+ * dim_lights_if_idle, redrawcheck and ccircheck of r58.s (the assembler
+ * originals are in git tag asm-final).  Fixed ROM.
  *
  * Stay assembler: cu_lights_off (single-bit writes to `indicators`,
  * which interrupts also write), ding, getchar (DI), send_packet_buffer

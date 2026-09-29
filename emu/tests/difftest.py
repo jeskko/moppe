@@ -186,7 +186,7 @@ def observe(radio):
 # any real behavioural difference.
 #
 # Evidence they are NOT timing-sensitive here (checked by experiment,
-# comparing firmware/build vs firmware/build-c, i.e. the C=1 candidate
+# comparing the asm build with the C one (then called C=1)
 # that replaces `squelch` and the packet-CRC routines):
 #   - boot + frequency entry: rx_loads/tx_loads/ctrl_loads identical
 #     (4/0/3) between stock and candidate, and identical across repeated

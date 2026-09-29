@@ -1,9 +1,9 @@
 /*
  * Repeater state machine, CW and note sequences in C, in ROM bank 2
- * (Phase 4, notes/hybrid-plan.md).  Built with `make C=1`; replaces the
- * bank-1 assembler from repeater_halt to cw_tab (see the C_MODULES
- * blocks in r58.s).  What interrupts reach stays in fixed-ROM assembler:
- * the DTMF/CCIR command parsers that set repeater_req, the 1 s / 10 ms
+ * (Phase 4, notes/hybrid-plan.md).  Replaces the bank-1 assembler from
+ * repeater_halt to cw_tab (the assembler originals are in git tag
+ * asm-final).  What interrupts reach stays in fixed-ROM assembler: the
+ * DTMF/CCIR command parsers that set repeater_req, the 1 s / 10 ms
  * timer steps, the suspend toggle; so do cw_calc_delays / cw_calc_blip
  * (div248_full) and the waits, which run in bank 0 (b0_*).
  *

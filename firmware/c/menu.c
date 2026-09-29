@@ -1,10 +1,11 @@
 /*
- * Setup menu engine in C, in ROM bank 1 (Phase 4, notes/hybrid-plan.md).
- * Built with `make C=1`; replaces the bank-1 assembler from init_menu to
- * the RST routines (set_defaults_band ... do_reboot), see the C_MODULES
- * blocks in r58.s.  The 285 REC records, the TAB/STR tables, the band
- * defaults and menu_quickspots stay assembler data in bank 1 next to this
- * code; the DYN and RST records point at the routines here.
+ * Setup menu engine in C, in ROM bank 1 (Phase 4,
+ * notes/hybrid-plan.md).  Replaces the bank-1 assembler from init_menu
+ * to the RST routines (set_defaults_band ... do_reboot); the assembler
+ * originals are in git tag asm-final.  The 285 REC records, the TAB/STR
+ * tables, the band defaults and menu_quickspots stay assembler data in
+ * bank 1 next to this code; the DYN and RST records point at the
+ * routines here.
  *
  * Fixed code enters through the far_* stubs (bank1_call): init_menu,
  * update_gpio12_foo, the key handlers, decoder_hist_rewind, leaved_setup,

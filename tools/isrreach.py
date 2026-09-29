@@ -11,7 +11,7 @@ Textual call graph: a routine is a global label up to the next one; its
 edges are call/jp/jr/djnz to global labels, `.dw label` in its body (vector
 and jump tables), and falling through into the next label unless its last
 instruction is an unconditional ret/reti/retn/jp/jr/doreti (cpp lines,
-e.g. `#ifndef C_MODULES` or a multi-line #define, are not instructions;
+e.g. `#ifdef` or a multi-line #define, are not instructions;
 both sides of an #ifdef count, which errs on the safe side).  Indirect jumps
 through RAM (`jp (hl)`, scanner_state, repeater_state) are not followed;
 they are all mainline today, check new ones by hand.  Roots: the IM2

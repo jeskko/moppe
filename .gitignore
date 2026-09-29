@@ -12,6 +12,7 @@ firmware/build-c/
 firmware/build-as80/
 firmware/build-release/
 firmware/build-banktest/
+firmware/build-ref/
 experiments/c-density/sample.asm
 experiments/c-density/sample.lst
 experiments/c-density/sample.rel

@@ -1,9 +1,9 @@
 /*
  * FSK packet layer in C, in ROM bank 2 (Phase 4, notes/hybrid-plan.md).
- * Built with `make C=1`; replaces the bank-1 assembler from
- * packet_callsign_pack to send_mprs_report_packet_1 and from
- * map_special_ptrs to build_call_packet_buffer (see the C_MODULES blocks
- * in r58.s).  packet_callsign_unpack and mprs_degmin_pack are in
+ * Replaces the bank-1 assembler from packet_callsign_pack to
+ * send_mprs_report_packet_1 and from map_special_ptrs to
+ * build_call_packet_buffer (the assembler originals are in git tag
+ * asm-final).  packet_callsign_unpack and mprs_degmin_pack are in
  * c/aprs.c (mprs_degmin_pack also here).
  *
  * Fixed code enters through the far_* stubs (bank2_call): receive

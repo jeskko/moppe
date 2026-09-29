@@ -29,7 +29,7 @@ squelch, the FSK-carrier skip, mask toggles while scanning, the keys and
 PTT that stop it, the idle-function start, P8N.
 
     R58_SCAN_REF_ROM / R58_SCAN_REF_LST    reference (default build/)
-    R58_SCAN_CAND_ROM / R58_SCAN_CAND_LST  candidate (default build-c/)
+    R58_SCAN_CAND_ROM / R58_SCAN_CAND_LST  candidate (default build/)
 """
 import os
 import sys
@@ -42,10 +42,10 @@ from r58emu import P8E, P8N, CU53AN, AD_SQL, load_symbols  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_SCAN_REF_ROM", os.path.join(FW, "build", "r58.bin")),
-       os.environ.get("R58_SCAN_REF_LST", os.path.join(FW, "build", "r58.map")))
-CAND = (os.environ.get("R58_SCAN_CAND_ROM", os.path.join(FW, "build-c", "r58.bin")),
-        os.environ.get("R58_SCAN_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
+REF = (os.environ.get("R58_SCAN_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
+       os.environ.get("R58_SCAN_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
+CAND = (os.environ.get("R58_SCAN_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
+        os.environ.get("R58_SCAN_CAND_LST", os.path.join(FW, "build", "r58.map")))
 
 MEM_SIZE = 12
 # per stay: 15 ms + 10 %.  A mainloop pass of the C build can take up to

@@ -1,8 +1,9 @@
 /*
- * systick timers and the battery check in C (Phase 4, notes/hybrid-plan.md).
- * Built with `make C=1`; replaces once_per_second, once_per_minute,
- * once_per_hour and battcheck of r58.s (see the C_MODULES blocks there).
- * Behaviour pinned by emu/tests/test_timers.py and test_menu_power.py.
+ * systick timers and the battery check in C (Phase 4,
+ * notes/hybrid-plan.md).  Replaces once_per_second, once_per_minute,
+ * once_per_hour and battcheck of r58.s (the assembler originals are in
+ * git tag asm-final).  Behaviour pinned by emu/tests/test_timers.py and
+ * test_menu_power.py.
  *
  * once_per_* run from systick, in interrupt context: the PIO ISR saves
  * only AF, BC, DE, HL, so these must not touch IX or IY.  IY is reserved

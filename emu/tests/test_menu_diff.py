@@ -12,7 +12,7 @@ remote config of every type.  The probe compares the menu position as a
 record index (the record addresses differ between the builds).
 
     R58_MENU_REF_ROM / R58_MENU_REF_LST    reference (default build/)
-    R58_MENU_CAND_ROM / R58_MENU_CAND_LST  candidate (default build-c/)
+    R58_MENU_CAND_ROM / R58_MENU_CAND_LST  candidate (default build/)
 """
 import os
 import random
@@ -27,10 +27,10 @@ from r58emu import Radio, P8E, P8N, CU53AN, CU58AF, load_symbols  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_MENU_REF_ROM", os.path.join(FW, "build", "r58.bin")),
-       os.environ.get("R58_MENU_REF_LST", os.path.join(FW, "build", "r58.map")))
-CAND = (os.environ.get("R58_MENU_CAND_ROM", os.path.join(FW, "build-c", "r58.bin")),
-        os.environ.get("R58_MENU_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
+REF = (os.environ.get("R58_MENU_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
+       os.environ.get("R58_MENU_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
+CAND = (os.environ.get("R58_MENU_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
+        os.environ.get("R58_MENU_CAND_LST", os.path.join(FW, "build", "r58.map")))
 
 EOS = 0xFF
 SIZE_REC = 16

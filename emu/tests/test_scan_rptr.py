@@ -112,7 +112,7 @@ STATE_LABELS = [
 ]
 
 
-# c/rptr.c (make C=1): repeater_state is a state number instead, in the
+# c/rptr.c: repeater_state is a state number instead, in the
 # order of its enum (0 = boot not entered yet).
 C_STATES = ["repeater_boot"] + STATE_LABELS
 

@@ -128,7 +128,7 @@ def main():
     if a.cmods:
         for s in ("c_bss", "c_bss_end"):
             if s not in syms:
-                sys.exit("link.py: %s does not define %s (built without -DC_MODULES?)" % (a.asm, s))
+                sys.exit("link.py: %s does not define %s" % (a.asm, s))
         cmd += ["-b", "_DATA=0x%04X" % syms["c_bss"]]
     files = [a.o + ".ihx", a.asm] + a.cmods
 

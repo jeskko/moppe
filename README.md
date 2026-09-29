@@ -11,10 +11,10 @@ without burning an EPROM for every change.
 | Toolchain | SDCC's **sdasz80 + sdldz80** (with cpp and a small preprocessor). The source was converted from the original as80 dialect and rebuilds **byte-identical** to the released ALs binary (`make -C firmware verify`, which also checks the as80 build of the old source). |
 | Emulator | Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. |
 | Tests | 301 tests. Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK packets sent and received (call, remote display/config, relay, MPRS), remote configuration between two emulated radios over a simulated RF link, MBUS config dump/load (CFGSnd/CFGGEt); scanner, repeater access and CW ID, every menu record type (and the whole menu, asm vs C), low battery, TOT, typematic; ROM-window decode and code running from bank 1. **Differential tests** (`emu/tests/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
-| C in firmware | `make C=1` links C modules (squelch, packet CRCs, systick timers, battery check, key dispatch and handlers, memories and VIP list, PTT/TX flow, the mainloop, display composition, frequency/band/duplex logic, scanner; banked: FSK packets, repeater/CW, GPS, MPRS/APRS, the setup menu engine) as normal SDCC objects. All tests pass; the differential tests show no behaviour difference to the stock build. |
+| C in firmware | The firmware is C plus assembler: `make` links the C modules (squelch, packet CRCs, systick timers, battery check, key dispatch and handlers, memories and VIP list, PTT/TX flow, the mainloop, display composition, frequency/band/duplex logic, scanner; banked: FSK packets, repeater/CW, GPS, MPRS/APRS, the setup menu engine) with r58.s as normal SDCC objects. Assembler is left only for interrupt code, hardware sequencing, the frequency kernel and display primitives. The differential tests show no behaviour difference to the last assembler build (git tag `asm-final`, `make ref`), which differs from the release only by bug fixes. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
-| **Next** | Hybrid firmware (C except timing-critical parts) with banked EPROM0: [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Phases 0-3 done: the setup menu, APRS/MPRS/GPS, the FSK packet layer and the repeater/CW code run from bank 1 (EPROM0 chip 0xC000, nearly full) in the asm build. In `make C=1`, bank 1 holds the setup menu: its records and tables as asm data and the engine in C (`c/menu.c`); bank 2 (EPROM0 chip 0x8000, both cards) holds the FSK packet layer (`c/fsk.c`), the repeater/CW code (`c/rptr.c`), GPS sentence processing (`c/gps.c`) and MPRS/APRS (`c/aprs.c`). Phase 4 (C port, `make C=1`): timers, battery check, key dispatch and handlers with the memories, the PTT/TX flow, the mainloop and its checks, display composition and indicators, frequency/band logic, the RFC fill and the scanner in fixed ROM; FSK packets, repeater/CW, GPS parsing and MPRS/APRS in bank 2; the setup menu engine in bank 1. Done as far as the plan goes: what stays assembler is interrupt code, hardware sequencing, the frequency kernel and display primitives (list in the plan). Next: to be decided (make C=1 the default, bench test, open bugs). Pending: the ROM window bench test on a real board (`make -C firmware banktest`, checks both pages). |
+| **Next** | [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Bank 1 (EPROM0 chip 0xC000) holds the setup menu: its records and tables as asm data and the engine in C (`c/menu.c`); bank 2 (EPROM0 chip 0x8000, both cards) holds the FSK packet layer, repeater/CW, GPS and MPRS/APRS in C. Next: code clean-up (shared C header, duplicates), open bugs, new features in the free space. Pending: the ROM window bench test on a real board (`make -C firmware banktest`, checks both pages). |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md).
@@ -26,7 +26,8 @@ Needs a C compiler, GNU `cpp`, Python 3 (numpy optional, speeds up audio
 decoding), SDCC 4.x (sdasz80, sdldz80; tested with 4.6.0).
 
 ```sh
-make -C firmware verify       # build firmware/build/r58.bin, check vs release
+make -C firmware              # firmware/build/r58.bin (r58.s + the C modules)
+make -C firmware verify ref   # release rebuilt byte-identical; the asm reference
 make -C emu                   # emulator (r58emu, libr58.so)
 
 python3 -m unittest discover -s emu/tests      # test suite, ~15 s
@@ -59,7 +60,7 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 |---|---|
 | `firmware/r58.s` | Firmware source (sdasz80 syntax, see [notes/toolchain.md](notes/toolchain.md)); `asm.h` helper macros |
 | `firmware/r58.asm` | The original as80 source (from `reference/r58.asm.als`), reference only |
-| `firmware/c/` | C modules for `make C=1` |
+| `firmware/c/` | C modules, linked with r58.s |
 | `tools/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py` | Build steps around sdasz80/sdldz80 |
 | `tools/jp2jr.py` | Size optimiser: `jp` → `jr` outside timing-critical code |
 | `tools/bankxref.py` | Cross-references of a source block, before moving it to bank 1 |

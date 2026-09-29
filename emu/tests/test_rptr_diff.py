@@ -10,7 +10,7 @@ the repeater's own RAM ("probe" steps: the state resolved per build, the
 timers, the command and CTCSS flags).
 
     R58_RPTR_REF_ROM / R58_RPTR_REF_LST    reference (default build/)
-    R58_RPTR_CAND_ROM / R58_RPTR_CAND_LST  candidate (default build-c/)
+    R58_RPTR_CAND_ROM / R58_RPTR_CAND_LST  candidate (default build/)
 """
 import os
 import sys
@@ -24,10 +24,10 @@ from r58emu import P8E, P8N, CU53AN, AD_SQL, AD_TP4, AD_RPM  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_RPTR_REF_ROM", os.path.join(FW, "build", "r58.bin")),
-       os.environ.get("R58_RPTR_REF_LST", os.path.join(FW, "build", "r58.map")))
-CAND = (os.environ.get("R58_RPTR_CAND_ROM", os.path.join(FW, "build-c", "r58.bin")),
-        os.environ.get("R58_RPTR_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
+REF = (os.environ.get("R58_RPTR_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
+       os.environ.get("R58_RPTR_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
+CAND = (os.environ.get("R58_RPTR_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
+        os.environ.get("R58_RPTR_CAND_LST", os.path.join(FW, "build", "r58.map")))
 
 WORDS = ("repeater_timer_other", "repeater_timer_ID")
 BYTES = ("repeater_timer_BLIP_state", "squelch_tightening", "txpwr_increment",

@@ -1,16 +1,16 @@
 /*
  * Key dispatch and key handlers in C (Phase 4, notes/hybrid-plan.md).
- * Built with `make C=1`; replaces keycheck, dokey, dokey_not_menu,
- * menu_input, handle_key_during_tx, the handlers they call (execute,
- * monitor, the long-digit functions, volume, digit entry and backspace,
- * duplex/scanner/star keys) and the memories and VIP list (store/recall,
- * go_mem_a, remember_vip/next_vip) of r58.s (see the C_MODULES blocks
- * there).  Stay assembler: the volume/OUT0 writer set_vola_a, the
- * squelch forcing (DI), is_key_down/waitkey, the feedback text stubs,
- * clear_buffer/clear_key (asm callers keep A), beep1750 (c/ptt.c).
- * Also here: set_tx_freq and set_duplex_shift_* ('R' held with digits);
- * with them point_ix_memory and compare_tx_rx_freq lost their last
- * callers in the C build.
+ * Replaces keycheck, dokey, dokey_not_menu, menu_input,
+ * handle_key_during_tx, the handlers they call (execute, monitor, the
+ * long-digit functions, volume, digit entry and backspace,
+ * duplex/scanner/star keys) and the memories and VIP list
+ * (store/recall, go_mem_a, remember_vip/next_vip) of r58.s (the
+ * assembler originals are in git tag asm-final).  Stay assembler: the
+ * volume/OUT0 writer set_vola_a, the squelch forcing (DI),
+ * is_key_down/waitkey, the feedback text stubs, clear_buffer/clear_key
+ * (asm callers keep A), beep1750 (c/ptt.c).  Also here: set_tx_freq and
+ * set_duplex_shift_* ('R' held with digits); with them point_ix_memory
+ * and compare_tx_rx_freq lost their last callers in the C build.
  *
  * Every handler takes the key code in A, which is where --sdcccall 1
  * passes a uint8_t argument (checked: none reads B or C before writing

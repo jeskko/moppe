@@ -1,9 +1,10 @@
 /*
- * The scanner in C (Phase 4, notes/hybrid-plan.md), fixed ROM.  Built
- * with `make C=1`; replaces is_freq_rejected_temp ... the scan tail wait
- * of r58.s (the reject lists, scan masks, the slice table and the scan
- * state machine; see the C_MODULES block there).  load_num_tmp_rejects
- * and unreject_timer stay assembler (the minute timer calls them).
+ * The scanner in C (Phase 4, notes/hybrid-plan.md), fixed ROM.
+ * Replaces is_freq_rejected_temp ... the scan tail wait of r58.s (the
+ * reject lists, scan masks, the slice table and the scan state machine;
+ * the assembler original is in git tag asm-final).
+ * load_num_tmp_rejects and unreject_timer stay assembler (the minute
+ * timer calls them).
  *
  * The assembler scanner was a coroutine: scanner_run jumped to the
  * address in scanner_state, and each `call scanner_ret` stored its return

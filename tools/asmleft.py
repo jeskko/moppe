@@ -2,18 +2,16 @@
 """
 What assembler is left in the fixed ROM of a C build, and what kind
 (notes/hybrid-plan.md, "What is left").  Run from the repository root
-after `make -C firmware C=1`:
+after `make -C firmware`:
 
     python3 tools/asmleft.py              # totals, then the portable list
     python3 tools/asmleft.py --all        # every routine with its class
 
-Each global label of the C_MODULES-preprocessed r58.s that the build-c map
+Each global label of the preprocessed r58.s that the build map
 places in fixed ROM below the C code is a routine up to the next label.
 Classes:
     data       no instructions (tables, strings)
-    isr        reachable from interrupts (tools/isrreach.py on the plain
-               r58.s: both sides of every #ifdef, so the asm calls that
-               the C timers/squelch replace are still followed; errs safe)
+    isr        reachable from interrupts (tools/isrreach.py on r58.s)
     main-hw    mainline, touches hardware: out/in/outi, di, halt, exx,
                ex af (port with shims, or keep)
     main-pure  mainline, plain code: the candidates
@@ -28,7 +26,7 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FW = os.path.join(ROOT, "firmware")
 CPP = ["cpp", "-undef", "-nostdinc", "-traditional", "-DLANGUAGE_ASSEMBLY", "-Dz80",
-       "-DP8x", "-DC_MODULES", "-I" + FW, "-I" + os.path.join(FW, "build-c")]
+       "-DP8x", "-I" + FW, "-I" + os.path.join(FW, "build")]
 LABEL = re.compile(r"^([A-Za-z_]\w*):")
 HW = re.compile(r"\bout\s*\(|\bin\s+a\s*,\s*\(|\bouti\b|\bdi\b|\bhalt\b|\bexx\b|\bex\s+af")
 INSN = re.compile(r"\b(ld|call|jp|jr|ret|push|pop|inc|dec|add|sub|and|or|xor|cp)\b")
@@ -49,7 +47,7 @@ def main():
         elif cur:
             bodies[cur].append(l.split(";")[0])
     syms = {}
-    for l in open(os.path.join(FW, "build-c", "r58.map")):
+    for l in open(os.path.join(FW, "build", "r58.map")):
         m = re.match(r"^\s+([0-9A-F]{8})\s+(\S+)", l)
         if m:
             syms[m.group(2)] = int(m.group(1), 16)

@@ -9,7 +9,7 @@ shallow (dx >= dy) or steep, up or (wrapping, dy is 8 bits) down; index
 the slot is (RX kHz mod 100000) / 1000, the value goes to the RFC DAC.
 
     R58_RFC_REF_ROM / R58_RFC_REF_LST    reference (default build/)
-    R58_RFC_CAND_ROM / R58_RFC_CAND_LST  candidate (default build-c/)
+    R58_RFC_CAND_ROM / R58_RFC_CAND_LST  candidate (default build/)
 """
 import os
 import random
@@ -24,16 +24,16 @@ from r58emu import P8E, P8N, CU53AN  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_RFC_REF_ROM", os.path.join(FW, "build", "r58.bin")),
-       os.environ.get("R58_RFC_REF_LST", os.path.join(FW, "build", "r58.map")))
-CAND = (os.environ.get("R58_RFC_CAND_ROM", os.path.join(FW, "build-c", "r58.bin")),
-        os.environ.get("R58_RFC_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
+REF = (os.environ.get("R58_RFC_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
+       os.environ.get("R58_RFC_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
+CAND = (os.environ.get("R58_RFC_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
+        os.environ.get("R58_RFC_CAND_LST", os.path.join(FW, "build", "r58.map")))
 
 
 def setUpModule():
     for rom, lst in (REF, CAND):
         if not (os.path.exists(rom) and os.path.exists(lst)):
-            raise unittest.SkipTest("build not found (%s); run make -C firmware [C=1]" % rom)
+            raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
 
 
 def table(points, last=0):

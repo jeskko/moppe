@@ -1,15 +1,16 @@
 # R58 ham firmware build (notes/toolchain.md).
-#   make          - build/r58.bin from r58.s (sdasz80 + sdldz80), map and
-#                   listing next to it
-#   make C=1      - build-c/r58.bin with some routines replaced by the C
-#                   modules c/*.c (SDCC), linked as normal objects
+#   make          - build/r58.bin: r58.s (sdasz80) and the C modules c/*.c
+#                   (SDCC), linked with sdldz80; map and listing next to it
 #   make banktest - build-banktest/r58-banktest.bin: 64 KB EPROM image that
 #                   checks the banked ROM window at boot (bank_test in r58.s)
 #   make verify   - the released v3_Z ALs binary, byte-for-byte, twice:
 #                   build-release/ (r58.asm converted by as80tosdas.py, built
 #                   with this toolchain) and build-as80/ (r58.asm, as80).
-#                   build-release is also the reference for the differential
-#                   tests (emu/tests/test_diff.py).
+#                   build-release is also the reference for test_diff.py.
+#   make ref      - build-ref/: the assembler build of git tag $(REF_TAG)
+#                   (the last one with the asm alternative to the C
+#                   modules, with the bug fixes), the reference for the
+#                   module differential tests (emu/tests/test_*_diff.py)
 
 SDCC   ?= sdcc
 SDAS   ?= sdasz80
@@ -18,13 +19,11 @@ TOOLS   = ../tools
 DEFS    = -DP8x
 
 SRC    ?= r58.s
-ifeq ($(C),1)
-BUILD  ?= build-c
-DEFS   += -DC_MODULES
-CMODS   = $(BUILD)/squelch_crc.rel $(BUILD)/timers.rel $(BUILD)/keys.rel $(BUILD)/display.rel $(BUILD)/freq.rel $(BUILD)/fsk.rel $(BUILD)/rptr.rel $(BUILD)/gps.rel $(BUILD)/aprs.rel $(BUILD)/menu.rel $(BUILD)/scan.rel $(BUILD)/ptt.rel $(BUILD)/mainloop.rel
-else
 BUILD  ?= build
-endif
+# link order sets the layout: add new modules at the end
+MODULES = squelch_crc timers keys display freq fsk rptr gps aprs menu scan \
+	  ptt mainloop
+CMODS  ?= $(patsubst %,$(BUILD)/%.rel,$(MODULES))
 
 CFLAGS  = -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size --max-allocs-per-node 200000
 
@@ -61,7 +60,7 @@ verify: release build-as80/r58.bin
 	@echo "$(ALS_SHA256)  build-as80/r58.bin" | sha256sum -c -
 
 release: build-release/r58.s
-	$(MAKE) SRC=build-release/r58.s BUILD=build-release C=
+	$(MAKE) SRC=build-release/r58.s BUILD=build-release CMODS=
 
 build-release/r58.s: r58.asm $(TOOLS)/as80tosdas.py
 	@mkdir -p build-release
@@ -79,10 +78,19 @@ build-as80/r58.bin: r58.asm $(AS80)
 # ROM window bench test for a real board: 64 KB image for a 27C512
 banktest: build-banktest/r58-banktest.bin
 build-banktest/r58-banktest.bin: $(SRC) asm.h $(TOOLS)/banktest.py
-	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" IHXFLAGS="--bank1-sum bank1_sum --bank2-sum bank2_sum" C=
+	$(MAKE) BUILD=build-banktest DEFS="$(DEFS) -DBANK_TEST" IHXFLAGS="--bank1-sum bank1_sum --bank2-sum bank2_sum"
 	python3 $(TOOLS)/banktest.py build-banktest/r58.bin $@
 
-clean:
-	rm -rf build build-c build-as80 build-release build-banktest
+# the pinned assembler reference (git archive of $(REF_TAG) into build-ref/)
+REF_TAG = asm-final
+ref: build-ref/r58.bin
+build-ref/r58.bin:
+	rm -rf build-ref
+	mkdir -p build-ref/src
+	git -C .. archive $(REF_TAG) firmware tools | tar -x -C build-ref/src
+	$(MAKE) -C build-ref/src/firmware BUILD=$(CURDIR)/build-ref
 
-.PHONY: all verify release as80 banktest clean
+clean:
+	rm -rf build build-c build-as80 build-release build-banktest build-ref
+
+.PHONY: all verify release as80 banktest ref clean

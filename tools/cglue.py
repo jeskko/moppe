@@ -2,7 +2,7 @@
 """
 C -> firmware symbol glue (notes/toolchain.md).
 
-    cglue.py build-c/*.rel > build-c/cglue.inc
+    cglue.py build/*.rel > build/cglue.inc
 
 SDCC prefixes C names with '_'.  For every '_x' the C objects reference but
 do not define, emit '_x = x' so C can use the firmware's own variables and

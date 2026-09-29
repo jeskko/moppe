@@ -16,7 +16,7 @@ bits) in the normal and the MIC-E format; compared: the AX.25 frame
 (aprs_packet_out) and the bit-stuffed stream (aprs_bits_out).
 
     R58_APRS_REF_ROM / R58_APRS_REF_LST    reference (default build/)
-    R58_APRS_CAND_ROM / R58_APRS_CAND_LST  candidate (default build-c/)
+    R58_APRS_CAND_ROM / R58_APRS_CAND_LST  candidate (default build/)
 """
 import os
 import random
@@ -32,10 +32,10 @@ from r58emu import P8E, P8N, CU53AN  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_APRS_REF_ROM", os.path.join(FW, "build", "r58.bin")),
-       os.environ.get("R58_APRS_REF_LST", os.path.join(FW, "build", "r58.map")))
-CAND = (os.environ.get("R58_APRS_CAND_ROM", os.path.join(FW, "build-c", "r58.bin")),
-        os.environ.get("R58_APRS_CAND_LST", os.path.join(FW, "build-c", "r58.map")))
+REF = (os.environ.get("R58_APRS_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
+       os.environ.get("R58_APRS_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
+CAND = (os.environ.get("R58_APRS_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
+        os.environ.get("R58_APRS_CAND_LST", os.path.join(FW, "build", "r58.map")))
 
 EOS = 0xFF
 CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "

@@ -85,6 +85,7 @@ FW = os.path.join(ROOT, "firmware", "build")
 # Test routines, put in the unused tops of bank 1 (window 0xBF00 = EPROM0
 # file offset 0xFF00) and bank 2 (window 0xBF00 = file 0xBF00).
 TEST_AT = 0xBF00
+PASS_TOP = "_redrawcheck"               # the first call of every mainloop pass
 NEST_AT = 0xBF80
 PAGE = {1: 0xC000, 2: 0x8000}           # file offset of each bank's page
 OUT2_BANK = {0: 0x08, 1: 0x0D, 2: 0x0C}  # OUT2 bits 3..0: bit3, RS, RA14
@@ -150,9 +151,9 @@ class BankedFirmware(unittest.TestCase):
         spin_bank = spin_bank or bank
         r = self.radio(card)
         hist0 = r.peek("dtmf_hist_idx")
-        r.breakpoint("mainloop")
+        r.breakpoint(PASS_TOP)
         self.assertEqual(r.run(1.0), "break")
-        r.breakpoint("mainloop", False)
+        r.breakpoint(PASS_TOP, False)
         ret = r.call("___sdcc_bcall_ehl", de=bank, hl=at)
 
         r.run(0.1)                      # inside the banked loop
@@ -203,10 +204,10 @@ class BankedFirmware(unittest.TestCase):
             self.check_bank_call(card, 1, at=NEST_AT, spin_bank=2, a_back=0x11)
 
 
-FW_C = os.path.join(ROOT, "firmware", "build-c")
+FW_C = FW
 
 
-@unittest.skipUnless(os.path.exists(os.path.join(FW_C, "r58.bin")), "run `make -C firmware C=1`")
+@unittest.skipUnless(os.path.exists(os.path.join(FW_C, "r58.bin")), "run `make -C firmware`")
 class BankedC(unittest.TestCase):
     """C code in bank 2 (c/fsk.c, #pragma bank 2) runs with bank 2
     selected, entered through a far_ stub, and returns to bank 0."""
@@ -415,6 +416,7 @@ class BankDuty(unittest.TestCase):
         return n[1] / sum(n)
 
     def test_idle_and_repeater_idle_stay_in_bank0(self):
+        sys.path.insert(0, os.path.dirname(__file__))
         from test_radio import make_sane_nv, ROM, LST
         r = Radio(ROM, LST, card=P8E, nv=make_sane_nv(P8E))
         r.run(2.5)
