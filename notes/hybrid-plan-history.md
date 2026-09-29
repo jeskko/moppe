@@ -3,6 +3,53 @@
 Superseded "Start here" handoffs and session narrative moved out of
 hybrid-plan.md (which keeps the current state).
 
+## Handoff during the small-cluster ports (written 2026-09-29)
+
+**State.** Phases 0-3 done; Phase 4 has ported the timers, the key
+dispatch and handlers with the memories and VIP list, the PTT/TX flow,
+the mainloop and its per-pass checks, display composition, frequency logic
+and the scanner (fixed ROM), the FSK layer,
+repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup menu engine
+(bank 1). `C=1` sizes: fixed ROM ends at 0x4F21 (**~12.3 KB free**),
+bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
+**220 of the 256-byte `c_bss`**. 298 tests pass on both builds;
+`make -C firmware verify` byte-identical; the asm build changes only by
+the bug fixes.
+
+**What is left** (measured 2026-09-29 with `python3 tools/asmleft.py`
+after `make C=1`): fixed-ROM asm 0x0100-0x2F58, **~11.9 KB**: data 2030,
+reachable from interrupts 3463, mainline touching hardware (out/in, DI,
+halt, exx) 2321, mainline plain code 4049. The earlier estimates were too
+high: CCIR/DTMF and CTCSS are nearly all interrupt context or hardware.
+| Part | ~bytes | Status |
+|---|---|---|
+| CCIR/DTMF: decoders, series matching, `dtmf_commands`, `ccir_repeater_cmd`, GPIO commands | ~900 | systick: stays asm |
+| CCIR/DTMF sending (`ptt_ccir_xmit`, `ccir_from_digbuf(_or_setup)`, `dtmf_bang_tone`, `dtmf_cu58af`/`i2c_dtmf`), `ccircheck` | ~400 | **decided 2026-09-29: stays asm** (OUT0/8254 writes with DI, cycle-counted DTMF, the handset bus; a C version would be shims around shims) |
+| CTCSS: `ctcss_off`/`ctcss_maybe`/FX465/8254/DAC set-up | ~400 | hardware: stays asm |
+| CTCSS maths: `calculate_sintab`, `ctcss_hz_to_phase_inc`, `ctcss_dec_start(stop)` | 110 | portable |
+| Mainloop and its checks | 290 | **done 2026-09-29** (`c/mainloop.c`); left asm: `aisin_seiki_parse_latlon` (IX/IY interface for `c/gps.c`), `cu_lights_off` (bit writes interrupts share) |
+| Indicators: `draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`, `draw_squelch_ind`, `set_dpx_ind_from_rx_tx_freq` | 240 | **done 2026-09-29** (`c/display.c`); the single-bit icon setters stay asm (asm callers) |
+| RFC table fill `rfc_fill_blanks`/`rfc_fill_one_hole` | 106 | **done 2026-09-29** (`c/freq.c`) |
+| RFC lookup `get_rfc_hl`/`lookup_rfc`/`save_rfc` | 60 | **kept asm on purpose** (every frequency change: in C 1.2 ms more per scanner step) |
+| `set_tx_freq`, `set_duplex_shift_*` (and the now callerless `compare_tx_rx_freq`, `point_ix_memory`) | 133 | **done 2026-09-29** (`c/keys.c`) |
+| Frequency kernel (`determine_rx_div`, `freq2div`, `channel_step_parms`, `locate_tx_band`, `div248`, ...) | ~500 | kept asm on purpose (carry semantics, register results); optional |
+| TX keying `tx_on`/`tx_off` | 150 | kept asm on purpose |
+| Display primitives (`draw_word`, `dpydig`, `draw_long`, `dpyval*`, strings), maths helpers (`bin_bcd`, `a2i`, `mul248`), boot (`main`, `cu58af_init`), bank trampolines | ~1500 | stays by design |
+
+**Next task: the rest of the portable clusters** (user, 2026-09-29: port
+them): CTCSS maths (`calculate_sintab`, `ctcss_hz_to_phase_inc`,
+`ctcss_dec_start(stop)`; with them `ctcss_generator_on`/`ctcss_dec_start`,
+whose asm callers pass registers, and one-instruction shims for the
+`ctcss_enc_jump`/`ctcss_dec_jump` stores the PIO interrupt jumps
+through; `calculate_sintab` multiplies by repeated addition, ~100 ms per
+PTT with the RFC DAC method on a P8E, so C will be faster: a deliberate
+difference). Tests first as before; `tools/asmleft.py` lists what is
+left.
+Other open items: the real-board bench test (EPROM programmer);
+`notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
+modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
+Earlier handoffs: notes/hybrid-plan-history.md.
+
 ## Handoff before the PTT/TX port (written 2026-09-29)
 
 **State.** Phases 0-3 done; Phase 4 has ported the timers, the key
