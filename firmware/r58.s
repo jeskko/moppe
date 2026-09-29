@@ -98,6 +98,13 @@
 #define save_memory_ctcss	_save_memory_ctcss
 #define go_mem_a		_go_mem_a
 #define leave_memories		_leave_memories
+/* c/ptt.c: the PTT/TX flow */
+#define pttcheck		_pttcheck
+#define tx_error		_tx_error
+#define beep1750		_beep1750
+#define tx_tune_tone_maybe	_tx_tune_tone_maybe
+#define aprs_ptt_check		_aprs_ptt_check
+#define spontaneous_mprs_check	_spontaneous_mprs_check
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -6472,6 +6479,7 @@ leave_memories:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES	/* c/ptt.c */
 pttcheck:
 	call is_ptt_pressed
 	ret z                  ; PTT is not pressed
@@ -6587,6 +6595,7 @@ tx_error:
 	jr nz, 1b
 
 	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -6606,6 +6615,7 @@ check_for_mprs_timer:
 	sbc hl, de
 	ret                         ; timer at or above threshold = no carry
 
+#ifndef C_MODULES	/* c/ptt.c: to tx_tune_tone_maybe */
 spontaneous_mprs_check:
 
 	ld a, (txon)
@@ -6832,6 +6842,33 @@ tx_tune_tone_maybe:
 	call mic_off
 	call ccir_on
 	ret
+#else
+;  c/ptt.c shims
+ptt_error_tone:			; tx_error's 300 Hz marker
+	ld hl, #MT_300HZ
+	ld d, #100
+	jp start_marker_tone
+ptt_1750_tone:
+	ld hl, #MT_1750HZ
+ptt_tone_count:			; HL = 8254 counter 1 count
+	di
+	xor a
+	ld (mt_timer), a
+	ld a, l
+	out (TMR + 1), a
+	ld a, h
+	out (TMR + 1), a
+	ei
+	ret
+ptt_tx_band_step:		; the TX band's channel step into the synth set-up
+	call locate_tx_band	; into IX
+	ld a, (ix+9)		; logical channel step designator
+	call channel_step_parms
+	ld (tx_refdiv), hl
+	ld (tx_bstep_cfg), bc
+	ret
+	ASSERT_EQ(SB_LOCAL, 0x10)
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 

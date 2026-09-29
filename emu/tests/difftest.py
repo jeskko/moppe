@@ -533,7 +533,9 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
     `radio_kw` (card=, cu=, nv=, prescaler=, if_hz=, ...) is passed to
     both Radio()s; `stock_kw`/`cand_kw` override it per side (e.g. to give
     the candidate a deliberately different starting NV image, for testing
-    the harness itself).  `ignore` names event types and synth keys not to
+    the harness itself).  `ignore` names event types, synth keys and NV
+    fields (e.g. a TX seconds counter that a few ms of keying offset flips
+    at a second boundary) not to
     compare (e.g. "SYNTH", "rx_loads" where a build steps at another speed
     and "visits" compare what it does instead). The same starting `nv` is normally valid for both
     sides: NV layout is v3_Z-compatible and build-independent."""
@@ -561,7 +563,7 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
             snap = {side: observe(radios[side]) for side in radios}
             diffs += [d for d in _diff_snapshot(label, snap["stock"], snap["cand"],
                                                  lst["stock"], lst["cand"])
-                      if not any("synth %s:" % k in d for k in ignore)]
+                      if not any("synth %s:" % k in d or " (%s):" % k in d for k in ignore)]
             continue
         if kind == "tones":
             runs = {side: _tone_runs(radios[side], step[2]) for side in radios}

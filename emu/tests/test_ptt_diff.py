@@ -54,10 +54,15 @@ def keying(r):
 
 
 def state(r):
+    p = r.pit(1)
     return (r.peek("txon"), r.peek("digidx"), r.peek24("rx_freq"), r.peek24("tx_freq"),
             r.peek("cfg_txpwr"), r.peek("txpwr_increment"), r.peek("dtmf_code"),
             r.peek("repeater_ptt_seen"), r.peek("vip_list", 6), r.peek("menu_active"),
-            r.peek16("mprs_report_timer"))
+            r.peek("ctcss_is_on"), r.peek("tx_divisor", 3),
+            r.peek("tx_refdiv", 2), r.peek("tx_bstep_cfg", 2), (p["mode"], p["count"]),
+            r.peek("idle_timer"), r.peek("ign_apo_timer"), r.peek("call_dpyed"),
+            r.peek("display_buffer_time"), r.peek("locator_dpyed"), r.peek("squelch_muted"),
+            r.peek("squelch_open"))
 
 
 def at(label):
@@ -92,6 +97,8 @@ BOOT = [("boot", 2.5)]
 class PttDiff(unittest.TestCase):
     def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None, **kw):
         nv = make_sane_nv(card, cu, synth_card)
+        # whole seconds of TX: a few ms of keying offset flip it at a boundary
+        kw["ignore"] = tuple(kw.get("ignore", ())) + ("transmitter_hours_second_counter",)
         diffs = run_diff(scenario, REF, CAND, card=card, cu=cu, nv=nv, **kw)
         self.assertEqual(diffs, [], "\n".join(d[:3000] for d in diffs[:10]))
 
@@ -105,6 +112,14 @@ class PttDiff(unittest.TestCase):
         s += [("poke", "cfg_txpwr", 3)] + ptt(0.4, "power 3")
         s += [("press", "R"), ("run", 0.3)] + ptt(0.4, "reverse")
         s += [("ptt", True), ("run", 0.05), ("ptt", False), ("run", 0.5)] + at("short blip")
+        # PTT counts as handset use (cu_manipulated): call notice, remote
+        # display, locator and the idle timers are cleared
+        s += [("poke", "call_dpyed", 2), ("poke", "display_buffer_time", 5), ("poke", "locator_dpyed", 4),
+              ("poke", "idle_timer", 3), ("poke", "ign_apo_timer", 7), ("poke", "redraw_req", 1),
+              ("run", 0.3)] + at("notices up") + ptt(0.4, "ptt clears them")
+        # and it opens a selective-call mute ('T', from a hook script)
+        s += [("poke", "cfg_offhook_script", b"T" + b"\xff" * 7), ("hook", True), ("run", 0.5),
+              ("hook", False), ("run", 0.5)] + at("muted selective") + ptt(0.4, "ptt opens it")
         self.diff(s)
 
     def test_refused(self):
@@ -129,11 +144,15 @@ class PttDiff(unittest.TestCase):
     def test_ccir_digits(self):
         s = BOOT + enter("433500")
         s += [("keys", "12345")] + ptt(1.5, "ccir 5 digits", tones=True)
-        s += [("keys", "7")] + ptt(1.5, "ccir 1 digit, no shortcut", tones=True)
-        s += [("poke", "cfg_shortcut_3", b"98\xff\xff\xff\xff\xff\xff"), ("keys", "3")]
+        # the digits stay after a CCIR call: clear them (C held repeats)
+        clear = [("press", "C", 1.5), ("run", 0.3)]
+        s += clear + [("keys", "7")] + ptt(1.5, "ccir 1 digit, no shortcut", tones=True)
+        s += clear + [("poke", "cfg_shortcut_3", b"98\xff\xff\xff\xff\xff\xff"), ("keys", "3")]
         s += ptt(1.5, "ccir shortcut", tones=True)
-        s += [("keys", "C"), ("press", "E"), ("run", 0.3), ("keys", "12")]
-        s += ptt(0.6, "digits in the menu: no ccir") + [("press", "E"), ("run", 0.3)] + at("menu left")
+        s += clear + [("keys", "12")] + ptt(1.5, "ccir 2 digits", tones=True)
+        s += clear + [("press", "E"), ("run", 0.3), ("keys", "12")]
+        s += ptt(1.0, "digits in the menu: no ccir", tones=True)
+        s += [("press", "E"), ("run", 0.3)] + at("menu left")
         self.diff(s)
 
     # ---- the watch loop
@@ -157,21 +176,57 @@ class PttDiff(unittest.TestCase):
         self.diff(s, cu=CU58AF, tolerance_s=0.03)
 
     def test_battery_during_tx(self):
-        s = BOOT + enter("433500") + [("ptt", True), ("run", 0.4)]
-        for v in (150, 151, 149, 160, 140, 141, 100, 60):
+        """battcheck runs in the watch loop only when the reading moves by
+        more than one step: a battery sinking one step at a time into the
+        warning and low zones goes unnoticed until PTT is released"""
+        s = BOOT + enter("433500") + [("adc", "AD_BATT", 175), ("run", 0.3), ("ptt", True), ("run", 0.4)]
+        for v in (150, 151, 149, 160, 140, 141, 170):
             s += [("adc", "AD_BATT", v), ("run", 0.4)] + at("batt %d" % v)
-        s += [("ptt", False), ("run", 0.5)] + at("released")
+        for v in range(169, 130, -1):
+            s += [("adc", "AD_BATT", v), ("run", 0.3)]
+        s += at("sunk one step at a time")
+        for v in range(131, 175):
+            s += [("adc", "AD_BATT", v), ("run", 0.2)]
+        s += at("back one step at a time")
+        # wiggling by one around the warning thresholds (10 V, 9 V after a
+        # transmission): the watch loop does not look
+        for lo in (163, 146):
+            s += [("adc", "AD_BATT", lo + 5), ("run", 0.3)] + at("above %d" % lo)
+            for v in (lo + 3, lo + 1):
+                s += [("adc", "AD_BATT", v), ("run", 0.3)]
+            for i in range(6):
+                s += [("adc", "AD_BATT", lo + (i & 1)), ("run", 0.3)]
+            s += at("wiggled down %d" % lo)
+            # onto lo in a jump of two (the loop stores it), then up by one
+            s += [("adc", "AD_BATT", lo - 2), ("run", 0.3), ("adc", "AD_BATT", lo), ("run", 0.3)]
+            for i in range(6):
+                s += [("adc", "AD_BATT", lo + 1 - (i & 1)), ("run", 0.3)]
+            s += at("wiggled up %d" % lo)
+        s += [("adc", "AD_BATT", 140), ("run", 0.5)] + at("low in one jump")
+        s += [("adc", "AD_BATT", 175), ("run", 1.0), ("ptt", False), ("run", 0.5)] + at("released")
         self.diff(s)
 
     # ---- the menu
 
     def test_menu(self):
         s = BOOT + enter("433500") + [("keys", "1"), ("press", "E"), ("run", 0.3)]
-        s += ptt(0.6, "in the menu")
+        s += ptt(0.6, "in the menu, no remote id")
+        s += [("poke", "cfg_remote_id", b"\x34\x12"), ("poke", "cfg_remote_passwd", b"12345678")]
+        s += ptt(0.6, "in the menu: remote config ask") + [("run", 1.0)] + at("asked")
+        # the menu's live displays are redrawn while transmitting
+        s += [("keys", pos(rec("Sq", "SqL"))), ("press", "E"), ("run", 0.3), ("ptt", True), ("run", 0.4)]
+        for v in (0x20, 0x80, 0xC0, 0x40):
+            s += [("adc", "AD_SQL", v), ("run", 0.3)] + at("sql %02x during tx" % v)
+        s += [("ptt", False), ("run", 1.0)] + at("sql released")
         s += [("keys", pos(rec("PH", "t tunE"))), ("press", "E"), ("run", 0.3)]
         s += at("tune record") + ptt(0.8, "tune tone 0 Hz")
-        s += [("poke", "cfg_txtune_hz", (1000).to_bytes(2, "little"))] + ptt(0.8, "tune 1000 Hz", tones=True)
-        s += [("poke", "cfg_txtune_hz", (2345).to_bytes(2, "little"))] + ptt(0.8, "tune 2345 Hz", tones=True)
+        # the tone from 0.1 s on: the asm computed its count by repeated
+        # subtraction (4032000 / Hz rounds, ~20 ms at 1000 Hz on a P8E),
+        # the C port divides (a deliberate difference)
+        for hz in (1000, 2345):
+            s += [("poke", "cfg_txtune_hz", hz.to_bytes(2, "little")), ("ptt", True), ("run", 0.1),
+                  ("tones", "tune %d Hz" % hz, 0.7)] + at("tune %d tx" % hz)
+            s += [("ptt", False), ("trace", "tune %d off" % hz, keying, 0.6, 3)] + at("tune %d released" % hz)
         s += [("press", "#"), ("run", 0.3)] + ptt(0.6, "next record, no tune")
         s += [("press", "E"), ("run", 0.3)] + at("menu left")
         self.diff(s)
@@ -179,13 +234,16 @@ class PttDiff(unittest.TestCase):
     # ---- MPRS at key-up
 
     def test_keyup_mprs(self):
-        s = BOOT + [("poke", "cfg_report_type", 0), ("poke", "cfg_mprs_callsign", b"OH3XYZ\xff\xff"),
+        """also with CTCSS: pttcheck turns it off before the packet"""
+        s = BOOT + [("poke", "cfg_ctcss_tx_hz", 10), ("poke", "cfg_ctcss_output_when", 1), ("poke", "cfg_report_type", 0), ("poke", "cfg_mprs_callsign", b"OH3XYZ\xff\xff"),
                     ("serial_rx", 0, nmea("GPRMC,123519,A,6130.12,N,02345.67,E,000.0,000.0,280926,,")),
                     ("run", 0.5)] + enter("433500")
         for mode in (1, 2):
             s += [("poke", "cfg_keyup_mprs", mode), ("poke", "cfg_mprs_seconds", (30).to_bytes(2, "little"))]
             s += [("poke", "mprs_report_timer", (40).to_bytes(2, "little"))]
-            s += ptt(0.4, "mprs %d due" % mode) + [("run", 1.0)] + at("mprs %d sent" % mode)
+            s += [("ptt", True), ("run", 0.4)] + at("mprs %d tx" % mode) + [("ptt", False)]
+            s += [("trace", "mprs %d ctcss" % mode, lambda r: r.peek("ctcss_is_on"), 1.0)]
+            s += [("run", 0.5)] + at("mprs %d sent" % mode)
             s += [("poke", "mprs_report_timer", (10).to_bytes(2, "little"))]
             s += ptt(0.4, "mprs %d not due" % mode) + [("run", 1.0)] + at("mprs %d after" % mode)
         self.diff(s)
@@ -202,12 +260,23 @@ class PttDiff(unittest.TestCase):
     # ---- APRS on /LOCAL, spontaneous MPRS
 
     def test_aprs_local(self):
-        s = BOOT + enter("433500") + [("poke", "cfg_aprs_tx", 1), ("poke", "cfg_idlefn_delay", 0)]
+        s = BOOT + enter("433500") + [("poke", "cfg_aprs_tx", 1), ("poke", "cfg_idlefn_delay", 0),
+                                      ("poke", "cfg_aprs_tx_freq", f24(0))]
         s += [("local", True), ("trace", "aprs freq not set", keying, 0.5), ("local", False), ("run", 0.3)]
         s += at("not configured")
-        s += [("poke", "cfg_aprs_tx_freq", f24(432500))]
-        s += [("local", True), ("trace", "aprs keying", keying, 0.8)] + at("aprs tx")
-        s += [("local", False), ("trace", "aprs off", keying, 0.5)] + at("aprs released")
+        # the mic muted before (the 1750 Hz beep leaves it so): APRS unmutes
+        s += [("key_down", "*"), ("run", 0.5), ("key_up",), ("run", 0.5)] + at("after beep")
+        s += [("poke", "cfg_band3_start", f24(144000)), ("poke", "cfg_band3_end", f24(146000)),
+              ("poke", "cfg_band3_step", 2)]
+        # another band and step (2 m, step 2), the squelch open by a
+        # signal (TX closes it); then a normal PTT on the restored set-up;
+        # a frequency with only its top byte set counts as configured
+        for f in (144800, 0x070000):
+            s += [("poke", "cfg_aprs_tx_freq", f24(f)), ("poke", "cfg_squelch_level", 127),
+                  ("adc", "AD_SQL", 0xC0), ("run", 0.5)] + at("%d: squelch open" % f)
+            s += [("local", True), ("trace", "aprs %d keying" % f, keying, 0.8)] + at("aprs %d tx" % f)
+            s += [("local", False), ("trace", "aprs %d off" % f, keying, 0.5)] + at("aprs %d released" % f)
+            s += [("adc", "AD_SQL", 0), ("run", 0.5)] + ptt(0.4, "normal ptt after %d" % f)
         s += [("poke", "cfg_idlefn_delay", 5), ("local", True), ("run", 0.5)] + at("not idle")
         s += [("local", False), ("run", 0.3), ("poke", "cfg_aprs_tx", 0), ("poke", "cfg_idlefn_delay", 0),
               ("local", True), ("run", 0.5)] + at("aprs off") + [("local", False), ("run", 0.3)]
@@ -220,16 +289,30 @@ class PttDiff(unittest.TestCase):
         s += [("poke", "cfg_idlefn_delay", 0), ("poke", "cfg_mprs_seconds", (20).to_bytes(2, "little")),
               ("poke", "mprs_report_timer", (25).to_bytes(2, "little")), ("poke", "cfg_spontaneous_mprs", 1),
               ("run", 1.5)] + at("no aprs freq")
-        s += [("poke", "cfg_aprs_tx_freq", f24(432500)),
-              ("trace", "spontaneous", keying, 2.0)] + at("sent, back on 434700")
-        s += [("poke", "mprs_report_timer", (25).to_bytes(2, "little")), ("poke", "cfg_squelch_level", 0),
-              ("run", 1.5)] + at("squelch open: waits")
-        s += [("poke", "cfg_squelch_level", 127), ("trace", "closed: sends", keying, 4.0)]
+        s += [("poke", "cfg_aprs_tx_freq", f24(144800)),
+              ("trace", "spontaneous", keying, 2.0)] + at("sent, back on 434700") + ptt(0.4, "ptt after")
+        # the squelch open first, then the report due
+        s += [("poke", "cfg_squelch_level", 127), ("adc", "AD_SQL", 0xC0), ("run", 1.0),
+              ("poke", "mprs_report_timer", (25).to_bytes(2, "little")), ("run", 1.5)]
+        s += at("squelch open: waits")
+        s += [("adc", "AD_SQL", 0), ("trace", "closed: sends", keying, 4.0)]
         s += at("closed: sent")
         s += [("poke", "mprs_report_timer", (25).to_bytes(2, "little")), ("poke", "cfg_idlefn_delay", 3),
               ("run", 1.5)] + at("not idle")
         s += [("poke", "cfg_idlefn_delay", 0), ("poke", "cfg_mprs_seconds", b"\x00\x00"),
               ("run", 1.5)] + at("interval 0: never")
+        self.diff(s)
+
+    def test_spontaneous_not_while_transmitting(self):
+        """the mainloop runs while the repeater transmits: a due report
+        waits until the transmitter is off"""
+        from test_rptr_diff import setup, TONE, CARRIER, NO_TONE, NO_CARRIER, w
+        s = setup(cfg_spontaneous_mprs=1, cfg_idlefn_delay=0, cfg_mprs_seconds=w(20),
+                  cfg_aprs_tx_freq=f24(432500), cfg_report_type=0)
+        s += [TONE, CARRIER, ("run", 0.4), NO_TONE, NO_CARRIER, ("run", 0.3),
+              ("poke", "mprs_report_timer", w(25))]
+        s += [("trace", "repeater open, report due", lambda r: (r.peek("txon"), r.peek24("tx_freq")), 1.5)]
+        s += at("still open")
         self.diff(s)
 
     # ---- other card and handset

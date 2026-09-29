@@ -70,7 +70,8 @@ def map_areas(path):
 # bank windows as linked: bank 1 at the window addresses, bank 2 virtual
 WINDOWS = {"_CODE_1": (0x8000, 0xC000), "_CODE_2": (0x28000, 0x2C000)}
 # C compares these with pointers and never reads or calls them
-ADDRESS_ONLY = {"_menu_rfc_change", "_menu_sql_change", "_menu_sqB_change"}
+ADDRESS_ONLY = {"_menu_rfc_change", "_menu_sql_change", "_menu_sqB_change",
+                "_tune_tone_position"}
 
 
 def map_symbols(path):

@@ -3,6 +3,44 @@
 Superseded "Start here" handoffs and session narrative moved out of
 hybrid-plan.md (which keeps the current state).
 
+## Handoff before the PTT/TX port (written 2026-09-29)
+
+**State.** Phases 0-3 done; Phase 4 has ported the timers, the key
+dispatch and handlers with the memories and VIP list, display
+composition, frequency logic and the scanner (fixed ROM), the FSK layer,
+repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup menu engine
+(bank 1). `C=1` sizes: fixed ROM ends at 0x4DC3 (**~12.6 KB free**),
+bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
+**199 of the 224-byte `c_bss`**. 267 tests pass on both builds;
+`make -C firmware verify` byte-identical; the asm build changes only by
+the bug fixes.
+
+**What is left** (assembler still in the `C=1` build, rough sizes from the
+map, 2026-09-29):
+| Part | ~bytes | Notes |
+|---|---|---|
+| PTT/TX flow (`pttcheck`, `tx_on`/`tx_off`, legality, APRS/MPRS on PTT, CCIR on PTT, tune tone, `beep1750`) | 750 | timing: TX keying order, PLL delay |
+| CCIR/DTMF decoding and commands | 1300 | partly systick/interrupt context: only the mainline parts can go |
+| CTCSS set-up (decoder start/stop, encoder methods i8254/RFC DAC/FX465) | 700 | the DDS/DSP interrupt parts stay |
+| GPS I/O (`gps_check` gatherer, `gps_configure`, Aisin Seiki lat/lon) | 500 | the SiRF BREAK bit-bang stays |
+| Mainloop, idle functions, hook, lights, ignition | 300 | |
+| RFC table (fill, lookup), MBUS relay, small NV helpers | 400 | |
+| Small key-side asm kept for asm callers: `set_vola(_a)` (OUT0, DI), `set_tx_freq`, `set_duplex_shift_*`, `step_audio_dst`, `mute_squelch_selective`, `compare_tx_rx_freq`, `point_ix_memory`, `a2i*`, `is_key_down`/`waitkey`, the feedback stubs | 350 | port with their asm callers (frequency kernel, PTT) |
+| Frequency arithmetic kernel (`freq2div`/`div2freq`, `div248`, `channel_step_parms`) | 600 | kept asm on purpose (carry semantics, register results); optional |
+| **Stays assembler by design** | ~7000 | interrupts/systick/keypad/SIO/modem capture (~1.5 KB), handset drivers and display primitives (~2 KB), DTMF/AX.25 PWM, NV copy loops, boot and hardware init, bank trampolines, page-aligned tables (~3.7 KB) |
+
+**Next task: the PTT/TX flow** (`pttcheck` … `tx_error`, `tx_on`/`tx_off`,
+`beep1750`, `tx_tune_tone_maybe`; fixed ROM, mainline). Tests first:
+differential scenarios for TX keying order and timing (OUT0/OUT1 latch
+sequence, PLL settle, TX refused out of band and with TX limits, TOT),
+digits on PTT (CCIR), APRS/MPRS on key-up, the 1750 Hz beep, the tune
+tone in the menu, the repeater-mode PTT path. Then the mainline halves of
+CCIR/DTMF and CTCSS, GPS I/O, the rest.
+Other open items: the real-board bench test (EPROM programmer);
+`notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
+modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
+Earlier handoffs: notes/hybrid-plan-history.md.
+
 ## Handoff before the key handler port (written 2026-09-29)
 
 **State.** Phases 0-3 done; Phase 4 has ported the timers, keys dispatch,

@@ -12,12 +12,13 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 ## Start here (next session, written 2026-09-29)
 
 **State.** Phases 0-3 done; Phase 4 has ported the timers, the key
-dispatch and handlers with the memories and VIP list, display
-composition, frequency logic and the scanner (fixed ROM), the FSK layer,
+dispatch and handlers with the memories and VIP list, the PTT/TX flow,
+display composition, frequency logic and the scanner (fixed ROM), the FSK layer,
 repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup menu engine
-(bank 1). `C=1` sizes: fixed ROM ends at 0x4DC3 (**~12.6 KB free**),
+(bank 1). `C=1` sizes: fixed ROM ends at 0x4DBE (**~12.6 KB free**),
 bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
-**199 of the 224-byte `c_bss`**. 267 tests pass on both builds;
+**211 of the 224-byte `c_bss`** (raise `C_BSS_SIZE` for the next module).
+282 tests pass on both builds;
 `make -C firmware verify` byte-identical; the asm build changes only by
 the bug fixes.
 
@@ -25,23 +26,23 @@ the bug fixes.
 map, 2026-09-29):
 | Part | ~bytes | Notes |
 |---|---|---|
-| PTT/TX flow (`pttcheck`, `tx_on`/`tx_off`, legality, APRS/MPRS on PTT, CCIR on PTT, tune tone, `beep1750`) | 750 | timing: TX keying order, PLL delay |
-| CCIR/DTMF decoding and commands | 1300 | partly systick/interrupt context: only the mainline parts can go |
+| CCIR/DTMF: sending (`ptt_ccir_xmit`, `ccir_from_digbuf(_or_setup)`, the DTMF tone keys), decoding and commands | 1400 | partly systick/interrupt context: only the mainline parts can go; the OUT0/8254 writers stay |
 | CTCSS set-up (decoder start/stop, encoder methods i8254/RFC DAC/FX465) | 700 | the DDS/DSP interrupt parts stay |
 | GPS I/O (`gps_check` gatherer, `gps_configure`, Aisin Seiki lat/lon) | 500 | the SiRF BREAK bit-bang stays |
 | Mainloop, idle functions, hook, lights, ignition | 300 | |
 | RFC table (fill, lookup), MBUS relay, small NV helpers | 400 | |
-| Small key-side asm kept for asm callers: `set_vola(_a)` (OUT0, DI), `set_tx_freq`, `set_duplex_shift_*`, `step_audio_dst`, `mute_squelch_selective`, `compare_tx_rx_freq`, `point_ix_memory`, `a2i*`, `is_key_down`/`waitkey`, the feedback stubs | 350 | port with their asm callers (frequency kernel, PTT) |
+| Small asm kept for asm callers: `set_vola(_a)` (OUT0, DI), `set_tx_freq`, `set_duplex_shift_*`, `step_audio_dst`, `mute_squelch_selective`, `compare_tx_rx_freq`, `point_ix_memory`, `a2i*`, `is_key_down`/`waitkey`, the feedback stubs, `check_for_mprs_timer` (carry) | 350 | port with their asm callers |
+| TX keying: `tx_on`/`tx_off`/`tx_on_legal_or_not` (OUT1, TX power, synth load, PLL delay in halts; carry result for six asm callers), `update_txpwr`, `real_txpwr` | 150 | kept asm on purpose (hardware sequence) |
 | Frequency arithmetic kernel (`freq2div`/`div2freq`, `div248`, `channel_step_parms`) | 600 | kept asm on purpose (carry semantics, register results); optional |
 | **Stays assembler by design** | ~7000 | interrupts/systick/keypad/SIO/modem capture (~1.5 KB), handset drivers and display primitives (~2 KB), DTMF/AX.25 PWM, NV copy loops, boot and hardware init, bank trampolines, page-aligned tables (~3.7 KB) |
 
-**Next task: the PTT/TX flow** (`pttcheck` … `tx_error`, `tx_on`/`tx_off`,
-`beep1750`, `tx_tune_tone_maybe`; fixed ROM, mainline). Tests first:
-differential scenarios for TX keying order and timing (OUT0/OUT1 latch
-sequence, PLL settle, TX refused out of band and with TX limits, TOT),
-digits on PTT (CCIR), APRS/MPRS on key-up, the 1750 Hz beep, the tune
-tone in the menu, the repeater-mode PTT path. Then the mainline halves of
-CCIR/DTMF and CTCSS, GPS I/O, the rest.
+**Next task: the mainline halves of CCIR/DTMF** (sending: `ptt_ccir_xmit`,
+`ccir_from_digbuf(_or_setup)`, `ccircheck` and the command/history side
+that runs from the mainloop; the decoders' systick parts and the OUT0/8254
+writers stay asm). Tests first: CCIR/DTMF digit strings sent and received
+(`test_signalling.py` covers some), shortcuts, histories, the repeater's
+CCIR/DTMF commands, timing of tone lengths. Then CTCSS set-up, GPS I/O,
+the rest.
 Other open items: the real-board bench test (EPROM programmer);
 `notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
 modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
@@ -107,6 +108,14 @@ Earlier handoffs: notes/hybrid-plan-history.md.
   press before that read is lost (both builds), so scenario gaps after a
   release need >= 150 ms (`test_menu_diff` walk had 100 ms and flipped
   on a 2 ms systick phase shift).
+- From the PTT port: the digit buffer survives a CCIR call (clear it
+  between scenario cases); set a report due only after the condition it
+  waits for holds (squelch open *first*); TX seconds counters
+  (`transmitter_hours_second_counter`, `mprs_report_timer`) flip on a
+  few ms of keying offset, so difftest `ignore` takes NV field names and
+  probes leave such counters out; the SAnE bands are all 70 cm with step
+  0, so set-up save/restore code needs a poked band with another step to
+  be visible.
 
 ## Ground rules
 
@@ -790,6 +799,42 @@ first, port, differential test against stock, size check, commit.
   Test fixes on the way: `test_menu_diff` CU58AF walk gaps (see the rule
   in "Start here"); a scenario list extended in place (`s = BOOT; s +=`)
   had leaked one test's steps into the next.
+- **Done: the PTT/TX flow in C, fixed ROM** (2026-09-29), `c/ptt.c`:
+  `pttcheck` (the watch loop: keys during TX, battery redraw, menu
+  redraw; the release: CTCSS off, remote config from the menu, MPRS on
+  key-up, TX off, VIP), `tx_error`, `beep1750`, `tx_tune_tone_maybe`,
+  `aprs_ptt_check` and `spontaneous_mprs_check` (the save/switch/restore
+  of the TX set-up is shared). Stay asm: `tx_on`/`tx_off`/
+  `tx_on_legal_or_not` (see "What is left"), `ptt_ccir_xmit`, the marker
+  and CCIR tone routines, `check_for_mprs_timer`. Shims: `ptt_error_tone`,
+  `ptt_tone_count`/`ptt_1750_tone` (8254 counter 1 with DI),
+  `ptt_tx_band_step` (`locate_tx_band` → IX → `channel_step_parms` → the
+  synth set-up); `fsk_tx_on_failed`/`fsk_mprs_not_yet` reused;
+  `tune_tone_position` (bank 1) is compared only (`link.py`
+  ADDRESS_ONLY). 507 bytes of C for ~512 of asm (1.0×). **Deliberate
+  difference:** the tune tone's count is a division in C; the asm
+  subtracted Hz from 4032000 until it borrowed (4032 rounds at 1000 Hz,
+  ~20 ms on a P8E, ~40 ms on a P8N; a 1 Hz setting would stall the
+  mainloop for ~20 s), so in C the tone starts that much sooner.
+  Safety net first: `test_ptt_diff.py` (15 tests, asm build vs `C=1`):
+  keying traces (OUT1 TXOFF, TX power DAC) simplex/duplex/PLL delays/power/
+  reverse/a short blip, handset-use side effects and the selective-call
+  unmute, refusals (out of band, TOT 0) with their tone, repeater mode,
+  CTCSS modes, CCIR digits (1, 2, 5, a shortcut, none in the menu), keys
+  during TX on both handsets, the battery walked and wiggled by one around
+  the TX thresholds (9 V warning while `txtail_timer` runs), the menu
+  (remote config ask, live SqL display, tune tone), MPRS on key-up with
+  CTCSS, the 1750 Hz beep, APRS on /LOCAL (a 2 m band with another step,
+  the mic muted before, squelch open, a top-byte-only frequency, the
+  set-up restored for the next PTT), spontaneous MPRS (squelch, idle,
+  interval 0, not while the repeater transmits), P8N, CU58AF. difftest:
+  a leading one-sample tone run folds into the next; trace `settle` drops
+  a leading transient; `ignore` takes NV field names. Mutation run
+  (`tools/mutants/ptt.py`): 49 mutants, 48 caught, 1 equivalent
+  (`close_squelch` before `tx_on_legal_or_not`, whose
+  `tx_cut_local_audio` closes the squelch anyway). The first round had
+  22 survivors, all scenario gaps (the SAnE bands, stale digits, a
+  report racing the squelch, the TX-time warning threshold, no remote id).
 - **What is left, and what gates it:**
   - See "What is left" in "Start here".
   - The real-board bench test still has to confirm both window pages.
