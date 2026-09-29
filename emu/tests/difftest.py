@@ -47,7 +47,9 @@ A scenario is a list of steps, each a tuple `(kind, *args)`:
                                    differ by the timing tolerance.  With
                                    settle = n, values seen for fewer than
                                    n samples are dropped (a multi-byte
-                                   variable read while it is written).
+                                   variable read while it is written, or
+                                   the state before a change the other
+                                   build makes a sample earlier).
                                    With step_tol, the times are compared
                                    relatively: the time between changes
                                    within step_tol, and the value sequence
@@ -394,16 +396,25 @@ def _tone_runs(radio, seconds):
 
 
 def _settled(runs):
-    """Fold one-sample runs into the run before: the 8254 count is written
-    a byte at a time, so a sample can catch a half-loaded count."""
+    """Fold one-sample runs into the run before (a leading one into the
+    run after): the 8254 count is written a byte at a time, so a sample
+    can catch a half-loaded count."""
     out = []
+    lead = 0.0
     for hz, d in runs:
+        if not out and d <= TONE_STEP_S * 1.5 and not lead:
+            lead = d
+            continue
+        d += lead
+        lead = 0.0
         if out and d <= TONE_STEP_S * 1.5:
             out[-1][1] += d
         elif out and (out[-1][0] == hz or (hz and out[-1][0] and abs(out[-1][0] - hz) <= hz * 0.01)):
             out[-1][1] += d
         else:
             out.append([hz, d])
+    if lead:
+        out.append([None, lead])
     return out
 
 
@@ -431,9 +442,9 @@ def _trace(radio, fn, seconds, settle=1):
         if runs and runs[-1][1] == v:
             runs[-1][2] += 1
         else:
-            if runs and runs[-1][2] < settle and len(runs) > 1:
-                runs.pop()      # a transient: drop it, merge the neighbours
-                if runs[-1][1] == v:
+            if runs and runs[-1][2] < settle:
+                runs.pop()      # a transient (also a leading one): drop it,
+                if runs and runs[-1][1] == v:   # merge the neighbours
                     runs[-1][2] += 1
                     continue
             runs.append([(i + 1) * TRACE_STEP_S, v, 1])
