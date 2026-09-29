@@ -3537,6 +3537,9 @@ main:
 #endif
 
 mainloop:
+#ifdef C_MODULES
+	jp _mainloop		; c/mainloop.c: the loop and its checks
+#else
 	call redrawcheck
 	call battcheck
 	call pttcheck
@@ -3587,6 +3590,7 @@ bus_rf_relay:
 
 	ld b, #LONG_PACLEN
 	jp send_packet_buffer
+#endif /* C_MODULES */
 
 ;======================================================================
 
@@ -3773,6 +3777,7 @@ gps_configure_SiRF_tailored:
 
 ;----------------------------------------------------
 
+#ifndef C_MODULES	/* c/mainloop.c */
 gps_check:
 
 	ld a, (gps_hist_rp)        ; our removal idx
@@ -3859,6 +3864,7 @@ gps_check_aisin_seiki:         ; DE points to first new gps data byte
 	ld (gps_hist_rp), a        ; update removal idx
 
 	ret
+#endif /* C_MODULES */
 
 ; GPS sentence processing lives in bank 1 (search "BANK 1"), with
 ; C_MODULES in c/gps.c, bank 2.
@@ -3874,8 +3880,15 @@ far_gps_process_aisin_seiki:	; DE -> after a 0x0D in gps_history, kept
 	.dw _gps_process_aisin_seiki
 far_gps_process_sentence:	; C = length
 	ld a, c
+gpsc_sentence:			; c/mainloop.c: A = length
 	call bank2_call
 	.dw _gps_process_sentence
+gpsc_aisin:			; c/mainloop.c: A = index after the 0x0D
+	call bank2_call
+	.dw _gps_process_aisin_seiki
+	ASSERT_EQ(gps_sentence_size, 100)
+	ASSERT_EQ(LONG_PACLEN, 15)
+	ASSERT_EQ(SIZE_STR, 8)
 gps_latlon:			; c/gps.c: HL -> 1/256", DE -> DDDMMmm
 	push hl
 	pop iy
@@ -3889,6 +3902,7 @@ far_gps_process_sentence:	call bank1_call
 	.dw gps_process_sentence
 #endif
 
+#ifndef C_MODULES	/* c/mainloop.c: to ccircheck */
 script_check:
 
 	ld a, (script_req)
@@ -3957,6 +3971,7 @@ ccircheck:
 
 	call ding
 	ret
+#endif /* C_MODULES */
 
 gpio1_pulse_command:
 
@@ -3993,6 +4008,7 @@ gpio2_command:
 
 ;----------------------------------------------------------------------
 
+#ifndef C_MODULES	/* c/mainloop.c */
 idlefn_check:
 	ld a, (idlefn_flag)
 	or a
@@ -4009,6 +4025,7 @@ idlefn_check:
 	jp z, def_memo
 
 	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -4094,6 +4111,7 @@ battcheck:
 
 ;======================================================================
 
+#ifndef C_MODULES	/* c/mainloop.c */
 redrawcheck:
 
 	ld a, (redraw_req)
@@ -4104,6 +4122,7 @@ redrawcheck:
 	ld (redraw_req), a
 
 	jp redraw
+#endif /* C_MODULES */
 
 ;======================================================================
 

@@ -97,6 +97,16 @@ class MainloopDiff(unittest.TestCase):
             s += gps(rmc("17%04d" % i), "wrap %d" % i, wait=0.2)
         s += gps(b"x" * 99 + b"\n", "exactly 99 + LF") + gps(b"y" * 100 + b"\n", "exactly 100 + LF")
         s += gps(rmc("181818"), "after the long ones")
+        # a valid sentence of 99 stored characters (the most that fits;
+        # CR counts) and one of 100: only the first is processed
+        for n, t in ((99, "212121"), (100, "222222")):
+            body = "GPRMC,%s,A,6130.12,N,02345.67,E,012.3,084.4,280926,," % t
+            body += "0" * (n - 4 - len(body))
+            s += gps(nmea_raw(body), "%d characters" % n)
+        # bytes that pile up while PTT holds up the mainloop: several
+        # sentences in one gps_check pass
+        s += [("ptt", True), ("run", 0.2), ("serial_rx", 0, rmc("232323") + b"junk$" + rmc("242424")),
+              ("run", 1.0), ("ptt", False), ("run", 0.5)] + at("batch after ptt", gps=True)
         self.diff(s)
 
     def test_gps_gatherer_aisin_seiki(self):
@@ -127,6 +137,13 @@ class MainloopDiff(unittest.TestCase):
         # an unknown request and a key typed meanwhile
         s += [("poke", "script_req", 3), ("run", 0.3)] + at("script_req 3")
         s += [("press", "7"), ("run", 0.3)] + at("key after")
+        # after a long press key_time stays up; a script's '#' must not
+        # take it as a long '#' (memory store)
+        s += enter("433500") + [("press", "S", 2.7), ("run", 0.3)] + at("S held: cleared")
+        # (no key between: a press resets key_time; '#' looks at it before
+        # the digits, so a stale one stores the current memory)
+        s += script("onhook", b"#") + [("hook", True), ("run", 0.3), ("hook", False),
+                                                        ("run", 0.5)] + at("script # after a long press")
         self.diff(s)
 
     # ---- idle function
@@ -160,8 +177,9 @@ class MainloopDiff(unittest.TestCase):
 
     def test_lights(self):
         s = list(BOOT) + [("poke", "cfg_light_seconds", 3), ("press", "5"), ("run", 1.0)] + at("lit")
-        s += [("run", 3.5)] + at("dimmed") + [("press", "C"), ("run", 0.5)] + at("lit again")
-        s += [("run", 4.0)] + at("dimmed again")
+        s += [("run", 3.5)] + at("dimmed") + [("press", "C")]
+        # when they dim: after more than cfg_light_seconds idle seconds
+        s += [("trace", "dimming", lambda r: r.peek("indicators"), 5.0)] + at("dimmed again")
         s += [("poke", "cfg_light_seconds", 0), ("press", "5"), ("run", 1.0)] + at("light seconds 0")
         s += [("poke", "cfg_light_seconds", 255), ("press", "C"), ("run", 5.0)] + at("255")
         s += [("poke", "redraw_req", 1), ("run", 0.2)] + at("redraw request")

@@ -13,12 +13,13 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 **State.** Phases 0-3 done; Phase 4 has ported the timers, the key
 dispatch and handlers with the memories and VIP list, the PTT/TX flow,
-display composition, frequency logic and the scanner (fixed ROM), the FSK layer,
+the mainloop and its per-pass checks, display composition, frequency logic
+and the scanner (fixed ROM), the FSK layer,
 repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup menu engine
-(bank 1). `C=1` sizes: fixed ROM ends at 0x4DBE (**~12.6 KB free**),
+(bank 1). `C=1` sizes: fixed ROM ends at 0x4E67 (**~12.4 KB free**),
 bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
-**211 of the 224-byte `c_bss`** (raise `C_BSS_SIZE` for the next module).
-282 tests pass on both builds;
+**219 of the 224-byte `c_bss`** (raise `C_BSS_SIZE` for the next module).
+291 tests pass on both builds;
 `make -C firmware verify` byte-identical; the asm build changes only by
 the bug fixes.
 
@@ -33,7 +34,7 @@ high: CCIR/DTMF and CTCSS are nearly all interrupt context or hardware.
 | CCIR/DTMF sending (`ptt_ccir_xmit`, `ccir_from_digbuf(_or_setup)`, `dtmf_bang_tone`, `dtmf_cu58af`/`i2c_dtmf`), `ccircheck` | ~400 | **decided 2026-09-29: stays asm** (OUT0/8254 writes with DI, cycle-counted DTMF, the handset bus; a C version would be shims around shims) |
 | CTCSS: `ctcss_off`/`ctcss_maybe`/FX465/8254/DAC set-up | ~400 | hardware: stays asm |
 | CTCSS maths: `calculate_sintab`, `ctcss_hz_to_phase_inc`, `ctcss_dec_start(stop)` | 110 | portable |
-| Mainloop and its checks: `mainloop`, `gps_check` (+ Aisin Seiki `gps_check_aisin_seiki`, `aisin_seiki_parse_latlon`), `script_check`, `idlefn_check`, `bus_rf_relay`, `dim_lights_if_idle`, `cu_lights_off`, `redrawcheck`, `ccircheck` | 430 | portable (per-pass cost matters: scanner speed, bank duty) |
+| Mainloop and its checks | 290 | **done 2026-09-29** (`c/mainloop.c`); left asm: `aisin_seiki_parse_latlon` (IX/IY interface for `c/gps.c`), `cu_lights_off` (bit writes interrupts share) |
 | Indicators: `draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`, `draw_squelch_ind` | 210 | portable (the single-bit icon setters stay: interrupts use some) |
 | RFC table: `rfc_fill_blanks`, `rfc_fill_one_hole`, `get_rfc_hl` | 145 | portable |
 | `set_tx_freq`, `set_duplex_shift_*`, `compare_tx_rx_freq`, `point_ix_memory` | 130 | portable once no asm caller needs their registers |
@@ -41,11 +42,12 @@ high: CCIR/DTMF and CTCSS are nearly all interrupt context or hardware.
 | TX keying `tx_on`/`tx_off` | 150 | kept asm on purpose |
 | Display primitives (`draw_word`, `dpydig`, `draw_long`, `dpyval*`, strings), maths helpers (`bin_bcd`, `a2i`, `mul248`), boot (`main`, `cu58af_init`), bank trampolines | ~1500 | stays by design |
 
-**Next task: to be decided (user).** The portable remainder is ~1.1 KB in
-small clusters (table above). Either port them (the mainloop group first,
-then indicators, RFC, CTCSS maths), or call Phase 4 done and move on
-(e.g. make `C=1` the default build and drop the dead asm, the bench
-test, open bugs).
+**Next task: the rest of the portable clusters** (user, 2026-09-29: port
+them): indicators (`draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`,
+`draw_squelch_ind`), the RFC table (`rfc_fill_blanks`, `rfc_fill_one_hole`,
+`get_rfc_hl`), CTCSS maths (`calculate_sintab`, `ctcss_hz_to_phase_inc`,
+`ctcss_dec_start(stop)`), then `set_tx_freq`/`set_duplex_shift_*`. Tests
+first as before; `tools/asmleft.py` lists what is left.
 Other open items: the real-board bench test (EPROM programmer);
 `notes/hardware.md` open questions (IC27, EPROM0 pin 1 = CPU A15 assumed,
 modem CLK frequency); the bugs left in place: **notes/open-bugs.md**.
@@ -838,6 +840,23 @@ first, port, differential test against stock, size check, commit.
   `tx_cut_local_audio` closes the squelch anyway). The first round had
   22 survivors, all scenario gaps (the SAnE bands, stale digits, a
   report racing the squelch, the TX-time warning threshold, no remote id).
+- **Done: the mainloop and its per-pass checks in C, fixed ROM**
+  (2026-09-29), `c/mainloop.c`: `mainloop` (boot jumps to it), the NMEA
+  and Aisin Seiki gatherers of `gps_check`, `script_check`,
+  `idlefn_check`, `bus_rf_relay`, `dim_lights_if_idle`, `redrawcheck`,
+  `ccircheck`. New stubs `gpsc_sentence`/`gpsc_aisin` (A through
+  `bank2_call`). 454 bytes of C for ~285 of asm (1.6×); no frames.
+  Safety net: `test_mainloop_diff.py` (9 tests): the gatherers (split
+  receptions, ring wrap, too long, 99/100 stored characters, `$`
+  restarts, junk, a batch piled up while PTT holds the mainloop), hook
+  scripts (incl. a stale `key_time` after a long press), the idle
+  function, the MBUS→RF relay, light dimming (traced), the CCIR ding,
+  P8N. Mutation run (`tools/mutants/mainloop.py`): 41 mutants, 39 caught,
+  2 equivalent (a 10-character sentence processed or not: junk either
+  way; `key = 0xFF` before a script key: `keycheck` ran earlier in the
+  pass). The first round's 5 real survivors were scenario gaps (the
+  gatherer only ever saw a byte or two per pass, the 5 pressed after the
+  long press reset `key_time`, the dimming second).
 - **What is left, and what gates it:**
   - See "What is left" in "Start here".
   - The real-board bench test still has to confirm both window pages.
