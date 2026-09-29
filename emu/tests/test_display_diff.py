@@ -51,6 +51,11 @@ def scenario():
     s += [("press", "R"), ("run", 0.3)] + at("reverse: tx above")
     s += [("press", "R"), ("run", 0.3), ("press", "R"), ("run", 0.3)] + at("round")
     s += [("ptt", True), ("run", 0.3)] + at("transmitting") + [("ptt", False), ("run", 0.3)]
+    # a TX that differs from RX only in the top byte (433500 - 65536; the
+    # TX grid never gives one, so poked): the arrows compare all 24 bits
+    s += enter("433500") + show("tx differs in the top byte", ("tx_freq", (433500 - 65536).to_bytes(3, "little")))
+    s += show("and above", ("tx_freq", (433500 + 65536).to_bytes(3, "little")))
+    s += enter("433500")
     s += show("remote display", ("display_buffer_time", 5), ("remote_display_buffer", b"HI\xff" + b"\xff" * 7))
     s += show("remote display off", ("display_buffer_time", 0))
     for tx, rx in ((0, 0), (5, 0), (0, 7), (5, 7)):

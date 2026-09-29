@@ -41,14 +41,37 @@ extern void dpy_div9(uint8_t v);		/* 0..255 as 0..9 */
 extern void dpy_div99(uint8_t v);		/* 0..255 as 0..99 */
 extern void dpy_val99(uint8_t v);		/* 0..99, zero-blanked */
 extern void dpy_freq(const uint8_t *f);		/* draw_long of a 24-bit value */
-extern void dpy_squelch_ind(void);
 extern void dpy_menu_title(void);		/* bank 1 */
 extern void dpy_menu_lower_row(void);		/* bank 1 */
 
 /* firmware routines (assembler) */
 extern uint8_t real_txpwr(void);		/* 0..255 */
 extern void draw_upper_colons(void), clear_upper_colons(void),
-	clear_lower_colon(void), set_dpx_ind_from_rx_tx_freq(void);
+	clear_lower_colon(void);
+extern uint8_t get_ctcss_tx_hz(void), get_ctcss_rx_hz(void);	/* VFO or memory */
+
+/* the indicators redraw sets: single segments (constants asserted in
+ * r58.s).  Only mainline code writes `segments` (the display interrupt
+ * reads it), so a read-modify-write is safe. */
+extern uint8_t segments[], dpx_ind_flags;
+extern volatile uint8_t squelch_muted, gps_valid_seconds;
+#define CU53AN_SEG_V_U		0x43
+#define CU53AN_SEG_PHONE	0x47
+#define CU53AN_SEG_V_D		0x53
+#define CU53AN_SEG_PHONE_NO	0x5B
+#define CU53AN_SEG_MAST		0x5F
+#define CU53AN_SEG_STAR		0x6B
+#define CU53AN_SEG_KEY		0x73
+#define CU53AN_SEG_BOOK		0x77
+#define CU58AF_SEG_ARROW0	(24 + 4)
+#define CU58AF_SEG_ARROW1	(24 + 5)
+#define SEG(s, on) do { \
+		if (on) \
+			segments[(s) >> 3] |= 1 << ((s) & 7); \
+		else \
+			segments[(s) >> 3] &= ~(1 << ((s) & 7)); \
+	} while (0)
+void draw_squelch_ind(void), set_dpx_ind_from_rx_tx_freq(void);
 
 static uint8_t n, i, c;
 static const uint8_t *p;
@@ -114,7 +137,7 @@ void draw_upper_row(void)
 	if (cu_is_alfa)				/* where the audio goes */
 		dpy_ch(audio_dst == 1 ? '>' : audio_dst == 2 ? '<' : ' ');
 	dpy_div99(cfg_squelch_level);
-	dpy_squelch_ind();
+	draw_squelch_ind();
 	/* TX power while transmitting (not as a repeater), else RSSI */
 	dpy_div99(cfg_function != 1 && txon ? real_txpwr() : srssi);
 }
@@ -232,4 +255,50 @@ void draw_lower_row(void)
 	set_dpx_ind_from_rx_tx_freq();
 	yucko_alfa_draw_long_6_only = cu_is_alfa;
 	dpy_freq(txon ? tx_freq : rx_freq);
+}
+
+/* ---- indicators */
+
+/* forced squelch: an icon on the CU53AN, '*' at the cursor on the CU58AF */
+void draw_squelch_ind(void)
+{
+	if (cu_is_alfa)
+		dpy_ch(squelch_forced ? '*' : ' ');
+	else
+		SEG(CU53AN_SEG_STAR, squelch_forced);
+}
+
+/* the duplex arrows: 1 = TX below RX, 2 = TX above; unchanged if equal */
+void set_dpx_ind_from_rx_tx_freq(void)
+{
+	for (i = 3; i--; ) {
+		if (tx_freq[i] != rx_freq[i]) {
+			dpx_ind_flags = tx_freq[i] < rx_freq[i] ? 1 : 2;
+			return;
+		}
+	}
+}
+
+void draw_dpx_ind(void)
+{
+	c = dpx_ind_flags;
+	if (cu_is_alfa) {
+		SEG(CU58AF_SEG_ARROW0, c & 1);
+		SEG(CU58AF_SEG_ARROW1, c & 2);
+		return;
+	}
+	SEG(CU53AN_SEG_V_D, c & 1);
+	SEG(CU53AN_SEG_V_U, c & 2);
+	SEG(CU53AN_SEG_PHONE, display_buffer_time);	/* remote display */
+}
+
+/* CTCSS TX/RX, selective mute, GPS fix: CU53AN only */
+void draw_ctcss_and_mute_and_gps_ind(void)
+{
+	if (cu_is_alfa)
+		return;
+	SEG(CU53AN_SEG_MAST, get_ctcss_tx_hz());
+	SEG(CU53AN_SEG_PHONE_NO, get_ctcss_rx_hz());
+	SEG(CU53AN_SEG_KEY, squelch_muted & 2);
+	SEG(CU53AN_SEG_BOOK, gps_valid_seconds);
 }

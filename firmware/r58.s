@@ -105,6 +105,11 @@
 #define tx_tune_tone_maybe	_tx_tune_tone_maybe
 #define aprs_ptt_check		_aprs_ptt_check
 #define spontaneous_mprs_check	_spontaneous_mprs_check
+/* c/display.c: the indicators */
+#define draw_dpx_ind		_draw_dpx_ind
+#define draw_ctcss_and_mute_and_gps_ind	_draw_ctcss_and_mute_and_gps_ind
+#define draw_squelch_ind	_draw_squelch_ind
+#define set_dpx_ind_from_rx_tx_freq	_set_dpx_ind_from_rx_tx_freq
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -7879,6 +7884,7 @@ cu_call_off:
 	res CU58AF_BIT_CALL, (hl)
 	ret
 
+#ifndef C_MODULES	/* c/display.c */
 draw_ctcss_and_mute_and_gps_ind:
 
 	ld a, (cu_is_alfa)
@@ -7924,6 +7930,18 @@ draw_ctcss_and_mute_and_gps_ind:
 	segres_hl(CU53AN_SEG_BOOK)
 2:
 	ret
+#else
+	ASSERT_EQ(CU53AN_SEG_V_U, 0x43)
+	ASSERT_EQ(CU53AN_SEG_PHONE, 0x47)
+	ASSERT_EQ(CU53AN_SEG_V_D, 0x53)
+	ASSERT_EQ(CU53AN_SEG_PHONE_NO, 0x5B)
+	ASSERT_EQ(CU53AN_SEG_MAST, 0x5F)
+	ASSERT_EQ(CU53AN_SEG_STAR, 0x6B)
+	ASSERT_EQ(CU53AN_SEG_KEY, 0x73)
+	ASSERT_EQ(CU53AN_SEG_BOOK, 0x77)
+	ASSERT_EQ(CU58AF_SEG_ARROW0, 28)
+	ASSERT_EQ(CU58AF_SEG_ARROW1, 29)
+#endif /* C_MODULES */
 
 
 draw_scanner_icon:
@@ -7996,6 +8014,7 @@ clear_clock_icon:
 	segres_hl(CU58AF_SEG_EXP)
 	ret
 
+#ifndef C_MODULES	/* c/display.c: to draw_dpx_ind */
 draw_squelch_ind:
 	ld a, (cu_is_alfa)
 	or a
@@ -8063,6 +8082,7 @@ draw_dpx_ind:
 	segres_hl(CU58AF_SEG_ARROW1)
 2:
 	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -8264,7 +8284,6 @@ draw_memory_info:
 	ld a, b
 	jp dpydig				; memory status
 
-#endif /* C_MODULES */
 
 set_dpx_ind_from_rx_tx_freq:
 	push de
@@ -8277,6 +8296,7 @@ set_dpx_ind_from_rx_tx_freq:
 1:
 	ld (dpx_ind_flags), a
 	ret
+#endif /* C_MODULES */
 
 ;----------------------------------------------------------------------
 
@@ -12853,7 +12873,6 @@ name: @ ld de, (dpy_cursor) @ call fn @ ld (dpy_cursor), de @ ret
 	DPY_SHIM(dpy_div9, dpydiv9)
 	DPY_SHIM(dpy_div99, dpydiv99)
 	DPY_SHIM(dpy_val99, dpyval99)
-	DPY_SHIM(dpy_squelch_ind, draw_squelch_ind)
 	DPY_SHIM(dpy_val255, dpyval255)
 	DPY_SHIM(dpy_word, draw_word)
 	DPY_SHIM(dpy_str_rj, draw_string_rightjust)

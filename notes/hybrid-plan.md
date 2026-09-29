@@ -16,10 +16,10 @@ dispatch and handlers with the memories and VIP list, the PTT/TX flow,
 the mainloop and its per-pass checks, display composition, frequency logic
 and the scanner (fixed ROM), the FSK layer,
 repeater/CW, GPS parsing and MPRS/APRS (bank 2) and the setup menu engine
-(bank 1). `C=1` sizes: fixed ROM ends at 0x4E67 (**~12.4 KB free**),
+(bank 1). `C=1` sizes: fixed ROM ends at 0x4E95 (**~12.4 KB free**),
 bank 1 **7191 bytes free**, bank 2 **~4.4 KB free**; the C statics use
 **219 of the 224-byte `c_bss`** (raise `C_BSS_SIZE` for the next module).
-291 tests pass on both builds;
+294 tests pass on both builds;
 `make -C firmware verify` byte-identical; the asm build changes only by
 the bug fixes.
 
@@ -35,7 +35,7 @@ high: CCIR/DTMF and CTCSS are nearly all interrupt context or hardware.
 | CTCSS: `ctcss_off`/`ctcss_maybe`/FX465/8254/DAC set-up | ~400 | hardware: stays asm |
 | CTCSS maths: `calculate_sintab`, `ctcss_hz_to_phase_inc`, `ctcss_dec_start(stop)` | 110 | portable |
 | Mainloop and its checks | 290 | **done 2026-09-29** (`c/mainloop.c`); left asm: `aisin_seiki_parse_latlon` (IX/IY interface for `c/gps.c`), `cu_lights_off` (bit writes interrupts share) |
-| Indicators: `draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`, `draw_squelch_ind` | 210 | portable (the single-bit icon setters stay: interrupts use some) |
+| Indicators: `draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`, `draw_squelch_ind`, `set_dpx_ind_from_rx_tx_freq` | 240 | **done 2026-09-29** (`c/display.c`); the single-bit icon setters stay asm (asm callers) |
 | RFC table: `rfc_fill_blanks`, `rfc_fill_one_hole`, `get_rfc_hl` | 145 | portable |
 | `set_tx_freq`, `set_duplex_shift_*`, `compare_tx_rx_freq`, `point_ix_memory` | 130 | portable once no asm caller needs their registers |
 | Frequency kernel (`determine_rx_div`, `freq2div`, `channel_step_parms`, `locate_tx_band`, `div248`, ...) | ~500 | kept asm on purpose (carry semantics, register results); optional |
@@ -43,8 +43,7 @@ high: CCIR/DTMF and CTCSS are nearly all interrupt context or hardware.
 | Display primitives (`draw_word`, `dpydig`, `draw_long`, `dpyval*`, strings), maths helpers (`bin_bcd`, `a2i`, `mul248`), boot (`main`, `cu58af_init`), bank trampolines | ~1500 | stays by design |
 
 **Next task: the rest of the portable clusters** (user, 2026-09-29: port
-them): indicators (`draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`,
-`draw_squelch_ind`), the RFC table (`rfc_fill_blanks`, `rfc_fill_one_hole`,
+them): the RFC table (`rfc_fill_blanks`, `rfc_fill_one_hole`,
 `get_rfc_hl`), CTCSS maths (`calculate_sintab`, `ctcss_hz_to_phase_inc`,
 `ctcss_dec_start(stop)`), then `set_tx_freq`/`set_duplex_shift_*`. Tests
 first as before; `tools/asmleft.py` lists what is left.
@@ -857,6 +856,16 @@ first, port, differential test against stock, size check, commit.
   pass). The first round's 5 real survivors were scenario gaps (the
   gatherer only ever saw a byte or two per pass, the 5 pressed after the
   long press reset `key_time`, the dimming second).
+- **Done: the display indicators in C** (2026-09-29), `c/display.c`:
+  `draw_dpx_ind`, `draw_ctcss_and_mute_and_gps_ind`, `draw_squelch_ind`
+  (the `dpy_squelch_ind` shim is gone), `set_dpx_ind_from_rx_tx_freq`
+  (compares the 24 bits itself). `redraw` stays asm (sets DPYSIR
+  atomically). Segment writes are C read-modify-writes: only mainline
+  writes `segments` (the display interrupt reads it). Segment numbers
+  asserted in r58.s. 284 bytes of C for ~238 of asm. Safety net:
+  `test_display_diff.py` (3 tests, both handsets and P8N; a TX differing
+  from RX only in its top byte is poked: the TX grid never produces one).
+  Mutation run (`tools/mutants/indicators.py`): 16 mutants, all caught.
 - **What is left, and what gates it:**
   - See "What is left" in "Start here".
   - The real-board bench test still has to confirm both window pages.
