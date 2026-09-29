@@ -74,3 +74,15 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `experiments/c-density/` | C vs assembler code size measurement |
 | `notes/` | Findings; `notes/reference/` has the detailed interface specs |
 | `reference/` | Source material (not in git): manuals, original sources and binaries |
+
+## License
+
+The work of this project is under the MIT license ([LICENSE](LICENSE)):
+the emulator, the tests, the tools, the notes and our changes to the
+firmware. Not covered, because it is not ours to license:
+
+| Path | Origin |
+|---|---|
+| `firmware/r58.asm`, the original code in `firmware/r58.s` | The R58 community ham firmware v3_Z ALs (OH5NXO et al.), distributed through the OH3TR archive; its authors' terms apply. `firmware/c/` ports parts of it to C, so the same applies to the logic carried over. |
+| `tools/as80/` | The "jas" assembler (1996-97) from the old R58 development kit, patched to build on modern systems (notes/toolchain.md). |
+| `emu/tests/zex/zexdoc.com`, `zexall.com` | Frank D. Cringle's Z80 instruction exercisers (GPL). |

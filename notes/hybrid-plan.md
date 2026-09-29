@@ -65,7 +65,11 @@ Earlier handoffs: notes/hybrid-plan-history.md.
   reads; copy constant expressions, not comments; `sir |= bit` in mainline
   is not atomic (keep such writes in asm); layout constants C hard-codes
   get an ASSERT in r58.s under C_MODULES. Check generated asm for
-  `ix`/`iy`/`exx`.
+  `ix`/`iy`/`exx`. From the 2026-09-29 review: variables an interrupt
+  writes are `volatile` in mainline C and read once into a static
+  (`keycheck` had tested one `key` and dispatched another);
+  `get24(a) - get24(b)` and 32-bit sums spill into an IX frame, so go
+  through a static one step at a time.
 - Safety net per module: tests first (they must pass on the release);
   differential scenarios for what the handset/synth/NV show
   (`test_diff.py`), release-vs-build RAM comparison for state they cannot
