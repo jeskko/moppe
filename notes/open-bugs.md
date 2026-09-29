@@ -81,6 +81,14 @@ builds). A configuration error, but silent.
 `squelch_open`, but every frequency change (`temporary_change_rx_freq`)
 has just closed the squelch, so it is always 0 there. Harmless; kept.
 
+**Scan tail 255 does not "listen for ever"** (asm after `get_scan_tail`,
+C `scanner_run` label `tail`): 255 skips setting `scan_timer_secs`, which
+the settling wait has left at 0, so the scanner steps on as soon as the
+signal drops, exactly as with tail 0. Patience 255 does mean "for ever".
+Found 2026-09-29 in the code review (comment in asm and C says for ever);
+`test_scan_diff` covers tail 255 but only compares the builds. Fix
+candidate (obvious bug): skip the wait-out while tail is 255.
+
 ## Menu
 
 **Remote config while a DC reply is shown writes the reply buffer**
