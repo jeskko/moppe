@@ -110,6 +110,8 @@
 #define draw_ctcss_and_mute_and_gps_ind	_draw_ctcss_and_mute_and_gps_ind
 #define draw_squelch_ind	_draw_squelch_ind
 #define set_dpx_ind_from_rx_tx_freq	_set_dpx_ind_from_rx_tx_freq
+/* c/freq.c: the RFC table fill */
+#define rfc_fill_blanks		_rfc_fill_blanks
 #endif
 
 ; XXX build_scan_mask/toggle_scan_mask - empty slices/memblocks ? select s/m
@@ -13096,6 +13098,7 @@ far_draw_menu_lower_row:	call bank1_call
 ;
 ;  "Bresenham simplified"
 
+#ifndef C_MODULES	/* c/freq.c */
 rfc_fill_blanks:
 
 	ld ix, #rfctab
@@ -13187,6 +13190,7 @@ rfc_fill_one_hole:
 	jr nc, 2b           ; if (sum >= dy)
 	add hl, de
 	jr 1b
+#endif /* C_MODULES */
 
 ;======================================================================
 
@@ -21299,7 +21303,7 @@ bank_test_msg:	BUF(10)
 #endif
 
 #ifdef C_MODULES
-C_BSS_SIZE = 224
+C_BSS_SIZE = 256
 c_bss:	.ds C_BSS_SIZE	; the C modules' _DATA area is linked here (tools/link.py)
 c_bss_end:
 #endif

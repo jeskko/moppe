@@ -275,7 +275,9 @@ class PttDiff(unittest.TestCase):
             s += [("poke", "cfg_aprs_tx_freq", f24(f)), ("poke", "cfg_squelch_level", 127),
                   ("adc", "AD_SQL", 0xC0), ("run", 0.5)] + at("%d: squelch open" % f)
             s += [("local", True), ("trace", "aprs %d keying" % f, keying, 0.8)] + at("aprs %d tx" % f)
-            s += [("local", False), ("trace", "aprs %d off" % f, keying, 0.5)] + at("aprs %d released" % f)
+            # back_from_aprs_freq redraws before restoring tx_freq: the
+            # arrows are stale until the next periodic redraw, so wait for it
+            s += [("local", False), ("trace", "aprs %d off" % f, keying, 1.2)] + at("aprs %d released" % f)
             s += [("adc", "AD_SQL", 0), ("run", 0.5)] + ptt(0.4, "normal ptt after %d" % f)
         s += [("poke", "cfg_idlefn_delay", 5), ("local", True), ("run", 0.5)] + at("not idle")
         s += [("local", False), ("run", 0.3), ("poke", "cfg_aprs_tx", 0), ("poke", "cfg_idlefn_delay", 0),

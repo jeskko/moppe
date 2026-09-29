@@ -50,6 +50,10 @@ extern void close_squelch(void), lookup_rfc(void), determine_rx_div(void),
 	load_rxsynth(void), determine_tx_div_split(void), set_channel_step(void);
 extern uint16_t channel_step_parms(uint8_t step);	/* user step, in DE */
 
+/* the RFC table (below) */
+extern uint8_t rfctab[100];
+void rfc_fill_blanks(void);
+
 /* ---- 24-bit values */
 
 /* byte access through a static union: SDCC's 32-bit shifts are slow and
@@ -249,4 +253,60 @@ void step_channel_down(void)
 	locate_band();
 	put24(rx_freq, get24(rx_freq) - (uint16_t)(channel_step_parms(band_step) - 1));
 	changed_frequency();
+}
+
+/* ---- the RFC table: the receiver's tuning voltage per MHz (slot =
+ * (RX kHz mod 100000) / 1000).  The lookup (get_rfc_hl, lookup_rfc,
+ * save_rfc) stays assembler: it runs on every frequency change, and its
+ * 24-bit subtraction loops cost ~0.1 ms where C's 32-bit ones cost more
+ * than 1 ms per scanner step.  The fill runs from the menu only. */
+
+static uint8_t rx;
+
+/* one hole: rfctab[rx] set, rfctab[rx + 1] the first 0.  A line with
+ * integer steps up to the next set value (dy is 8 bits: a lower one
+ * wraps); leaves rx before that value.  A leaf (calls nothing), so
+ * locals are fine. */
+static void rfc_fill_one_hole(void)
+{
+	uint8_t x = rx, x2 = rx, y, dx, dy;
+	uint16_t sum = 0;
+
+	do
+		x2++;
+	while (!rfctab[x2]);			/* index 99 is never 0 */
+	dy = rfctab[x2] - rfctab[x];
+	dx = x2 - x;
+	while (!rfctab[x + 1]) {
+		y = rfctab[x];
+		if (dx < dy) {			/* steep */
+			do {
+				y++;
+				sum += dx;
+			} while (sum < dy);
+			sum -= dy;
+		} else {			/* slow rise */
+			sum += dy;
+			if (sum >= dx) {
+				sum -= dx;
+				y++;
+			}
+		}
+		rfctab[++x] = y;
+	}
+	rx = x;
+}
+
+/* dF:rFcFIL: interpolate every hole of 1...98; 0 is not a hole, 99 gets
+ * a 255 barrier if 0 */
+void rfc_fill_blanks(void)
+{
+	if (!rfctab[99])
+		rfctab[99] = 0xFF;
+	rx = 0;
+	do {
+		if (!rfctab[rx + 1])
+			rfc_fill_one_hole();
+		rx++;
+	} while (rx < 98);
 }

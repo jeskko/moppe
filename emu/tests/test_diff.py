@@ -346,9 +346,9 @@ class DiffTest(unittest.TestCase):
     latches, event sequence (within a timing tolerance) and NV image at
     every ("check", ...) step."""
 
-    def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None):
+    def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None, **kw):
         nv = make_sane_nv(card, cu, synth_card)
-        diffs = run_diff(scenario, STOCK, CAND, card=card, cu=cu, nv=nv)
+        diffs = run_diff(scenario, STOCK, CAND, card=card, cu=cu, nv=nv, **kw)
         self.assertEqual(diffs, [], "\n".join(diffs))
 
     # ---- the harness itself
@@ -417,7 +417,8 @@ class DiffTest(unittest.TestCase):
         self.diff(SCN_EVERY_KEY)
 
     def test_every_key_cu58af(self):
-        self.diff(SCN_EVERY_KEY, cu=CU58AF)
+        # key releases are seen once per 25 ms display refresh: 30 ms
+        self.diff(SCN_EVERY_KEY, cu=CU58AF, tolerance_s=0.03)
 
     def test_display_states(self):
         self.diff(SCN_DISPLAY_STATES)

@@ -167,6 +167,10 @@ def main():
             bad.append("area %s is not empty (%d bytes)" % (name, size))
     bad += cross_bank_refs(a.cmods, map_symbols(a.o + ".map"))
     if bad:
+        # no output left behind, or make would take the build as done
+        for ext in (".ihx", ".map"):
+            if os.path.exists(a.o + ext):
+                os.remove(a.o + ext)
         sys.exit("link.py: " + "; ".join(bad))
 
 
