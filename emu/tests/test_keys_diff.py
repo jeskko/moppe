@@ -293,11 +293,14 @@ class KeysDiff(unittest.TestCase):
         self.diff(s)
 
     def test_duplex_key(self):
-        s = BOOT + enter("434700")
+        s = BOOT + memory(12, 433300, 431700) + enter("434700")
         s += key("R", label="R no digits") + key("R") + key("R") + key("R")
         s += [("keys", "5")] + key("R", label="R one digit")
+        # a split from memory 12 takes its RX (not TX); negative shifts
+        # whose low byte(s) carry (256, 65536)
         for digits, secs in (("16", 0.5), ("16", 1.7), ("16", 2.7), ("433100", 3.7),
-                             ("12", 3.7), ("4350", 3.7), ("600", 1.7)):
+                             ("12", 3.7), ("4350", 3.7), ("600", 1.7), ("256", 1.7),
+                             ("65536", 1.7)):
             s += [("keys", digits)] + held("R", secs, "R %s %.1f" % (digits, secs))
             s += key("#", label="after R")
         self.diff(s)

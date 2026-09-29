@@ -4832,6 +4832,7 @@ def_freq:
 	jp changed_frequency
 #endif /* C_MODULES */
 
+#ifndef C_MODULES	/* no caller left in the C build */
 	; tx_freq - rx_freq into ahl and CY and Z
 
 compare_tx_rx_freq:
@@ -4843,6 +4844,7 @@ compare_tx_rx_freq:
 	or h
 	ld a, e
 	ret                     ; CY clear, Z valid
+#endif /* C_MODULES */
 
 ;======================================================================
 ;
@@ -6439,6 +6441,7 @@ save_memory_ctcss:
 
 ;======================================================================
 
+#ifndef C_MODULES	/* no caller left in the C build */
 point_ix_memory:
 	ld a, (mem_idx)
 point_ix_memory_a:
@@ -6459,6 +6462,7 @@ point_ix_memory_a:
 	push hl
 	pop ix
 	ret
+#endif /* C_MODULES */
 
 #ifndef C_MODULES	/* c/keys.c */
 go_mem_a:
@@ -9821,6 +9825,7 @@ step_duplex_state:
 
 	; set duplex shift temporarily
 
+#ifndef C_MODULES	/* c/keys.c: set_duplex_shift_*, set_tx_freq */
 set_duplex_shift_neg:
 	call a2i
 	call negate_ahl
@@ -9857,6 +9862,10 @@ set_tx_freq:
 	ld a, #DPX_SPLIT
 	ld (duplex_state), a
 	jp changed_frequency_duplex_okay
+#else
+	ASSERT_EQ(DPX_DUPLEX, 1)
+	ASSERT_EQ(DPX_SPLIT, 3)
+#endif /* C_MODULES */
 
 
 ; Some contortions to handle stepping up _TO_ a slice end

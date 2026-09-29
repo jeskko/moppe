@@ -7,10 +7,10 @@
  * go_mem_a, remember_vip/next_vip) of r58.s (see the C_MODULES blocks
  * there).  Stay assembler: the volume/OUT0 writer set_vola_a, the
  * squelch forcing (DI), is_key_down/waitkey, the feedback text stubs,
- * clear_buffer/clear_key (asm callers keep A), point_ix_memory (IX) and
- * compare_tx_rx_freq (flags) for their asm callers, beep1750 and
- * set_tx_freq/set_duplex_shift_* (with the PTT/TX flow and the frequency
- * kernel).
+ * clear_buffer/clear_key (asm callers keep A), beep1750 (c/ptt.c).
+ * Also here: set_tx_freq and set_duplex_shift_* ('R' held with digits);
+ * with them point_ix_memory and compare_tx_rx_freq lost their last
+ * callers in the C build.
  *
  * Every handler takes the key code in A, which is where --sdcccall 1
  * passes a uint8_t argument (checked: none reads B or C before writing
@@ -58,8 +58,10 @@ extern void feedback_default(void), feedback_stored(void), feedback_reject(void)
 	feedback_split(void);
 extern void save_nvdata(void), force_squelch(void), unforce_squelch(void),
 	far_decoder_hist_rewind(void), far_send_call_packet(void), beep1750(void),
-	set_duplex_shift_neg(void), set_duplex_shift_pos(void), set_tx_freq(void),
 	set_channel_step(void);
+extern uint8_t duplex_state, duplex_shift[3];
+#define DPX_DUPLEX	1		/* asserted in r58.s */
+#define DPX_SPLIT	3
 extern void set_vola_a(uint8_t v);		/* clamps to 0..9, drives OUT0 */
 extern uint8_t a2i_byte(void);			/* digits -> A (0xFF if > 255) */
 extern void keys_a2i(uint8_t *p);		/* digits -> 24 bits at p */
@@ -89,6 +91,8 @@ void execute(uint8_t k), monitor_audio(uint8_t k), up_freq(uint8_t k),
 	dn_memo(uint8_t k);
 void go_mem_a(uint8_t m), remember_vip(void), next_vip(void),
 	leave_memories(void), fill_implied(void);
+static void set_duplex_shift_neg(void), set_duplex_shift_pos(void),
+	set_tx_freq(void);
 static void save_memory(void), go_mem(void);
 
 void dokey_not_menu(uint8_t k)
@@ -699,4 +703,42 @@ void go_mem_a(uint8_t m)
 void leave_memories(void)
 {
 	mem_flags = 0;
+}
+
+/* ---- 'R' held with digits: a temporary shift or TX frequency */
+
+/* the typed kHz as a negative shift (24-bit two's complement) */
+static void set_duplex_shift_neg(void)
+{
+	keys_a2i(duplex_shift);
+	duplex_shift[0] = ~duplex_shift[0];
+	duplex_shift[1] = ~duplex_shift[1];
+	duplex_shift[2] = ~duplex_shift[2];
+	if (!++duplex_shift[0] && !++duplex_shift[1])
+		++duplex_shift[2];
+	duplex_state = DPX_DUPLEX;
+	changed_frequency_duplex_okay();
+}
+
+static void set_duplex_shift_pos(void)
+{
+	keys_a2i(duplex_shift);
+	duplex_state = DPX_DUPLEX;
+	changed_frequency_duplex_okay();
+}
+
+/* TX on the typed frequency (3 or 4 digits: implied beginning), or on
+ * the RX frequency of the typed memory (1 or 2 digits) */
+static void set_tx_freq(void)
+{
+	n = digidx;
+	if (n < 3) {
+		copy3(tx_freq, memory_rec(a2i_byte()));
+	} else {
+		if (n < 5)
+			fill_implied();
+		keys_a2i(tx_freq);
+	}
+	duplex_state = DPX_SPLIT;
+	changed_frequency_duplex_okay();
 }
