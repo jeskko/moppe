@@ -10899,7 +10899,7 @@ ctcss_maybe:
 	dec a                         ; if 1
 	jp z, ctcss_generator_on      ; RFC DAC method
 	dec a                         ; if 2
-	jr z, ctcss_fx465_on          ; addon FX465 method
+	jp z, ctcss_fx465_on          ; addon FX465 method (past the tables)
 
 	; and else, default, plain and simple i8253 generator on
 	; CTCSS proper frequency OH5NXO/OH1E
@@ -10968,6 +10968,35 @@ ctcss_counter_counts:
         .dw 0        ; unused, setting "oFF"
         CTCSS_TONES
 
+;  The TX tone setting (GE:CtCSSt, a TAB) is an index into the list above;
+;  the RFC DAC DDS and the FX465 want Hz.  v3_Z passed them the index
+;  (97.4 Hz played as 12 Hz).  Rounded Hz: the FX465 table takes Hz or Hz-1.
+
+#undef  CTCSS_RECORD
+#define CTCSS_RECORD(dHz) .db ((dHz) + 5) / 10 @
+
+ctcss_tone_hz:
+        .db 0        ; "oFF"
+        CTCSS_TONES
+ctcss_tones = . - ctcss_tone_hz
+
+get_ctcss_tx_tone_hz:		; A = Hz of the TX tone setting, 0 = off
+	call get_ctcss_tx_hz
+	cp #ctcss_tones
+	jr c, 1f
+	xor a                   ; past the list: off
+1:
+	push hl
+	ld hl, #ctcss_tone_hz
+	add a, l
+	ld l, a
+	adc a, h
+	sub l
+	ld h, a
+	ld a, (hl)
+	pop hl
+	ret
+
 
 	; FX465 generator on XXX this check is now redundant, with method tab
 
@@ -10977,7 +11006,7 @@ ctcss_fx465_on:
 	or a
 	ret nz                 ; cannot tx with FX465 in duplex functions.
 
-	ld a, c                ; Hz still in C.
+	call get_ctcss_tx_tone_hz ; the setting is an index, FX465 wants Hz
 	jr ctcss_fx465_tx
 
 
@@ -11167,7 +11196,7 @@ ctcss_enc_start:
 
 	call calculate_sintab     ; multiplier in A, center in C
 
-	call get_ctcss_tx_hz
+	call get_ctcss_tx_tone_hz ; the setting is an index, the DDS wants Hz
 	call ctcss_hz_to_phase_inc
 	ld (ctcss_enc_phinc), hl
 

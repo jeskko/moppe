@@ -262,6 +262,15 @@ notes/open-bugs.md):
   frequency again took a second slot, and a reject whose middle byte
   equalled the new low byte was overwritten. **Fixed 2026-09-29**
   (obvious bug); `test_scan_rptr.Rejects`.
+- CTCSS TX with the RFC DAC or FX465 method (PH:CtCGEn 1/2) played the
+  wrong tone: GE:CtCSSt is a TAB record (an index into the tone list,
+  which the i8254 method uses as one), and `ctcss_generator_on` /
+  `ctcss_fx465_on` passed that index as Hz (97.4 Hz, index 12, played as
+  12 Hz on the DDS; the FX465 found no tone for most settings). The RX
+  setting CtCSSr is a BYTE in Hz and was right. Probably left over from
+  the OH5NXO/OH1E change that made CtCSSt a table. **Fixed 2026-09-29**
+  (obvious bug): `get_ctcss_tx_tone_hz` maps the index to rounded Hz
+  (`ctcss_tone_hz`, from the same `CTCSS_TONES` list); `test_ctcss.py`.
 - MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
   the first GPS fix there is none and it prints the RAM after it. Kept.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
