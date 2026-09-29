@@ -146,16 +146,20 @@ def seeded_pokes(seed):
     return out
 
 
-def walk(seed):
+def walk(seed, gap=0.1):
+    """With a CU58AF, gap must stay clear of the release read: the handset
+    signals only changes (/INT), the firmware reads a release 90-100 ms
+    after it (debounce, systick phase), and a press before that read is
+    lost.  0.1 s is 1-2 ms from it, so the systick phase decides."""
     n = len(RECS)
     steps = [("boot", 2.5)] + seeded_pokes(seed) + [("run", 0.2), ("press", "E"), ("run", 0.2)]
     steps += at("menu entered")
     for i in range(n + 1):
-        steps += [("press", "#", 0.12, 0.1)] + at("walk %d" % (i + 1))
+        steps += [("press", "#", 0.12, gap)] + at("walk %d" % (i + 1))
     for i in range(3):
-        steps += [("press", "R", 0.12, 0.1)] + at("back %d" % (i + 1))
+        steps += [("press", "R", 0.12, gap)] + at("back %d" % (i + 1))
     for i in range(len({r["tag"] for r in RECS}) + 2):
-        steps += [("press", "S", 0.12, 0.1)] + at("group %d" % (i + 1))
+        steps += [("press", "S", 0.12, gap)] + at("group %d" % (i + 1))
     steps += [("press", "E"), ("run", 0.3)] + at("menu left")
     return steps
 
@@ -176,7 +180,7 @@ class MenuDiff(unittest.TestCase):
         self.diff(walk(1))
 
     def test_walk_cu58af(self):
-        self.diff(walk(2), cu=CU58AF)
+        self.diff(walk(2, gap=0.15), cu=CU58AF)
 
     def test_walk_p8n(self):
         self.diff(walk(3), card=P8N)
