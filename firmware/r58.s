@@ -10241,8 +10241,11 @@ end_memories:
 
 	cfg_synth_card:        BYTE     ; TAB    S8x enumeration
 	cfg_if_freq:           FREQ     ; 1st I/F
-	cfg_rx_vco_center:     FREQ     ; 
-	cfg_tx_vco_center:     FREQ     ; 
+	cfg_rx_vco_center:     FREQ     ;
+	cfg_tx_vco_center:     FREQ     ;
+	; c/menu.c copies these three in one copy_default(9, cfg_if_freq)
+	ASSERT_EQ(cfg_rx_vco_center - cfg_if_freq, 3)
+	ASSERT_EQ(cfg_tx_vco_center - cfg_if_freq, 6)
 
 	cfg_ctcss_tx_hz:       BYTE     ; 0..255 Hz
 
