@@ -39,9 +39,6 @@ extern uint16_t band_step_hz;
 extern void lookup_rfc(void), determine_rx_div(void), load_rxsynth(void);
 extern uint16_t channel_step_parms(uint8_t step);	/* user step, in DE */
 
-/* the RFC table (below) */
-void rfc_fill_blanks(void);
-
 /* ---- 24-bit values */
 
 /* byte access through a static union: SDCC's 32-bit shifts are slow and
@@ -216,7 +213,9 @@ void changed_frequency(void)
 }
 
 /* simplex -> duplex -> reverse -> simplex; forgets split and temporary
- * shifts.  Entering reverse and leaving it swap rx and tx. */
+ * shifts.  Every change except simplex -> duplex swaps rx and tx (split
+ * -> simplex too, as v3_Z: the wrap-around out of DPX_SPLIT still takes
+ * this "!= DPX_DUPLEX" branch). */
 void step_duplex_state(void)
 {
 	if (++duplex_state >= DPX_SPLIT)
@@ -259,15 +258,15 @@ void step_channel_down(void)
  * 24-bit subtraction loops cost ~0.1 ms where C's 32-bit ones cost more
  * than 1 ms per scanner step.  The fill runs from the menu only. */
 
-static uint8_t rx;
+static uint8_t hole;			/* rfctab index; not rx_freq */
 
-/* one hole: rfctab[rx] set, rfctab[rx + 1] the first 0.  A line with
+/* one hole: rfctab[hole] set, rfctab[hole + 1] the first 0.  A line with
  * integer steps up to the next set value (dy is 8 bits: a lower one
- * wraps); leaves rx before that value.  A leaf (calls nothing), so
+ * wraps); leaves hole before that value.  A leaf (calls nothing), so
  * locals are fine. */
 static void rfc_fill_one_hole(void)
 {
-	uint8_t x = rx, x2 = rx, y, dx, dy;
+	uint8_t x = hole, x2 = hole, y, dx, dy;
 	uint16_t sum = 0;
 
 	do
@@ -292,7 +291,7 @@ static void rfc_fill_one_hole(void)
 		}
 		rfctab[++x] = y;
 	}
-	rx = x;
+	hole = x;
 }
 
 /* dF:rFcFIL: interpolate every hole of 1...98; 0 is not a hole, 99 gets
@@ -301,10 +300,10 @@ void rfc_fill_blanks(void)
 {
 	if (!rfctab[99])
 		rfctab[99] = 0xFF;
-	rx = 0;
+	hole = 0;
 	do {
-		if (!rfctab[rx + 1])
+		if (!rfctab[hole + 1])
 			rfc_fill_one_hole();
-		rx++;
-	} while (rx < 98);
+		hole++;
+	} while (hole < 98);
 }

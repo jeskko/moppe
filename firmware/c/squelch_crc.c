@@ -95,6 +95,9 @@ void squelch(void)
  * init 0xFFFF, stored complemented, high byte first */
 extern const uint8_t crctbl_hi[256], crctbl_lo[256];
 
+#define SHORT_PACLEN	6			/* short packet, data only */
+#define LONG_PACDATA	(LONG_PACLEN - 2)	/* long packet, data only */
+
 static uint16_t crc_run(uint16_t crc, const uint8_t *p, uint8_t n)
 {
 	while (n--) {
@@ -112,15 +115,15 @@ static void put_crc(uint16_t crc, uint8_t at)
 
 void append_short_packet_crc(void)
 {
-	put_crc(crc_run(0xffff, outpacket, 6), 6);
+	put_crc(crc_run(0xffff, outpacket, SHORT_PACLEN), SHORT_PACLEN);
 }
 
 void append_long_packet_crc(void)
 {
-	put_crc(crc_run(0xffff, outpacket, 13), 13);
+	put_crc(crc_run(0xffff, outpacket, LONG_PACDATA), LONG_PACDATA);
 }
 
 void append_secret_packet_crc(void)
 {
-	put_crc(crc_run(crc_run(0xffff, cfg_remote_passwd, 8), outpacket, 13), 13);
+	put_crc(crc_run(crc_run(0xffff, cfg_remote_passwd, 8), outpacket, LONG_PACDATA), LONG_PACDATA);
 }

@@ -8,9 +8,10 @@
  * assembler originals are in git tag asm-final).  Stay assembler: the
  * volume/OUT0 writer set_vola_a, the squelch forcing (DI),
  * is_key_down/waitkey, the feedback text stubs, clear_buffer/clear_key
- * (asm callers keep A), beep1750 (c/ptt.c).  Also here: set_tx_freq and
- * set_duplex_shift_* ('R' held with digits); with them point_ix_memory
- * and compare_tx_rx_freq lost their last callers in the C build.
+ * (asm callers keep A).  beep1750 is C too, in c/ptt.c.  Also here:
+ * set_tx_freq and set_duplex_shift_* ('R' held with digits); with them
+ * point_ix_memory and compare_tx_rx_freq lost their last callers in the
+ * C build.
  *
  * Every handler takes the key code in A, which is where --sdcccall 1
  * passes a uint8_t argument (checked: none reads B or C before writing
@@ -177,6 +178,16 @@ static uint8_t *memory_rec(uint8_t m)	/* point_ix_memory_a */
 	return memories + m * MEM_SIZE;
 }
 
+/* go_mem_a/save_memory clamp to mem_idx and then look the record up: fold
+ * both into one clamp instead of memory_rec's second one */
+static uint8_t *memory_rec_at(uint8_t m)
+{
+	if (m >= NUM_MEMORIES)
+		m = MEM_DEFAULT;
+	mem_idx = m;
+	return memories + m * MEM_SIZE;
+}
+
 /* 3 bytes (a 24-bit value); also used by ptt.c, scan.c and menu.c */
 void copy3(uint8_t *d, const uint8_t *s)
 {
@@ -239,20 +250,24 @@ void execute(uint8_t k)
 	save_nvdata();
 }
 
-/* 3 or 4 digits: the implied beginning of the frequency in front */
+/* 3 or 4 digits: the implied beginning of the frequency in front (matches
+ * the asm's ldd/ldir: digidx 3 shifts by 3 and takes 3 digits of the
+ * implied prefix, anything else shifts by 4 and takes 2) */
 void fill_implied(void)
 {
-	n = digidx == 3 ? 3 : 4;
-	t = n;
-	do {
-		t--;
-		digbuf[t + 6 - n] = digbuf[t];
-	} while (t);
-	t = 6 - n;
-	do {
-		t--;
-		digbuf[t] = cfg_implied[t];
-	} while (t);
+	if (digidx == 3) {
+		digbuf[5] = digbuf[2];
+		digbuf[4] = digbuf[1];
+		digbuf[3] = digbuf[0];
+		digbuf[2] = cfg_implied[2];
+	} else {
+		digbuf[5] = digbuf[3];
+		digbuf[4] = digbuf[2];
+		digbuf[3] = digbuf[1];
+		digbuf[2] = digbuf[0];
+	}
+	digbuf[0] = cfg_implied[0];
+	digbuf[1] = cfg_implied[1];
 	digidx = 6;
 }
 
@@ -564,10 +579,7 @@ void next_vip(void)
  * longer: 2 s not scannable, 3 s hidden */
 static void save_memory(void)
 {
-	t = digidx ? a2i_byte() : mem_idx;
-	if (t >= NUM_MEMORIES)
-		t = MEM_DEFAULT;
-	mem_idx = t;
+	mp = memory_rec_at(digidx ? a2i_byte() : mem_idx);	/* clamps, sets mem_idx */
 
 	mem_flags = MEM_VALID | MEM_SCANNABLE;
 	redraw();
@@ -583,7 +595,6 @@ static void save_memory(void)
 		}
 	} while (is_key_down());
 
-	mp = memory_rec(mem_idx);
 	copy3(mp, rx_freq);
 	copy3(mp + 3, tx_freq);
 	mp[MEM_FLAGS] = mem_flags;
@@ -656,10 +667,7 @@ void save_memory_ctcss(void)
 
 void go_mem_a(uint8_t m)
 {
-	if (m >= NUM_MEMORIES)
-		m = MEM_DEFAULT;
-	mem_idx = m;
-	mp = memory_rec(m);
+	mp = memory_rec_at(m);		/* clamps, sets mem_idx */
 	copy3(rx_freq, mp);
 	copy3(tx_freq, mp + 3);
 	locate_band();			/* band presets, overridden below */

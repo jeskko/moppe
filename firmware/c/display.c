@@ -35,6 +35,10 @@ extern uint8_t real_txpwr(void);		/* 0..255 */
 extern void draw_upper_colons(void), clear_lower_colon(void);
 extern uint8_t get_ctcss_tx_hz(void);	/* VFO or memory */
 
+/* forward: defined under "indicators" below, called from draw_upper_row/
+ * draw_lower_row above that */
+void draw_squelch_ind(void), set_dpx_ind_from_rx_tx_freq(void);
+
 /* the indicators redraw sets: single segments (constants asserted in
  * r58.s).  Only mainline code writes `segments` (the display interrupt
  * reads it), so a read-modify-write is safe. */
@@ -55,7 +59,6 @@ extern uint8_t segments[], dpx_ind_flags;
 		else \
 			segments[(s) >> 3] &= ~(1 << ((s) & 7)); \
 	} while (0)
-void draw_squelch_ind(void), set_dpx_ind_from_rx_tx_freq(void);
 
 static uint8_t n, i, c;
 static const uint8_t *p;
@@ -141,7 +144,7 @@ static void draw_call_notice(void)
 {
 	dpy_str("CALL");
 	if (!cu_is_alfa)
-		dpy_str(" ");
+		dpy_ch(' ');
 	if (call_dpyed == 1) {			/* FSK call: caller id */
 		c = packet_good + 1;		/* wraps in the page */
 		for (i = 0; i < 5; i++)
