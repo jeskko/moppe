@@ -229,6 +229,30 @@ class Scanner(RadioTest):
                 break
         self.assertTrue(moved, "scanner never resumed stepping")
 
+    def test_tail_255_listens_for_ever(self):
+        """b1:SCtAIL 255 means "listen for ever" (like patience 255): after
+        the signal drops the scanner stays on the channel.  v3_Z stepped on
+        at once, as with tail 0 (notes/hybrid-plan.md, "Firmware behaviour
+        the tests pinned down")."""
+        r = self.boot()
+        r.poke("cfg_squelch_level", 127)
+        r.poke("cfg_band1_sctail", 255)
+        r.type("1")
+        r.press("S", hold=0.3)
+        r.run(0.3)
+        r.adc(AD_SQL, 0xC0)
+        r.run(0.5)
+        self.assertEqual(r.peek("scan_paused"), 1)
+        frozen = r.peek24("rx_freq")
+        r.adc(AD_SQL, 0)
+        for _ in range(10):
+            r.run(0.5)
+            self.assertEqual(r.peek24("rx_freq"), frozen, "stepped on after the signal")
+        self.assertEqual(r.peek("scan_on"), 1)
+        r.press("#")                    # a stop key still ends it
+        r.run(0.3)
+        self.assertEqual(r.peek("scan_on"), 0)
+
     def test_scan_mask_toggle_digit_during_scan(self):
         r = self.boot()
         r.type("1")

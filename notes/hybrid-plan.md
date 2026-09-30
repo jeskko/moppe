@@ -9,30 +9,43 @@ so its socket is normally free.
 Background: notes/rewrite-evaluation.md (measurements, constraints, proof of
 concept), notes/hardware.md (memory decode), notes/emulator.md.
 
-## Start here (next session, written 2026-09-29)
+## Start here (next session, written 2026-09-30)
 
-**State (2026-09-29).** Phase 4 is done as far as the plan's rule goes
+**State (2026-09-30).** Phase 4 is done as far as the plan's rule goes
 ("assembler only for what is timing critical or awkward in C"), and the
-**C modules are the only build**: `make` links r58.s with `c/*.c`; the
-assembler alternatives are gone from r58.s (21 356 → 11 019 lines; the
-binary stayed byte-identical to the former `make C=1`). The last commit
-with them is git tag **`asm-final`**; `make ref` builds it into
-`firmware/build-ref/`, the reference of the module differential tests
-(`test_*_diff.py`, `test_diff.DiffTest`), and it differs from the release
-only by the bug fixes. `make verify` still rebuilds the release from
-`r58.asm`. Sizes: fixed ROM ends at 0x4F10 incl. the C code (~12.2 KB
-free), bank 1 7191 bytes free, bank 2 ~4.4 KB free; C statics 220 of the
-256-byte `c_bss`. **301 tests** pass. Removed with the asm: 50 unused
-`#define x _x` renames, six stubs without callers, the second copy of the
-300 Hz marker shim (`marker_300hz_1s`).
+**C modules are the only build**: `make` links r58.s with `c/*.c`. The
+last commit with the assembler alternatives is git tag **`asm-final`**;
+`make ref` builds it into `firmware/build-ref/`, the reference of the
+module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
+differs from the release only by the bug fixes. `make verify` still
+rebuilds the release from `r58.asm`. Sizes: fixed ROM ends at 0x4EBB incl.
+the C code (12.6 KB free), bank 1 7320 bytes free, bank 2 5288 bytes free;
+C statics 216 of the 256-byte `c_bss`. **302 tests** pass.
+
+The 2026-09-29 code review is applied (details in the commits): one
+shared header `c/r58.h` (163 symbols had been declared in several modules,
+28 of them inconsistently) with the layout constants; duplicates merged
+(`copy3`, `mprs_degmin_pack` ×3, `nibbles`, the locator mirror/count-down
+blocks, `menu_next/prev`, repeater state tails); `FAR()` for the bank stubs
+and shims named for what they do; `tools/fwlink.py` for .map/.rel parsing;
+`emu/tests/helpers.py` and `difftest.DiffCase` for the test boilerplate.
+Kept on purpose: the `#x` command switch's four roger tails (a goto for 12
+bytes), `freq.c locate_band`'s write-then-overwrite (as the asm; the
+rewrite came out larger), two casts that silence an SDCC warning.
 
 Differential tests against `build-ref` only make sense for behaviour the
 reference has: a bug fix or a new feature differs from it on purpose (then
 the test pins the new behaviour on its own, as the bug-fix tests do).
+Timing-sensitive scenarios: a trace or checkpoint that starts on an edge
+flips when code size shifts timing by a few ms (`test_rptr_diff` CUSTOM
+epilog: a leading transient, now `settle=2`). A cleanup agent also saw
+`test_ptt_diff.test_aprs_local` fail after a behaviour-identical display.c
+rewrite (not reproduced or analysed; the rewrite was dropped); look there
+first if it flips.
 
 **What stays assembler** (`python3 tools/asmleft.py` after `make`:
-fixed-ROM asm 0x0100-0x2CA0, ~11.2 KB: data 2073, reachable from
-interrupts 3463, mainline hardware 2322, mainline plain 3309):
+fixed-ROM asm 0x0100-0x2C76, ~11.1 KB: data 1826, reachable from
+interrupts 3146, mainline hardware 2376, mainline plain 3777):
 | Part | Why |
 |---|---|
 | Interrupt handlers, systick, keypad/SIO/modem capture, the CCIR/DTMF decoders, series matching and commands, the CTCSS DDS/DSP entries (`ctcss_enc/dec_entry`: reached through RAM jump addresses, which `isrreach` cannot follow, so asmleft lists them as mainline) | interrupt context |
@@ -44,13 +57,9 @@ interrupts 3463, mainline hardware 2322, mainline plain 3309):
 | Maths helpers (`bin_bcd`, `a2i*`, `mul248`, the GPS unit conversions), `aisin_seiki_parse_latlon` (IX/IY) | register interfaces for asm and C shims |
 | Boot (`main`, `cu58af_init`, hardware init), bank trampolines, page-aligned tables | fixed addresses, raw CPU |
 
-**Next task: to be decided (user).** The 2026-09-29 code review
-(findings not yet applied): a shared C header `c/r58.h` (162 symbols are
-declared in several files, with differing sizes and volatile), the
-remaining glue in r58.s (shim naming after the first caller, ~40 two-line
-bank stubs that a macro could write), duplicated C (`mprs_degmin_pack` ×3 in bank 2, `copy3` ×4,
-`menu_next/prev`, aprs.c's mirror/format blocks), test boilerplate in the
-`test_*_diff.py` files. Also: the real-board bench test (EPROM
+**Next task: to be decided (user).** Options: GitHub CI and releases
+for publishing (build, `make verify ref`, the tests; release images on a
+tag, nightlies; pin SDCC 4.6.0); the real-board bench test (EPROM
 programmer); the open bugs (**notes/open-bugs.md**); new features in the
 free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
 open questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK
@@ -275,6 +284,16 @@ notes/open-bugs.md):
   the OH5NXO/OH1E change that made CtCSSt a table. **Fixed 2026-09-29**
   (obvious bug): `get_ctcss_tx_tone_hz` maps the index to rounded Hz
   (`ctcss_tone_hz`, from the same `CTCSS_TONES` list); `test_ctcss.py`.
+- Scan tail 255 (b1:SCtAIL, "listen for ever" in the comments) was the
+  same as 0: 255 skipped setting `scan_timer_secs`, which the settling
+  wait leaves at 0, so the tail ended at once. Worse than it looked: on
+  arrival the squelch has not opened yet (hangtime), so the scanner goes
+  to the tail first, and with 255 it stepped on before the signal could
+  hold it: it never stopped on a signal. Patience 255 was right.
+  **Fixed 2026-09-30** (obvious bug): 255 waits until the signal returns or
+  a stop key; `test_scan_rptr.test_tail_255_listens_for_ever` (fails on
+  the release). `test_scan_diff` no longer compares tail 255 with the
+  reference.
 - MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
   the first GPS fix there is none and it prints the RAM after it. Kept.
 - MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a

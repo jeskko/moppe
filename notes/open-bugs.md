@@ -24,8 +24,8 @@ Ordered by likely user impact.
   yes, the first two are clear fixes; the hemisphere needs the unit's sign
   convention.
 
-**Southern latitudes read as northern** (`mprs_degmin_pack`,
-`gps_own_locator`, their C copies in `c/fsk.c` / `c/aprs.c`): only 'W' sets
+**Southern latitudes read as northern** (`mprs_degmin_pack` in
+`c/aprs.c`, which the MPRS report and `gps_own_locator` use): only 'W' sets
 the sign bit, 'S' does not. The MPRS report and the own locator are wrong
 south of the equator. User (2026-09-28): the radios are used in Finland,
 low priority.
@@ -80,14 +80,6 @@ builds). A configuration error, but silent.
 `scanner_run`): "make it double long if channel is busy" tests
 `squelch_open`, but every frequency change (`temporary_change_rx_freq`)
 has just closed the squelch, so it is always 0 there. Harmless; kept.
-
-**Scan tail 255 does not "listen for ever"** (asm after `get_scan_tail`,
-C `scanner_run` label `tail`): 255 skips setting `scan_timer_secs`, which
-the settling wait has left at 0, so the scanner steps on as soon as the
-signal drops, exactly as with tail 0. Patience 255 does mean "for ever".
-Found 2026-09-29 in the code review (comment in asm and C says for ever);
-`test_scan_diff` covers tail 255 but only compares the builds. Fix
-candidate (obvious bug): skip the wait-out while tail is 255.
 
 ## Menu
 

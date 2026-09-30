@@ -363,11 +363,7 @@ listen_on:
 	goto listen;				/* a signal: stay */
 
 tail:						/* N seconds without a signal */
-	if (band_sctail != 255) {		/* 255 does NOT mean "listen for
-						 * ever" here: scan_timer_secs is
-						 * left at 0, so tail_on falls
-						 * through as if the tail were 0
-						 * (open bug, notes/open-bugs.md) */
+	if (band_sctail != 255) {		/* 255: listen for ever */
 		v = band_sctail;
 		__asm__("di");
 		scan_timer_secs = v;
@@ -379,8 +375,8 @@ tail_wait:
 tail_on:
 	if (squelch_open)
 		goto listen;			/* a signal again */
-	if (scan_timer_secs)
-		goto tail_wait;
+	if (scan_timer_secs || band_sctail == 255)
+		goto tail_wait;			/* (v3_Z: 255 stepped on at once) */
 	goto step;
 
 maybe_reject:

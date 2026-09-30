@@ -3,6 +3,27 @@
 Superseded "Start here" handoffs and session narrative moved out of
 hybrid-plan.md (which keeps the current state).
 
+## Handoff after the asm was dropped, before the review clean-up (written 2026-09-29)
+
+**State (2026-09-29).** Phase 4 is done as far as the plan's rule goes
+("assembler only for what is timing critical or awkward in C"), and the
+**C modules are the only build**: `make` links r58.s with `c/*.c`; the
+assembler alternatives are gone from r58.s (21 356 → 11 019 lines; the
+binary stayed byte-identical to the former `make C=1`). The last commit
+with them is git tag **`asm-final`**; `make ref` builds it into
+`firmware/build-ref/`, the reference of the module differential tests
+(`test_*_diff.py`, `test_diff.DiffTest`), and it differs from the release
+only by the bug fixes. `make verify` still rebuilds the release from
+`r58.asm`. Sizes: fixed ROM ends at 0x4F10 incl. the C code (~12.2 KB
+free), bank 1 7191 bytes free, bank 2 ~4.4 KB free; C statics 220 of the
+256-byte `c_bss`. **301 tests** pass. Removed with the asm: 50 unused
+`#define x _x` renames, six stubs without callers, the second copy of the
+300 Hz marker shim (`marker_300hz_1s`).
+
+Differential tests against `build-ref` only make sense for behaviour the
+reference has: a bug fix or a new feature differs from it on purpose (then
+the test pins the new behaviour on its own, as the bug-fix tests do).
+
 ## Handoff at the end of Phase 4, before the asm was dropped (written 2026-09-29)
 
 **State. Phase 4 is done as far as the plan's rule goes** ("assembler

@@ -224,7 +224,9 @@ class ScanDiff(DiffCase):
         self.diff(steps)
 
     def test_tail_and_listen_extremes(self):
-        for tail, listen in ((0, 1), (255, 2), (1, 255), (3, 0), (0, 0)):
+        # tail 255 is not compared: v3_Z stepped on at once (fixed, see
+        # test_scan_rptr.test_tail_255_listens_for_ever)
+        for tail, listen in ((0, 1), (1, 255), (3, 0), (0, 0)):
             w = World({433450: 1.5, 433500: None})
             steps = [("boot", 2.5)] + SQL + band(1, 433400, 433600, sctail=tail, listen=listen)
             steps += start("1") + visits("tail %d listen %d" % (tail, listen), 8.0, w)
