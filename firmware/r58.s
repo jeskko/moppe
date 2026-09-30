@@ -3105,14 +3105,16 @@ mainloop:
 gps_configure:
 
 	ld a, (cfg_gps_config)
-
+	cp #4                                ; 9600Std was 4 until AiSin went
+	jr nz, 1f                            ; (2026-10-01): NV from before
+	dec a
+	ld (cfg_gps_config), a
+1:
 	dec a                                ; if 1
 	jr z, gps_configure_SiRF_generic
 	dec a                                ; if 2
 	jr z, gps_configure_SiRF_tailored
-	dec a                                ; if 3
-	jr z, gps_configure_aisin_seiki
-	dec a                                ; if4 9600 gps riku
+	dec a                                ; if 3 9600 gps riku
 	jr z, gps_configure_std_9600
 
 ;        ld a, 4            ! restore SIO A into 4800 riku
@@ -3137,24 +3139,6 @@ gps_configure_std_9600:
 	ei		   ; ?
 	ret
 
-
-	;
-	;  Aisin-Seiki talks proprietary data in 9600 baud, 8 data, even parity
-	;
-gps_configure_aisin_seiki:
-
-	di
-
-	ld a, #4            ; WR4
-	out (SIO+ACTRL), a
-	ld a, #WR4_1STOPBIT | WR4_X16_CLK | WR4_PARITY_ENB | WR4_PARITY_EVEN
-	out (SIO+ACTRL), a
-
-	ei
-
-	; no nmea option. proprietary data is handled on-the-fly later
-
-	ret
 
 	;
 	;  32 bytes sent at 38400 baud
@@ -3290,18 +3274,9 @@ gps_configure_SiRF_tailored:
 gpsc_sentence:			; c/mainloop.c: A = length
 	call bank2_call
 	.dw _gps_process_sentence
-gpsc_aisin:			; c/mainloop.c: A = index after the 0x0D
-	call bank2_call
-	.dw _gps_process_aisin_seiki
 	ASSERT_EQ(gps_sentence_size, 100)
 	ASSERT_EQ(LONG_PACLEN, 15)
 	ASSERT_EQ(SIZE_STR, 8)
-gps_latlon:			; c/gps.c: HL -> 1/256", DE -> DDDMMmm
-	push hl
-	pop iy
-	push de
-	pop ix
-	jp aisin_seiki_parse_latlon
 
 
 gpio1_pulse_command:
@@ -6947,42 +6922,6 @@ knots_to_kmh:
 	sbc a, a               ; 255 and CY set - CY was set at jr location above
 	ret
 
-quarter_ms_to_kmh:      ; quartermeter / second into km/h
-
-	push hl
-	ld bc, #-284         ; 284 * 0.25 m/s = 71 m/s = 256 km/h
-	add hl, bc          ; is HL over 284 ?
-	pop hl
-	jr c, 1f            ; overflow at 255 km/h
-
-	; 115 / 128 ~ 0.9 and 128 - 16 + 2 + 1 = 115
-
-	push hl             ; +1
-
-	add hl, hl          ; 2 times         128 * 285 is 36k, fits ok
-	push hl             ; +2              no need to check overflows here
-	add hl, hl          ; 4 times
-	add hl, hl          ; 8 times
-	add hl, hl          ; 16 times
-	push hl             ; -16
-	add hl, hl          ; 32 times
-	add hl, hl          ; 64 times 
-	add hl, hl          ; 128 times       j
-
-	pop bc
-	sbc hl, bc          ; 128 - 16        carry stays clear in these
-	pop bc
-	add hl, bc          ; 128 - 16 + 2
-	pop bc
-	add hl, bc          ; 128 - 16 + 2 + 1
-
-	ld a, h             ; seven MSbits of result
-	rl l                ; LSbit of result to CY
-	rla                 ; MSbits into position and LSbit insertion
-	ret
-1:
-	sbc a, a               ; 255 and CY set - CY was set from jr above
-	ret
 
 ;=================================================================
 
@@ -8598,7 +8537,6 @@ far_repeater_run:
 	ld (hl), a
 	call bank2_call
 	.dw _repeater_run
-	FAR(far_repeater_operator_ptt, bank2_call, _repeater_operator_ptt)
 
 ;  c/rptr.c shims
 rptr_tone:			; A = ticks, DE = timer count
@@ -9326,94 +9264,6 @@ a2i_word:
 
 ;======================================================================
 
-	; @IY - 4 bytes in 1/256 of a second units
-	; @IX - buffer to receive DDDMMmm; degrees, minutes and centiminutes
-
-aisin_seiki_parse_latlon:
-
-	ld a, (iy+0)
-	ld h, (iy+1)
-	ld l, (iy+2)       ; dividend in AHL, max 180 * 60 * 60
-
-	;  calculate degrees
-
-	ld e, #0            ; EBC is divisor for the first digitloop
-	ld bc, #60 * 60 * 10
-	ld d, #-1
-	and a
-1:
-	inc d
-	sbc hl, bc
-	sbc a, e
-	jr nc, 1b
-	add hl, bc         ; fix back. after this dividend fits in HL
-
-	ld a, d
-	ld d, #1
-	sub #10
-	jr nc, 1f          ; jump if result is 10 ... 18
-	dec d              ; result was 0 ... 9
-	add a, #10
-1:
-	ld (ix+0), d
-	ld (ix+1), a       ; hundreds and tens of degrees, HL max 60 * 60 * 10
-
-	ld bc, #60 * 60 * 1
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc
-
-	dec a
-	ld (ix+2), a       ; degrees now set 0 ... 180, HL max 60 * 60 * 1
-
-	; calculate minutes
-
-	ld bc, #60 * 10
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc
-
-	dec a
-	ld (ix+3), a       ; tens of minutes, HL max 60 * 10
-
-	ld bc, #60 * 1
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc         ; L has seconds, 0 ... 59
-
-	dec a
-	ld (ix+4), a       ; minutes now set 0 ... 60
-
-	; calculate centiminutes
-
-	ld h, l            ; finally, do the fractional seconds. 
-	ld l, (iy+3)       ; HL contains 256 * seconds, max 15360
-
-	ld bc, #1536        ; 60 * 256 / 153.6 = 100
-	sub a
-1:
-	inc a
-	sbc hl, bc
-	jr nc, 1b
-	add hl, bc
-
-	dec a
-	ld (ix+5), a       ; tens of centiminutes
-	ld (ix+6), l       ; ones of centiminutes
-
-	ret
-
-;======================================================================
-
 	.ascii "TheEnd"
 	rom_cksum:
 	.db 0	; ROM checksum: 256 - sum(ROM[0 .. rom_cksum - 1]), set by ihx2bin.py
@@ -9992,7 +9842,6 @@ num_menu = (end_menu - start_menu) / size_menurec
 		STR("Std")
 		STR("SirF")
 		STR("SirFt")
-		STR("AiSin")
 		STR("9600Std")
 #undef  CTCSS_RECORD
 #define CTCSS_RECORD(dHz) STR("dHz") @
@@ -10833,7 +10682,7 @@ mprs_report_timer:      WORD
 
 gps_knots:        WORD
 gps_sentence:           BUF(100)
-gps_sentence_size = . - gps_sentence      ; must be bigger than 44 (aisin_seiki)
+gps_sentence_size = . - gps_sentence
 
 SHORT_PACLEN = 8
 LONG_PACLEN  = 15

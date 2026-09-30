@@ -14,8 +14,6 @@
  * table is indexed by the own latitude degrees; the assembler read past its
  * 90 entries for invalid latitudes (90 and up), C uses the 89 degree entry.
  *
- * Kept v3_Z behaviour: the logger output prints gps_utc up to EOS.
- *
  * The assembler routines called here do not preserve IX: no stack frame
  * in a function that calls them, state is static.  mprs_degmin_pack is a
  * C-only leaf (no asm calls) and may have one: SDCC spills its two
@@ -196,9 +194,46 @@ static void mirror(uint8_t *p)
 	p[6] = '9' - p[6] + '0';
 }
 
+/* one hundredth of a minute less of the southern/western deg, min,
+ * hundredths | sign at p, so the mirrored locator puts a point exactly on
+ * a cell edge in the upper cell, as Maidenhead does (v3_Z mirrored the
+ * value itself: one low in the last character; fixed 2026-10-01); 0.00
+ * S/W becomes 0.00 N/E */
+static void edge_step(uint8_t *p)
+{
+	if (!(p[2] & 0x80))
+		return;
+	if (p[2] != 0x80) {
+		p[2]--;
+		return;
+	}
+	p[2] = (uint8_t)(0x80 + 99);
+	if (p[1]) {
+		p[1]--;
+	} else if (p[0]) {
+		p[0]--;
+		p[1] = 59;
+	} else {
+		p[2] = 0;
+	}
+}
+
+static uint8_t ll[6];
+static const uint8_t *src;
+
 /* the 8-character locator of the packed lat/lon at s into d */
 static void packed_latlon_to_locator(void)
 {
+	src = s;
+	ll[0] = s[0] & 0x7F;
+	ll[1] = s[1] & 0x3F;
+	ll[2] = s[2];
+	ll[3] = s[3];
+	ll[4] = s[4] & 0x3F;
+	ll[5] = s[5];
+	edge_step(ll);
+	edge_step(ll + 3);
+	s = ll;
 	/* latitude: field letter from 'J', square digit */
 	a = s[0] & 0x7F;
 	c = 'J' - 1 + count_down(10);
@@ -237,6 +272,7 @@ static void packed_latlon_to_locator(void)
 	d[6] = ((uint8_t)((a + 5) << 1) | (50 <= (s[5] & 0x7F))) + '0';
 	if (s[5] & 0x80)			/* west */
 		mirror(d);
+	s = src;
 }
 
 /* the own locator from cfg_gps_latitude / longitude into cfg_gps_locator */
@@ -512,8 +548,11 @@ static void mbus_mprs_out_logger(void)
 	latlon_text(' ');
 	*d++ = ' ';
 	*d = EOS;
-	for (s = gps_utc; *s != EOS; s++)	/* (runs on without EOS, v3_Z) */
-		mbus_putchar(ascify(*s));
+	/* six digits: 000000 before the first fix (bss); v3_Z printed up to
+	 * EOS, and before a fix went on through the RAM after it (user,
+	 * 2026-10-01) */
+	for (i = 0; i < 6; i++)
+		mbus_putchar(ascify(gps_utc[i]));
 	out_string(mbus_mprs_buffer);
 	out_string(locator_display_buffer);
 	mbus_putchar(' ');

@@ -554,7 +554,10 @@ static uint8_t poll(uint8_t s)
 		break;
 
 	case ST_OPENING:	/* tone too long: back; carrier gone: open */
-		if (!rptr_other_running())
+		/* TBEEPMAX 0: no limit (v3_Z: too long at once, and with PTT
+		 * held idle-opening-beep-too-long-idle in one poll for ever;
+		 * user, 2026-10-01) */
+		if (repeater_cfg_TBEEPMAX && !rptr_other_running())
 			return ST_BEEP_TOO_LONG;
 		if (!squelch_open)
 			return open_by_reset();
@@ -739,15 +742,4 @@ void repeater_run(void)
 	next = poll(repeater_state);
 	if (next != STAY)
 		go(next);
-}
-
-/* no ID sent here, an operator announcement assumed */
-void repeater_operator_ptt(void)
-{
-	if (cfg_function != 1)
-		return;
-	repeater_txon();
-	repeater_aoff();
-	repeater_send_blip();
-	go(open_at_TOPEN());
 }

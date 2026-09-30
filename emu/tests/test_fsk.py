@@ -211,6 +211,22 @@ class FskRx(RadioTest):
         self.assertEqual(mbus, b"OH3XYZ-7>APRS,RELAY,WIDE:!6130.12N/02345.67Ep\r\n")
 
 
+    def test_mprs_to_mbus_logger(self):
+        """Logger format: the GPS time, 000000 before the first fix (v3_Z
+        printed gps_utc up to EOS, and before a fix there was none: it went
+        on through the RAM after it; user, 2026-10-01)."""
+        for utc, want in ((None, b"000000"), (bytes([1, 2, 3, 4, 5, 6, 0xFF, 0xFF]), b"123456")):
+            with self.subTest(utc=utc):
+                r = self.boot()
+                r.poke("cfg_remote_dpy_secs", 5)
+                r.poke("cfg_mbus_mprs", 4)
+                if utc:
+                    r.poke("gps_utc", utc)
+                self.rx(mprs_packet(), 0.6)
+                mbus = bytes(e[2] for e in r.take_events("MBUS_TX"))
+                self.assertTrue(mbus.startswith(want + b" 6130.12N 02345.67E KP11VM "), mbus)
+                self.assertTrue(mbus.endswith(b"\r\n") and mbus.count(b"\r\n") == 1, mbus)
+
 # metres per minute of longitude by latitude degree (r58.s
 # minutes_to_meters_wrt_latitude_degree)
 M_PER_MIN = [1852, 1852, 1851, 1849, 1847, 1845, 1842, 1838, 1834, 1829, 1824, 1818,
@@ -285,6 +301,18 @@ class ReceivedLocator(RadioTest):
                 got = self.locator(lat[:2] + (lat[2] | 0x80 * s,), lon[:2] + (lon[2] | 0x80 * w,))
                 self.assertEqual(got, maidenhead8(-deg(lat) if s else deg(lat),
                                                   -deg(lon) if w else deg(lon))[:6])
+
+    def test_edges(self):
+        """south/west exactly on a subsquare edge: the upper cell (fixed
+        2026-10-01, see test_signalling.OwnLocator.test_edges)"""
+        from test_signalling import maidenhead8_exact, hundredths
+        for (lat, s), (lon, w) in ((((33, 52, 50), 1), ((151, 12, 34), 0)),
+                                   (((22, 55, 0), 1), ((43, 15, 0), 1)),
+                                   (((20, 0, 0), 1), ((40, 0, 0), 1))):
+            with self.subTest(lat=lat, s=s, lon=lon, w=w):
+                got = self.locator(lat[:2] + (lat[2] | 0x80 * s,), lon[:2] + (lon[2] | 0x80 * w,))
+                self.assertEqual(got, maidenhead8_exact(hundredths(*lat, neg=s),
+                                                        hundredths(*lon, neg=w))[:6])
 
 
 class Qrb(RadioTest):

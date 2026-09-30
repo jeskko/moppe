@@ -74,6 +74,21 @@ def maidenhead8(lat, lon):
                     str(int(lon * 12 % 1 * 10)), str(int(lat * 24 % 1 * 10))]).encode()
 
 
+def maidenhead8_exact(lat, lon):
+    """8-character locator of signed hundredths of a minute, in integers
+    (exact on cell edges, where maidenhead8's floats may round)."""
+    lat, lon = lat + 90 * 6000, lon + 180 * 6000
+    return "".join([chr(65 + lon // 120000), chr(65 + lat // 60000),
+                    str(lon % 120000 // 12000), str(lat % 60000 // 6000),
+                    chr(65 + lon % 12000 // 500), chr(65 + lat % 6000 // 250),
+                    str(lon % 500 // 50), str(lat % 250 // 25)]).encode()
+
+
+def hundredths(deg, mins, h, neg=False):
+    v = (deg * 60 + mins) * 100 + h
+    return -v if neg else v
+
+
 class OwnLocator(RadioTest):
     """cfg_gps_locator from a GPRMC position (gps_own_locator)."""
 
@@ -94,6 +109,46 @@ class OwnLocator(RadioTest):
                          maidenhead8(-(33 + 52.08 / 60), 151 + 12.34 / 60))
         self.assertEqual(self.locator("2254.60", "S", "04312.20", "W"),   # (not on
                          maidenhead8(-(22 + 54.60 / 60), -(43 + 12.20 / 60)))  # an edge)
+
+    def test_edges(self):
+        """a south/west position exactly on a cell edge is in the upper
+        cell (v3_Z mirrored the northern/eastern locator, which put it one
+        low; fixed 2026-10-01); 0.00 S/W is the northern/eastern cell"""
+        for lat, ns, lon, ew in ((("33", "52", "25"), "S", ("151", "12", "34"), "E"),
+                                 (("33", "52", "50"), "S", ("043", "12", "50"), "W"),
+                                 (("33", "00", "00"), "S", ("043", "00", "00"), "W"),
+                                 (("30", "00", "00"), "S", ("040", "00", "00"), "W"),
+                                 (("00", "00", "00"), "S", ("000", "00", "00"), "W"),
+                                 (("00", "00", "01"), "S", ("000", "00", "01"), "W"),
+                                 (("22", "54", "74"), "S", ("043", "12", "49"), "W")):
+            with self.subTest(lat=lat, ns=ns, lon=lon, ew=ew):
+                want = maidenhead8_exact(
+                    hundredths(*map(int, lat), neg=ns == "S"),
+                    hundredths(*map(int, lon), neg=ew == "W"))
+                self.assertEqual(self.locator("%s%s.%s" % lat, ns, "%s%s.%s" % lon, ew), want)
+
+
+class GpsConfig(RadioTest):
+    """PH:GPSCFG without the Aisin Seiki entry (dropped 2026-10-01): Std,
+    SirF, SirFt, 9600Std; an NV from before, with 9600Std as 4, comes up
+    as 3."""
+
+    def boot_with(self, gps_config):
+        self.r = r = Radio(ROM, LST, nv=make_sane_nv())
+        r.poke("cfg_gps_config", gps_config)     # NV, before the boot code
+        r.run(2.5)
+        return r
+
+    def test_old_9600_migrates(self):
+        self.assertEqual(self.boot_with(4).peek("cfg_gps_config"), 3)
+
+    def test_3_is_nmea(self):
+        r = self.boot_with(3)
+        self.assertEqual(r.peek("cfg_gps_config"), 3)
+        r.serial_rx(0, nmea("GPRMC,123519,A,6130.12,N,02345.67,E,000.0,000.0,280926,,"))
+        r.run(0.5)
+        self.assertEqual(r.peek("cfg_gps_locator", 8),
+                         maidenhead8(61 + 30.12 / 60, 23 + 45.67 / 60))
 
 
 class Aprs(RadioTest):

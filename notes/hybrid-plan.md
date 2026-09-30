@@ -9,7 +9,7 @@ so its socket is normally free.
 Background: notes/rewrite-evaluation.md (measurements, constraints, proof of
 concept), notes/hardware.md (memory decode), notes/emulator.md.
 
-## Start here (next session, written 2026-09-30)
+## Start here (next session, written 2026-10-01)
 
 **State (2026-09-30).** Phase 4 is done as far as the plan's rule goes
 ("assembler only for what is timing critical or awkward in C"), and the
@@ -17,10 +17,11 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 last commit with the assembler alternatives is git tag **`asm-final`**;
 `make ref` builds it into `firmware/build-ref/`, the reference of the
 module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
-differs from the release only by the bug fixes. `make verify` still
-rebuilds the release from `r58.asm`. Sizes: fixed ROM ends at 0x4EBB incl.
-the C code (12.6 KB free), bank 1 7320 bytes free, bank 2 5288 bytes free;
-C statics 216 of the 256-byte `c_bss`. **310 tests** pass.
+differs from the release by the bug fixes and the removed Aisin Seiki
+GPS path. `make verify` still rebuilds the release from `r58.asm`.
+Sizes (2026-10-01): fixed ROM ends at 0x4E83 incl. the C code (12.7 KB
+free), bank 1 7328 bytes free, bank 2 5528 bytes free; C statics 219 of
+the 256-byte `c_bss`. **316 tests** pass.
 
 The 2026-09-29 code review is applied (details in the commits): one
 shared header `c/r58.h` (163 symbols had been declared in several modules,
@@ -47,8 +48,8 @@ same race exists in the asm). Change a setting, run a little, then the
 edge.
 
 **What stays assembler** (`python3 tools/asmleft.py` after `make`:
-fixed-ROM asm 0x0100-0x2C76, ~11.1 KB: data 1826, reachable from
-interrupts 3146, mainline hardware 2376, mainline plain 3777):
+fixed-ROM asm 0x0100-0x2BD5, ~10.7 KB: data 1826, reachable from
+interrupts 3146, mainline hardware 2365, mainline plain 3627):
 | Part | Why |
 |---|---|
 | Interrupt handlers, systick, keypad/SIO/modem capture, the CCIR/DTMF decoders, series matching and commands, the CTCSS DDS/DSP entries (`ctcss_enc/dec_entry`: reached through RAM jump addresses, which `isrreach` cannot follow, so asmleft lists them as mainline) | interrupt context |
@@ -57,13 +58,20 @@ interrupts 3146, mainline hardware 2376, mainline plain 3777):
 | RFC lookup (`get_rfc_hl`, `lookup_rfc`, `save_rfc`) | every frequency change; C cost 1.2 ms per scanner step |
 | Frequency kernel (`determine_rx_div`, `freq2div`, `channel_step_parms`, `locate_tx_band`, `div248`) | carry semantics, register results |
 | Display primitives (`draw_word`, `dpydig`, `draw_long`, `dpyval*`, strings), icon setters, `redraw` | register cursor, atomic DPYSIR, many asm callers |
-| Maths helpers (`bin_bcd`, `a2i*`, `mul248`, the GPS unit conversions), `aisin_seiki_parse_latlon` (IX/IY) | register interfaces for asm and C shims |
+| Maths helpers (`bin_bcd`, `a2i*`, `mul248`, the GPS unit conversions) | register interfaces for asm and C shims |
 | Boot (`main`, `cu58af_init`, hardware init), bank trampolines, page-aligned tables | fixed addresses, raw CPU |
 
-**Next task (user, 2026-10-01): the open-bug decisions.** Every entry in
-**notes/open-bugs.md** that is not fixed ends with a "Question (user)";
-the user is answering them. For each answer: a test that fails on the
-release (`R58_ROM=firmware/build-release/r58.bin R58_LST=...r58.map`
+**Done 2026-10-01: the open-bug decisions** (notes/open-bugs.md is
+empty now; the entries and the user's answers are in
+open-bugs-history.md, what was done under "Firmware behaviour the tests
+pinned down" below): south/west locator edges, Aisin Seiki removed
+(PH:GPSCFG renumbered, old 9600Std migrated at boot), TBEEPMAX 0 = no
+limit, `repeater_operator_ptt` removed, overlapping scan bands merged,
+logger time 000000 before a fix; busy settling, SAnE DYN and the APRS
+timing kept. Mutants of the new code (edge_step, the slice merge, TBEEPMAX,
+the logger) are all caught but one equivalent (.99 vs .98 when a minute
+borrows: the same 0.25' cell). How a fix goes (for the next ones): a test that fails on
+the release (`R58_ROM=firmware/build-release/r58.bin R58_LST=...r58.map`
 runs a standalone test against it), the fix in C (the asm is gone), the
 entry moved to "Firmware behaviour the tests pinned down" below. A fix
 makes the differential tests differ from `build-ref` where their
@@ -72,11 +80,11 @@ side (as `test_aprs_diff.ref_degmin` does for S/W/.50 positions) and cover
 the fixed case with a standalone test against a model, not by loosening
 the comparison.
 
-Then, options: GitHub CI and releases
+Next, options: GitHub CI and releases
 for publishing (build, `make verify ref`, the tests; release images and
 the setup map `build/r58.setup` on a tag, nightlies; pin SDCC 4.6.0;
 later maybe a Markdown or richer setup map); the real-board bench test (EPROM
-programmer); the open bugs (**notes/open-bugs.md**); new features in the
+programmer); new features in the
 free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
 open questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK
 frequency). Earlier handoffs: notes/hybrid-plan-history.md.
@@ -247,7 +255,8 @@ notes/open-bugs.md):
 - Every CW message costs at least 400 ms: `send_cw_prolog` jumps into
   `send_cw_epilog`, and both wait 200 ms (r58.asm L15996/L16009).
 - SAnE does not reset CFG_DYN records (`reset_menurec` L17684), so the
-  squelch level stays 0 after SAnE although its REC default is 127.
+  squelch level stays 0 after SAnE although its REC default is 127. Kept
+  (user, 2026-10-01).
 - cSEC records (scan rates, squelch open delay) hold 10 ms units and show
   a fake trailing 0: typing "150" stores 15 = 150 ms, as meant (listed as
   a dropped digit until 2026-09-30).
@@ -312,8 +321,10 @@ notes/open-bugs.md):
   a stop key; `test_scan_rptr.test_tail_255_listens_for_ever` (fails on
   the release). `test_scan_diff` no longer compares tail 255 with the
   reference.
-- MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
-  the first GPS fix there is none and it prints the RAM after it. Kept.
+- MBUS logger format (`cfg_mbus_mprs` 4) printed `gps_utc` up to EOS;
+  before the first GPS fix there was none and it printed the RAM after
+  it. **Fixed 2026-10-01** (user decision: zeros): six characters,
+  000000 before a fix (bss); `test_fsk.FskRx.test_mprs_to_mbus_logger`.
 - MPRS position (`mprs_degmin_pack`): only 'W' set the sign bit, so a
   southern latitude was sent as northern, and the own locator was the
   northern one. And the locator of any packed position
@@ -325,8 +336,13 @@ notes/open-bugs.md):
   upper half; `test_signalling.OwnLocator`, `test_fsk.ReceivedLocator`
   (against a Maidenhead model; fail on the release). The reference
   comparisons in `test_aprs_diff`/`test_gps_diff` keep to north/east and
-  avoid .50. Left: exactly on a cell edge a southern/western last
-  character is one low (open-bugs.md).
+  avoid .50. Exactly on a cell edge a southern/western last character
+  was still one low (the mirror of the northern locator lands in the
+  lower cell): **fixed 2026-10-01**, `edge_step` takes 0.01' off a
+  southern/western value before mirroring (0.00 S/W counts as N/E);
+  `test_signalling.OwnLocator.test_edges`,
+  `test_fsk.ReceivedLocator.test_edges` (an integer Maidenhead model).
+  `test_aprs_diff.rx_boundaries` keeps its exactly-180° case off an edge.
 - TX audio low-pass (PH:LPFILt, `init_LPF`): the switched-capacitor
   filter clock divider 2016 / (Hz / 20) used `div248`, wrong for divisors
   from 128 (settings from 2560 Hz): 10 of the 32 settings in 100 Hz steps
@@ -348,6 +364,35 @@ notes/open-bugs.md):
   (`all_config_send` computed it in A, `putchar` sends C), so CFGGEt
   refused a plain CFGSnd dump. **Fixed 2026-09-28** (user decision);
   `test_mbus_config.py` checks the sum and the CFGSnd → CFGGEt round trip.
+- Aisin Seiki binary GPS (PH:GPSCFG AiSin): course, centiminutes and the
+  hemisphere were wrong since v3_Z, and the unit is not known to have
+  been used (user). **Removed 2026-10-01** (user decision): the C
+  gatherer and processor, `aisin_seiki_parse_latlon`,
+  `quarter_ms_to_kmh`, the SIO even-parity set-up and the table entry.
+  PH:GPSCFG is Std, SirF, SirFt, 9600Std; `gps_configure` rewrites an old
+  NV's 9600Std (4) to 3 at boot. `gps_status` (GP:StAtuS) was written by
+  that path only and now stays empty. `test_signalling.GpsConfig`.
+- Repeater rP:tonE t (TBEEPMAX) 0 sent opening straight to beep-too-long,
+  and with PTT held (which counts as an access tone) went idle → opening →
+  beep-too-long → idle in one poll for as long as PTT was down (the rest
+  of the mainloop stalled). **Fixed 2026-10-01** (user decision): 0 = no
+  limit; `test_scan_rptr.Repeater.test_tbeepmax_0_is_no_limit`.
+- `repeater_operator_ptt` was dead code (`pttcheck` returns before it in
+  repeater mode, and it returned unless in repeater mode). **Removed
+  2026-10-01** (user decision).
+- Overlapping scan bands: slices were sorted by start only, and stepping
+  out of one slice's end to the next one's start, which lay inside it,
+  looped between the two for ever (later slices never scanned).
+  **Fixed 2026-10-01** (user decision): `build_scan_slicetab` merges
+  overlapping (and nested) slices, so each frequency of the bands is
+  scanned once a round; in an overlap the step is the lower-numbered
+  band's (`locate_band`, as for manual tuning), so channels only on the
+  other band's grid there are not visited (a true union would cost a
+  24-bit division per band per step). `test_scan_rptr.Scanner.
+  test_overlapping_bands_*`; `test_scan_diff` scenarios have no overlaps.
+- Scanner busy-channel settling time never doubles (`squelch_open` is
+  always 0 right after a frequency change): kept, the timing users know
+  (user, 2026-10-01).
 
 ### Phase 1: one toolchain (SDCC's sdas + sdld) — done 2026-09-28
 - `firmware/r58.s` (sdasz80 syntax, converted by `tools/as80tosdas.py`)

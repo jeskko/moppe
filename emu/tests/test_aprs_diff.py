@@ -130,9 +130,9 @@ def own_position(rnd):
 
 def rx_scenario(seed, n):
     rnd = random.Random(seed)
-    # a GPS time as after any fix: the logger format prints gps_utc up to
-    # EOS, and before the first fix there is none (it runs on through the
-    # RAM after it, v3_Z)
+    # a GPS time as after any fix: before the first fix the reference's
+    # logger format runs on through the RAM after gps_utc (v3_Z; fixed
+    # 2026-10-01, test_fsk.FskRx.test_mprs_to_mbus_logger)
     steps = [("boot", 2.5), ("poke", "cfg_remote_dpy_secs", 5),
              ("poke", "gps_utc", bytes([1, 2, 3, 4, 5, 6, EOS, EOS])),
              ("keys", "433500"), ("press", "#"), ("run", 0.3)]
@@ -230,14 +230,19 @@ def tx_boundaries():
 
 def rx_boundaries():
     """a longitude difference of exactly +-180 degrees (and just inside),
-    east against west: degrees from 128 on are masked (7 bits)"""
+    east against west: degrees from 128 on are masked (7 bits).  The
+    exactly-180 east/west case keeps the western position off a cell edge
+    (100°00.01' E against 79°59.99' W): v3_Z's locator was one low there
+    (fixed 2026-10-01, test_signalling.OwnLocator.test_edges)"""
     steps = [("boot", 2.5), ("poke", "cfg_remote_dpy_secs", 5), ("keys", "433500"),
              ("press", "#"), ("run", 0.3)]
-    cases = ((b"\x01\x00\x00E", [80, 0, 0x80]), (b"\x00\x08\x00W", [100, 0, 0]),
-             (b"\x01\x00\x00E", [79, 59, 0x80 | 99]), (b"\x00\x08\x00W", [99, 59, 99]))
+    cases = ((b"\x01\x00\x00\x00\x00\x00\x01E", [79, 59, 0x80 | 99]),
+             (b"\x00\x08\x00\x00\x00\x00\x00W", [100, 0, 0]),
+             (b"\x01\x00\x00\x00\x00\x00\x00E", [79, 59, 0x80 | 99]),
+             (b"\x00\x08\x00\x00\x00\x00\x00W", [99, 59, 99]))
     for i, (own, his_lon) in enumerate(cases):
         steps += [("poke", "cfg_gps_latitude", bytes([0, 6, 1, 0, 0, 0, 0, ord("N")])),
-                  ("poke", "cfg_gps_longitude", own[:3] + bytes(4) + own[3:]),
+                  ("poke", "cfg_gps_longitude", own),
                   ("modem_rx", with_crc(bytes([0x40] + pack_callsign("OH3AB") + [61, 0, 0] + his_lon))),
                   ("run", 0.8), ("probe", "lon 180 %d" % i, rx_state), ("check", "lon 180 %d" % i)]
     return steps

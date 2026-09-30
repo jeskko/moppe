@@ -153,11 +153,13 @@ class ScanDiff(DiffCase):
         self.diff([("boot", 2.5)] + start() + visits("default bands", 3.0) + stop() + at("stopped"))
 
     def test_band_slices(self):
-        """six bands: unsorted, overlapping, touching, one empty (start 0),
-        one with its end below its start"""
+        """six bands: unsorted, touching, one empty (start 0), one with its
+        end below its start.  No overlaps: v3_Z looped between two
+        overlapping slices, the fixed build merges them (2026-10-01,
+        test_scan_rptr.Scanner.test_overlapping_bands_*)"""
         steps = [("boot", 2.5)]
         steps += band(1, 434600, 434700) + band(2, 433400, 433500)
-        steps += band(3, 433475, 433550) + band(4, 433550, 433575)
+        steps += band(3, 433500, 433550) + band(4, 433550, 433575)
         steps += band(5, 0, 435000) + band(6, 432100, 432000)
         steps += start("123456") + visits("six bands", 4.0) + stop() + at("stopped")
         steps += start("24") + visits("bands 2 4", 2.0) + stop() + at("stopped 24")
@@ -167,10 +169,11 @@ class ScanDiff(DiffCase):
     def test_band_slices_2(self):
         """slices whose frequencies differ only in the top byte (145 and
         433 MHz, 0x02.... / 0x06....), a start with low bytes 0 (65536), a
-        band nested in another (sorted by start, not end)"""
+        wide band before a narrow one below it (a nested one was a v3_Z
+        loop, see test_band_slices)"""
         steps = [("boot", 2.5)]
         steps += band(1, 433400, 433500) + band(2, 145000, 145100) + band(3, 65536, 65600)
-        steps += band(4, 434000, 434700) + band(5, 434100, 434200) + band(6, 0, 0)
+        steps += band(4, 434300, 434700) + band(5, 434100, 434200) + band(6, 0, 0)
         steps += start("12345") + visits("five bands", 5.0) + stop() + at("stopped")
         self.diff(steps)
 

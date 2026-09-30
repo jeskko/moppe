@@ -4,7 +4,7 @@ port, asm build vs C build.
 
 gps_check (the NMEA gatherer: sentences split over several receptions,
 across the ring's end, too long, restarted by '$', junk shorter than 10
-characters, several in one reception; the Aisin Seiki block gatherer),
+characters, several in one reception),
 script_check (on-hook/off-hook scripts: full, short, digits and
 functions), idlefn_check (scanner start, default memory), bus_rf_relay
 (MBUS bytes relayed as FFSK packets 12 at a time), dim_lights_if_idle,
@@ -19,7 +19,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from difftest import builds, skip_unless_built, DiffCase  # noqa: E402
-from helpers import gps_state, gps_state_no_locator, LOCATOR_NV, nmea as nmea_raw, aisin, enter, at as _at  # noqa: E402
+from helpers import gps_state, nmea as nmea_raw, enter, at as _at  # noqa: E402
 from r58emu import P8N, CU58AF  # noqa: E402
 
 REF, CAND = builds("MAIN")
@@ -93,18 +93,6 @@ class MainloopDiff(DiffCase):
         s += [("ptt", True), ("run", 0.2), ("serial_rx", 0, rmc("232323") + b"junk$" + rmc("242424")),
               ("run", 1.0), ("ptt", False), ("run", 0.5)] + at("batch after ptt", gps=True)
         self.diff(s)
-
-    def test_gps_gatherer_aisin_seiki(self):
-        p = gps_state_no_locator
-        s = list(BOOT) + [("poke", "cfg_gps_config", 3), ("run", 0.2)]
-        s += gps(aisin(), "one block", probe=p)
-        blk = aisin(speed=50)
-        s += gps(blk[:17], "block part 1", probe=p) + gps(blk[17:], "block part 2", probe=p)
-        s += gps(b"\x0d\x0d\x0d" + aisin(heading=0x200), "leading CRs", probe=p)
-        for i in range(8):
-            s += gps(aisin(speed=i * 10) * 2, "wrap %d" % i, wait=0.2, probe=p)
-        s += [("poke", "cfg_gps_config", 0), ("run", 0.2)] + gps(rmc("191919"), "nmea again", probe=p)
-        self.diff(s, ignore=LOCATOR_NV)
 
     # ---- hook scripts
 

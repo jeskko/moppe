@@ -21,7 +21,6 @@ MUTANTS = [
     ("\tif (menu_active)\n\t\tfar_send_remote_config_packets();", "\tif (!menu_active)\n\t\tfar_send_remote_config_packets();"),
     ("\tfar_send_mprs_report_packet_maybe();\n\ttx_off();", "\ttx_off();"),
     ("\tredraw();\n\tremember_vip();", "\tredraw();"),
-    ("\tremember_vip();\n\tfar_repeater_operator_ptt();", "\tfar_repeater_operator_ptt();"),
     # tx_error, beep1750
     ("\tptt_error_tone();\n", "\n"),
     ("\tdo\n\t\twaitkey();\n\twhile (is_ptt_pressed());", "\twaitkey();"),

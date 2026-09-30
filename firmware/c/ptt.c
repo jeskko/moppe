@@ -24,7 +24,7 @@ extern void cu_manipulated(void), ptt_ccir_xmit(void), stop_dtmf_tone(void),
 	change_to_signalling_deviation(void),
 	far_send_remote_config_packets(void),
 	far_send_mprs_report_packet_maybe(void),
-	far_send_mprs_report_packet(void), far_repeater_operator_ptt(void),
+	far_send_mprs_report_packet(void),
 	tx_on_legal_or_not(void);
 extern void ptt_tone_count(uint16_t count);	/* 8254 counter 1 */
 extern void ptt_1750_tone(void);
@@ -90,7 +90,6 @@ void pttcheck(void)
 	stop_dtmf_tone();
 	redraw();
 	remember_vip();
-	far_repeater_operator_ptt();
 }
 
 /* TX refused: a 300 Hz marker, then wait for PTT to go up */

@@ -1,14 +1,14 @@
 /*
  * The mainloop and its per-pass checks in C (Phase 4,
- * notes/hybrid-plan.md).  Replaces mainloop, gps_check (the NMEA and
- * Aisin Seiki gatherers), script_check, idlefn_check, bus_rf_relay,
+ * notes/hybrid-plan.md).  Replaces mainloop, gps_check (the NMEA
+ * gatherer; the Aisin Seiki one went 2026-10-01), script_check, idlefn_check, bus_rf_relay,
  * dim_lights_if_idle, redrawcheck and ccircheck of r58.s (the assembler
  * originals are in git tag asm-final).  Fixed ROM.
  *
  * Stay assembler: cu_lights_off (single-bit writes to `indicators`,
  * which interrupts also write), ding, getchar (DI), send_packet_buffer
- * (through fsk_send).  The GPS processors are banked; gpsc_sentence and
- * gpsc_aisin call them with A through bank2_call.
+ * (through fsk_send).  The GPS processor is banked; gpsc_sentence
+ * calls it with A through bank2_call.
  *
  * Everything here runs on every pass, so it stays small: the checks
  * return at once when there is nothing to do.  The routines called here
@@ -18,17 +18,16 @@
 
 #define GPS_SENTENCE_SIZE	100	/* asserted in r58.s */
 #define GPS_MIN_SENTENCE	10	/* shorter is junk */
-#define GPS_AISIN_SEIKI	3		/* cfg_gps_config */
 #define RELAY_BYTES	12
 #define PKT_RELAY	0x50
 
-extern uint8_t gps_hist_rp, gps_sentence_len, cfg_gps_config,
+extern uint8_t gps_hist_rp, gps_sentence_len,
 	cfg_onhook_script[SIZE_STR], cfg_offhook_script[SIZE_STR],
 	cfg_idlefn, cfg_light_seconds, cfg_bus_rf_relay,
 	cfg_spontaneous_mprs;
 extern volatile uint8_t script_req, ding_req;
 
-extern void gpsc_sentence(uint8_t len), gpsc_aisin(uint8_t idx);
+extern void gpsc_sentence(uint8_t len);
 extern void cu_lights_off(void);
 /* the per-pass checks of other modules */
 extern void fskcheck(void), far_repeater_run(void);
@@ -64,27 +63,12 @@ void mainloop(void)
 static uint8_t rp, len, c;		/* statics: no stack frame */
 static uint8_t *dst;
 
-/* Aisin Seiki: every 0x0D may end a CA CA block */
-static void gps_check_aisin_seiki(void)
-{
-	do {
-		c = gps_history[rp++];
-		if (c == 0x0D)
-			gpsc_aisin(rp);		/* just after the 0x0D */
-	} while (gps_hist_idx != rp);
-	gps_hist_rp = rp;
-}
-
 /* NMEA: '$' starts a sentence (not stored), LF ends it */
 void gps_check(void)
 {
 	rp = gps_hist_rp;
 	if (gps_hist_idx == rp)
 		return;				/* empty */
-	if (cfg_gps_config == GPS_AISIN_SEIKI) {
-		gps_check_aisin_seiki();
-		return;
-	}
 	len = gps_sentence_len;
 	dst = gps_sentence + len;
 	do {

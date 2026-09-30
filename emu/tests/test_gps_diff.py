@@ -1,6 +1,6 @@
 """
-GPS sentence processing (NMEA GPRMC and the Aisin Seiki binary CA CA
-block): differential scenarios for the C port (c/gps.c, bank 2), asm
+GPS sentence processing (NMEA GPRMC; the Aisin Seiki binary path was
+dropped 2026-10-01): differential scenarios for the C port (c/gps.c, bank 2), asm
 build vs C build.  The parsed fields are compared by probes (gps_utc,
 gps_date, speed, course, status, the NV position), including the partial
 updates a sentence leaves when a field fails to parse.
@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from difftest import builds, DiffCase  # noqa: E402
-from helpers import gps_state, gps_state_no_locator, LOCATOR_NV, nmea as nmea_raw, aisin  # noqa: E402
+from helpers import gps_state, nmea as nmea_raw  # noqa: E402
 from r58emu import P8N  # noqa: E402
 
 REF, CAND = builds("GPS")
@@ -75,18 +75,6 @@ GPRMC_CASES = [
 ]
 
 
-AISIN_CASES = [
-    ("2D fix", aisin()),
-    ("3D fix, changed flag", aisin(fix=0x14)),
-    ("no fix", aisin(fix=2)),
-    ("fix 5", aisin(fix=5)),
-    ("bad checksum", aisin(ck=0x12)),
-    ("headings", aisin(heading=0x2FF)),
-    ("heading 3FF", aisin(heading=0x3FF, speed=285)),
-    ("speed 284", aisin(speed=284, heading=0x200)),
-    ("slow", aisin(speed=1, lat=(0, 0, 0, 0), lon=(179, 59, 59, 255))),
-    ("with junk before", b"\x0d\x01\x02" + aisin(heading=0x80)),
-]
 
 
 def scenario(cases, gps_config=0, probe=gps_state):
@@ -105,10 +93,6 @@ class GpsDiff(DiffCase):
 
     def test_gprmc_p8n(self):
         self.diff(scenario(GPRMC_CASES[:8]), card=P8N)
-
-    def test_aisin_seiki(self):
-        self.diff(scenario(AISIN_CASES, gps_config=3, probe=gps_state_no_locator),
-                  ignore=LOCATOR_NV)
 
     def test_updates_in_menu_redraw(self):
         self.diff([("boot", 2.5), ("press", "E"), ("run", 0.3)] +

@@ -56,40 +56,14 @@ def nmea(body, ck=None):
     return ("$%s*%s\r\n" % (body, ck)).encode("latin-1")
 
 
-def aisin(fix=3, lat=(61, 30, 7, 128), lon=(23, 45, 40, 0), heading=0x100, speed=100,
-          datetime=b"\x26\x09\x28\x12\x34\x56", sats=b"\x00\x00\x00\x00\x12\x34\xAB\xCD", ck=None):
-    """An Aisin Seiki binary CA CA position block."""
-    p = bytearray(40)
-    p[0] = fix
-    for at_, (d, m, s, f) in ((1, lat), (5, lon)):
-        p[at_:at_ + 4] = (((d * 3600 + m * 60 + s) * 256) + f).to_bytes(4, "big")
-    p[13:15] = heading.to_bytes(2, "big")
-    p[16:18] = speed.to_bytes(2, "big")
-    p[22:28] = datetime
-    p[31:39] = sats
-    if ck is None:
-        ck = (-(0xCA + 0xCA + sum(p))) & 0xFF
-    return bytes([0xCA, 0xCA]) + bytes(p) + bytes([ck, 0x0D])
-
-
 def gps_state(r):
-    """The GPS fields the NMEA/Aisin Seiki parsers write, distinct in
+    """The GPS fields the NMEA parser writes (and gps_status, which only
+    the Aisin Seiki path wrote, dropped 2026-10-01), distinct in
     every field so a partial update shows."""
     return (r.peek("gps_utc", 8), r.peek("gps_date", 8), r.peek16("gps_knots"),
             r.peek("gps_speed"), r.peek16("gps_course"), r.peek("gps_status", 8),
             r.peek("gps_valid_seconds"), r.peek("cfg_gps_latitude", 8),
             r.peek("cfg_gps_longitude", 8), r.peek("cfg_gps_locator", 8))
-
-
-def gps_state_no_locator(r):
-    """gps_state without the locator, for the Aisin Seiki path: it writes a
-    garbage centiminute byte (open bug), and the locator made from it
-    differs from the reference since the locator fixes of 2026-09-30."""
-    return gps_state(r)[:-1]
-
-
-# the locator bytes as difftest `ignore` names them
-LOCATOR_NV = ("cfg_gps_locator",) + tuple("cfg_gps_locator+%d" % i for i in range(1, 8))
 
 
 # ---------------------------------------------------------------- packets

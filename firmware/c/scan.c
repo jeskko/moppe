@@ -181,7 +181,12 @@ static uint8_t memory_from(uint8_t k)
 	return 100;
 }
 
-/* the scanned bands, sorted by start frequency (they may overlap) */
+/* the scanned bands, sorted by start frequency, overlapping ones merged
+ * into one slice: v3_Z kept them apart, and stepping out of a slice's
+ * end to the next one's start, which lay inside it, looped between the
+ * two for ever (user, 2026-10-01).  A merged slice is stepped with the
+ * band of each frequency (locate_band: the lowest-numbered one), so the
+ * scanner visits every frequency of the bands once per round. */
 static void build_scan_slicetab(void)
 {
 	n = 0;
@@ -208,6 +213,21 @@ static void build_scan_slicetab(void)
 					sl[m] = sl[m + SLICE];
 					sl[m + SLICE] = v;
 				}
+	/* p: the last kept slice; sl: the next one, which starts at or
+	 * above p's start */
+	p = scan_slices;
+	for (m = 1, sl = scan_slices + SLICE; --n; sl += SLICE) {
+		if (lt24(sl, p + SL_END)) {		/* starts inside p */
+			if (lt24(p + SL_END, sl + SL_END))
+				copy3(p + SL_END, sl + SL_END);
+			continue;
+		}
+		p += SLICE;
+		for (j = 0; j < SLICE; j++)
+			p[j] = sl[j];
+		m++;
+	}
+	scan_slicecnt = m;
 }
 
 void scanner_start(void)

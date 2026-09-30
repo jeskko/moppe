@@ -2,7 +2,9 @@
  * GPS sentence processing in C, in ROM bank 2 (Phase 4,
  * notes/hybrid-plan.md).  Replaces the bank-1 assembler from
  * gps_process_aisin_seiki to gps_information_has_been_updated (the
- * assembler originals are in git tag asm-final); the two APRS symbol
+ * assembler originals are in git tag asm-final; the Aisin Seiki binary
+ * path, cfg_gps_config 3, was dropped 2026-10-01: broken since v3_Z and
+ * not known to be in use); the two APRS symbol
  * tables that used to sit in that range are c/aprs.c's symbols[] now.
  * The byte gatherer gps_check stays fixed (it runs on every mainloop
  * pass); it calls these once per complete sentence through far_* stubs.
@@ -10,10 +12,7 @@
  * Kept from the assembler on purpose (test_gps_diff.py pins them):
  * number fields only reject characters below '0' (a letter is stored as
  * its value minus '0'); a field that fails leaves the fields before it
- * updated; speed and course wrap at 16 bits.  Aisin Seiki blocks: the
- * course is heading * 45 / 256 plus 256 when bit 7 of the product is set
- * (not / 128), the centiminutes' ones byte is a remainder's low byte, and
- * no hemisphere letter is written (notes: open question to the user).
+ * updated; speed and course wrap at 16 bits.
  *
  * The routines called here do not preserve IX: no stack frames, state is
  * static.  Mainline only.
@@ -22,19 +21,15 @@
 
 #include "r58.h"
 
-extern uint8_t gps_date[8], gps_status[8];
+extern uint8_t gps_date[8];
 
 /* firmware routines (assembler) */
 extern uint8_t knots_to_kmh(uint16_t knots);		/* HL -> A, max 255 */
-extern uint8_t quarter_ms_to_kmh(uint16_t qms);	/* HL -> A, max 255 */
-/* r58.s shim: aisin_seiki_parse_latlon (IY, IX) */
-extern void gps_latlon(const uint8_t *from, uint8_t *to);
 
 static const uint8_t str_gprmc[] = "GPRMC,";
 
-static uint8_t i, a, b, c, d, e, l;
+static uint8_t i, a, b, c, d, e;
 static uint16_t num;
-static uint32_t acc;
 static const uint8_t *p;
 static uint8_t *dst;
 
@@ -44,65 +39,6 @@ static void gps_information_has_been_updated(void)
 	gps_valid_seconds = 5;
 	if (menu_active)
 		redraw();		/* in case a GPS value is shown */
-}
-
-/* ---- Aisin Seiki binary blocks */
-
-/* packed BCD (or nibbles) at p into two bytes each at dst */
-static void unpack(uint8_t n)
-{
-	while (n--) {
-		*dst++ = *p >> 4;
-		*dst++ = *p++ & 0x0F;
-	}
-}
-
-static void gps_process_aisin_seiki_CACA(void)
-{
-	/* [0] validity: 3 2D fix, 4 3D fix (0x10: a change happened) */
-	a = gps_sentence[0] & ~0x10;
-	if (a < 3 || a >= 5)
-		return;
-	/* [1] latitude, [5] longitude: 1/256", MSByte first */
-	gps_latlon(gps_sentence + 1, cfg_gps_latitude);
-	gps_latlon(gps_sentence + 5, cfg_gps_longitude);
-	/* [13] heading 360 / 1024 degrees */
-	num = (uint16_t)(gps_sentence[13] << 8 | gps_sentence[14]) * 45u;
-	gps_course = (num >> 8) | (num & 0x80 ? 0x100 : 0);
-	/* [16] ground speed 1/4 m/s: knots = x * 31 / 64 */
-	num = gps_sentence[16] << 8 | gps_sentence[17];
-	acc = (uint32_t)num * 31;
-	gps_knots = acc >> 6;
-	gps_speed = quarter_ms_to_kmh(num);
-	/* [22] YYMMDD HHMMSS packed BCD */
-	p = gps_sentence + 22;
-	dst = gps_date;
-	unpack(3);
-	dst = gps_utc;
-	unpack(3);
-	/* [31] satellites used: bytes 5..8 as hex digits */
-	p = gps_sentence + 31 + 4;
-	dst = gps_status;
-	unpack(4);
-	gps_information_has_been_updated();
-}
-
-/* end: index in gps_history after a 0x0D; the block CA CA [40] cksum 0D
- * ends there.  cksum: the complement of the 8-bit sum of CA CA and the
- * 40 bytes. */
-void gps_process_aisin_seiki(uint8_t end)
-{
-	l = end - 44;
-	if (gps_history[l++] != 0xCA || gps_history[l++] != 0xCA)
-		return;
-	c = (uint8_t)(0xCA + 0xCA);
-	for (i = 0; i < 40; i++) {
-		a = gps_history[l++];
-		gps_sentence[i] = a;
-		c += a;
-	}
-	if ((uint8_t)(gps_history[l] + c) == 0)
-		gps_process_aisin_seiki_CACA();
 }
 
 /* ---- NMEA */

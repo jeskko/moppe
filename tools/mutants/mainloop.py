@@ -9,14 +9,8 @@ MUTANTS = [
     ("\t\tdim_lights_if_idle();\n", "\n"),
     ("\t\tidlefn_check();\n", "\n"),
     ("\t\tredrawcheck();\n", "\n"),
-    # Aisin Seiki gatherer
-    ("\t\tif (c == 0x0D)\n\t\t\tgpsc_aisin(rp);", "\t\tif (c == 0x0A)\n\t\t\tgpsc_aisin(rp);"),
-    ("\t\tc = gps_history[rp++];", "\t\tc = gps_history[++rp];"),
-    ("\t\t\tgpsc_aisin(rp);", "\t\t\tgpsc_aisin(rp - 1);"),
-    ("\t} while (gps_hist_idx != rp);\n\tgps_hist_rp = rp;\n}", "\t} while (gps_hist_idx != rp);\n}"),
     # NMEA gatherer
     ("\tif (gps_hist_idx == rp)\n\t\treturn;", "\tif (gps_hist_idx == rp + 1)\n\t\treturn;"),
-    ("if (cfg_gps_config == GPS_AISIN_SEIKI) {", "if (cfg_gps_config == 2) {"),
     ("\tlen = gps_sentence_len;\n", "\tlen = 0;\n"),
     ("if (len >= GPS_SENTENCE_SIZE)", "if (len >= GPS_SENTENCE_SIZE - 1)"),
     ("\t\tif (c == '$')\n\t\t\tgoto rewind;", ""),

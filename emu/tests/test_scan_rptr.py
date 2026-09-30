@@ -167,6 +167,68 @@ class Scanner(RadioTest):
         self.assertTrue(seen_band1, "band 1 never visited")
         self.assertTrue(seen_band2, "band 2 never visited")
 
+    def band(self, i, start, end, step=0):
+        b = "cfg_band%d_" % i
+        for name, v in (("start", start.to_bytes(3, "little")), ("end", end.to_bytes(3, "little")),
+                        ("duplex", bytes(3)), ("step", step), ("sctail", 2),
+                        ("sclisten", 15), ("autoreject", 0)):
+            self.r.poke(b + name, v)
+
+    def stays(self, seconds, poll=0.005):
+        """the frequencies the scanner settles on, in order: held for two
+        polls at least (stepping out of a slice passes its end for ~3 ms)"""
+        out, last, n = [], None, 0
+        for _ in range(int(seconds / poll)):
+            self.r.run(poll)
+            f = self.r.peek24("rx_freq")
+            n = n + 1 if f == last else 1
+            last = f
+            if n == 2:
+                out.append(f)
+        return out
+
+    def rounds(self, seq):
+        """seq cut at each wrap to a lower frequency: the complete rounds"""
+        cuts = [i for i in range(1, len(seq)) if seq[i] < seq[i - 1]]
+        return [seq[a:b] for a, b in zip(cuts, cuts[1:])]
+
+    def test_overlapping_bands_merge(self):
+        """Overlapping and nested bands are one slice: each channel once a
+        round, in order (v3_Z looped between the end of one and the start
+        of the next inside it for ever; user, 2026-10-01)"""
+        r = self.boot()
+        self.band(2, 433400, 433500)
+        self.band(3, 433475, 433550)            # overlaps 2
+        self.band(4, 433550, 433575)            # touches 3
+        self.band(5, 434000, 434100)
+        self.band(6, 434025, 434050)            # inside 5
+        r.type("23456")
+        r.press("S", hold=0.3)
+        r.run(0.05)
+        self.assertEqual(r.peek("scan_slicecnt"), 3)
+        want = list(range(433400, 433575, 25)) + list(range(434000, 434100, 25))
+        rounds = self.rounds(self.stays(2.5))
+        self.assertGreaterEqual(len(rounds), 2, rounds)
+        for got in rounds:
+            self.assertEqual(got, want)
+
+    def test_overlapping_bands_different_steps(self):
+        """In the overlap the step of the lower-numbered band (the band
+        the radio uses there, as for manual tuning), beyond it the other
+        band's own step"""
+        r = self.boot()
+        self.band(1, 433400, 433500, step=0)    # 25 kHz
+        self.band(2, 433450, 433550, step=3)    # 12.5 kHz
+        r.type("12")
+        r.press("S", hold=0.3)
+        r.run(0.05)
+        rounds = self.rounds(self.stays(2.5))
+        self.assertGreaterEqual(len(rounds), 2, rounds)
+        for got in rounds:
+            self.assertEqual(got[:5], [433400, 433425, 433450, 433475, 433500])
+            self.assertEqual(len(got), 5 + 3, got)          # 433512.5 .. 433537.5
+            self.assertTrue(all(12 <= b - a <= 13 for a, b in zip(got[4:], got[5:])), got)
+
     def test_scan_covers_memory_block_when_selected(self):
         # Store a scannable memory outside the default bands, reachable
         # only via the memory-block bits of scan_mask.
@@ -521,6 +583,31 @@ class Repeater(RadioTest):
         tones, _ = tone_and_gaps(runs)
         self.assertEqual(len(tones), 1, "expected a single dash ('T' bye message)")
         self.assertAlmostEqual(tones[0], DASH_S, delta=0.03)
+
+    def test_tbeepmax_0_is_no_limit(self):
+        """rP:tonE t = 0 means no access-tone limit (user, 2026-10-01). v3_Z
+        sent opening straight to beep-too-long, and with PTT held (which
+        counts as an access tone) went idle -> opening -> beep-too-long ->
+        idle in one mainloop pass for as long as PTT was down."""
+        r = self.boot()
+        self.enter_repeater_idle(r)            # tonES access
+        r.poke("repeater_cfg_id_greet1", cw_str(""))
+        poke_word(r, "repeater_cfg_TBEEPMAX", 0)
+        poke_word(r, "repeater_cfg_TOPEN", 20)
+        key_access(r, "1750", hold=2.0)        # a long tone is accepted
+        wait_for_state(r, self, "repeater_open", timeout=2.0)
+        self.assertTrue(r.transmitting())
+
+        r = self.boot()
+        self.enter_repeater_idle(r)
+        r.poke("repeater_cfg_id_greet1", cw_str(""))
+        poke_word(r, "repeater_cfg_TBEEPMAX", 0)
+        poke_word(r, "repeater_cfg_TOPEN", 20)
+        r.ptt(True)
+        wait_for_state(r, self, "repeater_active", timeout=2.0)
+        self.assertTrue(r.transmitting())
+        r.ptt(False)
+        wait_for_state(r, self, "repeater_open", timeout=1.0)
 
     def test_during_id_while_open(self):
         r = self.boot()
