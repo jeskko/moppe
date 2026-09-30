@@ -38,10 +38,13 @@ reference has: a bug fix or a new feature differs from it on purpose (then
 the test pins the new behaviour on its own, as the bug-fix tests do).
 Timing-sensitive scenarios: a trace or checkpoint that starts on an edge
 flips when code size shifts timing by a few ms (`test_rptr_diff` CUSTOM
-epilog: a leading transient, now `settle=2`). A cleanup agent also saw
-`test_ptt_diff.test_aprs_local` fail after a behaviour-identical display.c
-rewrite (not reproduced or analysed; the rewrite was dropped); look there
-first if it flips.
+epilog: a leading transient, now `settle=2`). Scenario inputs poked in
+the same instant can race the mainloop: `test_ptt_diff.test_aprs_local`
+set `cfg_aprs_tx` 0 and grounded /LOCAL together, and a pass sitting
+between `aprs_ptt_check`'s two reads saw the old setting with the new edge
+and sent APRS (reproduced with a behaviour-identical display.c change; the
+same race exists in the asm). Change a setting, run a little, then the
+edge.
 
 **What stays assembler** (`python3 tools/asmleft.py` after `make`:
 fixed-ROM asm 0x0100-0x2C76, ~11.1 KB: data 1826, reachable from
