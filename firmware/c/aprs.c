@@ -19,9 +19,9 @@
  * used in Finland); the logger output prints gps_utc up to EOS.
  *
  * The assembler routines called here do not preserve IX: no stack frame
- * in a function that calls them, state is static.  (centiminutes_to_meters
- * has one: SDCC spills a conversion there; it calls only C and the SDCC
- * library, which keep IX.)  Mainline only.
+ * in a function that calls them, state is static.  mprs_degmin_pack is a
+ * C-only leaf (no asm calls) and may have one: SDCC spills its two
+ * pointer parameters there.  Mainline only.
  */
 #pragma bank 2
 
@@ -54,10 +54,12 @@ static const uint8_t symbols[31] = {
 };
 #define BY_SSID	15
 
-static const uint8_t dst_aprs[SIZE_STR] = { 'A', 'P', 'R', 'S', EOS, EOS, EOS, EOS };
-static const uint8_t dst_relay[SIZE_STR] = { 'R', 'E', 'L', 'A', 'Y', EOS, EOS, EOS };
-static const uint8_t dst_wide[SIZE_STR] = { 'W', 'I', 'D', 'E', EOS, EOS, EOS, EOS };
-static const uint8_t dst_mprs[SIZE_STR] = { 'M', 'P', 'R', 'S', EOS, EOS, EOS, EOS };
+/* every reader (out_string, mbus_mprs_out_address_kiss,
+ * pack_aprs_report_packet_call) stops at the first EOS, so one is enough */
+static const uint8_t dst_aprs[] = { 'A', 'P', 'R', 'S', EOS };
+static const uint8_t dst_relay[] = { 'R', 'E', 'L', 'A', 'Y', EOS };
+static const uint8_t dst_wide[] = { 'W', 'I', 'D', 'E', EOS };
+static const uint8_t dst_mprs[] = { 'M', 'P', 'R', 'S', EOS };
 
 /* metres per minute of longitude by latitude degree */
 static const uint16_t minutes_to_meters[90] = {
@@ -74,7 +76,7 @@ static const uint16_t minutes_to_meters[90] = {
 
 static const uint8_t mic_e_DC_tab[10] = { ' ', '*', '4', '>', 'H', 'R', 0x5C, 'f', 'p', 'z' };
 
-static uint8_t a, b, c, i, n, at, ones, last, h, l, rem;
+static uint8_t a, b, c, i, n, ones, last, h, l, rem;
 static uint16_t w, q;
 static uint32_t v, t, his, north, east;
 static uint32_t *major, *minor;
@@ -83,15 +85,23 @@ static uint8_t *d;
 
 /* ---- small helpers */
 
+/* how many times n subtracts from a before it goes below n (the
+ * assembler's repeated-subtraction division), leaving the remainder in a */
+static uint8_t count_down(uint8_t n)
+{
+	uint8_t cnt = 0, done;
+	do {
+		cnt++;
+		done = a < n;
+		a -= n;
+	} while (!done);
+	return cnt;
+}
+
 /* a as two digits: tens (maybe above '9' when a >= 100), ones */
 static void dekavalue_format(void)
 {
-	c = '0' - 1;
-	do {
-		c++;
-		b = a < 10;
-		a -= 10;
-	} while (!b);
+	c = '0' - 1 + count_down(10);
 	*d++ = c;
 	*d++ = a + 10 + '0';
 }
@@ -166,8 +176,10 @@ static void packet_callsign_unpack(void)
 }
 
 /* deg[3] min[2] decimal_min[2] unpacked BCD and the hemisphere at s into
- * 3 bytes at d (only 'W' is negative) */
-static void mprs_degmin_pack(void)
+ * 3 bytes at d (only 'W' is negative); shared with c/fsk.c and
+ * gps_own_locator (C-only leaf, calls no asm: SDCC gives it a small frame
+ * to spill s/d, but that is harmless since it never calls into asm) */
+void mprs_degmin_pack(const uint8_t *s, uint8_t *d)
 {
 	d[0] = (s[0] ? 100 : 0) + s[1] * 10 + s[2];
 	d[1] = s[3] * 10 + s[4];
@@ -176,28 +188,27 @@ static void mprs_degmin_pack(void)
 		d[2] |= 0x80;
 }
 
+/* flip p[0], p[2], p[4], p[6] for the southern/western half of the locator */
+static void mirror(uint8_t *p)
+{
+	p[0] = 'I' - p[0] + 'J';
+	p[2] = '9' - p[2] + '0';
+	p[4] = 'L' - p[4] + 'M';
+	p[6] = '9' - p[6] + '0';
+}
+
 /* the 8-character locator of the packed lat/lon at s into d */
 static void packed_latlon_to_locator(void)
 {
 	/* latitude: field letter from 'J', square digit */
 	a = s[0] & 0x7F;
-	c = 'J' - 1;
-	do {
-		c++;
-		b = a < 10;
-		a -= 10;
-	} while (!b);
+	c = 'J' - 1 + count_down(10);
 	d[1] = c;
 	d[3] = a + 10 + '0';
 	/* subsquare: half minutes (one more above .50; the sign bit counts
 	 * as above) */
 	a = (s[1] << 1 | (50 < s[2])) & 0x7F;
-	c = 'A' - 1;
-	do {
-		c++;
-		b = a < 5;
-		a -= 5;
-	} while (!b);
+	c = 'A' - 1 + count_down(5);
 	d[5] = c;
 	c = (a + 5) << 1;
 	a = s[2];
@@ -206,20 +217,11 @@ static void packed_latlon_to_locator(void)
 	if (a >= 25)
 		c++;
 	d[7] = c + '0';
-	if (s[2] & 0x80) {			/* south */
-		d[1] = 'I' - d[1] + 'J';
-		d[3] = '9' - d[3] + '0';
-		d[5] = 'L' - d[5] + 'M';
-		d[7] = '9' - d[7] + '0';
-	}
+	if (s[2] & 0x80)			/* south */
+		mirror(d + 1);
 	/* longitude: 20 degrees per letter, 2 per digit */
 	a = s[3];
-	c = 'J' - 1;
-	do {
-		c++;
-		b = a < 20;
-		a -= 20;
-	} while (!b);
+	c = 'J' - 1 + count_down(20);
 	a += 20;
 	b = a & 1;				/* odd degree */
 	d[0] = c;
@@ -227,36 +229,18 @@ static void packed_latlon_to_locator(void)
 	a = s[4] & 0x3F;
 	if (b)
 		a += 60;
-	c = 'A' - 1;
-	do {
-		c++;
-		b = a < 5;
-		a -= 5;
-	} while (!b);
+	c = 'A' - 1 + count_down(5);
 	d[4] = c;
 	d[6] = ((uint8_t)((a + 5) << 1) | (50 < s[5])) + '0';
-	if (s[5] & 0x80) {			/* west */
-		d[0] = 'I' - d[0] + 'J';
-		d[2] = '9' - d[2] + '0';
-		d[4] = 'L' - d[4] + 'M';
-		d[6] = '9' - d[6] + '0';
-	}
+	if (s[5] & 0x80)			/* west */
+		mirror(d);
 }
 
 /* the own locator from cfg_gps_latitude / longitude into cfg_gps_locator */
 void gps_own_locator(void)
 {
-	s = cfg_gps_latitude;		/* longitude follows at +8 */
-	d = gps_latlon_tmp;
-	for (n = 0; n < 2; n++) {
-		c = *s++ ? 100 : 0;
-		for (i = 0; i < 3; i++, s += 2) {
-			*d++ = s[0] * 10 + s[1] + c;
-			c = 0;
-		}
-		if (*s++ == 'W')		/* (not 'S', v3_Z) */
-			d[-1] |= 0x80;
-	}
+	mprs_degmin_pack(cfg_gps_latitude, gps_latlon_tmp);	/* (not 'S', v3_Z) */
+	mprs_degmin_pack(cfg_gps_longitude, gps_latlon_tmp + 3);
 	s = gps_latlon_tmp;
 	d = cfg_gps_locator;
 	packed_latlon_to_locator();
@@ -324,7 +308,8 @@ static uint32_t centiminutes_to_1852_meters(void)
 }
 
 /* 24-bit centiminutes of longitude (v) into metres, w metres per minute
- * (v3_Z added hundredths * 655 m, and from 256 minutes on garbage) */
+ * (the QRB bugs - v3_Z added hundredths * 655 m, and from 256 minutes on
+ * garbage - are fixed here; notes/hybrid-plan.md "Firmware behaviour") */
 static uint32_t centiminutes_to_meters(void)
 {
 	q = div248_v(100);			/* full minutes */
@@ -355,8 +340,7 @@ static void delta_longitude_fixup(void)
 static void mprs_qrb_present(void)
 {
 	d = distance_bearing;
-	b++;
-	if (!--b)
+	if (!b)
 		*d++ = '.';			/* .999 km */
 	a = w / 100;
 	w %= 100;
@@ -395,9 +379,7 @@ static void pick_axes(void)
 	t = east;
 	d = my_coord_tmp_6bytes + 3;
 	put24();
-	t = east;
-	t -= north;				/* both below 2^24 */
-	if (((uint8_t *)&t)[3]) {		/* borrow: east < north */
+	if (east < north) {			/* both below 2^24 */
 		major = &north;
 		minor = &east;
 	} else {
@@ -409,12 +391,8 @@ static void pick_axes(void)
 
 static void mprs_qrb(void)
 {
-	s = cfg_gps_latitude;
-	d = my_coord_tmp_6bytes;
-	mprs_degmin_pack();
-	s = cfg_gps_longitude;
-	d = my_coord_tmp_6bytes + 3;
-	mprs_degmin_pack();
+	mprs_degmin_pack(cfg_gps_latitude, my_coord_tmp_6bytes);
+	mprs_degmin_pack(cfg_gps_longitude, my_coord_tmp_6bytes + 3);
 	mprs_qrb_dir_bits = 0;
 
 	/* north-south */
@@ -511,18 +489,24 @@ static void mbus_mprs_out_address_kiss(void)
 	putchar_slipped(((c << 1) & 0x1E) | 0x60 | last);
 }
 
+/* lat, N/S, sep, lon, E/W of mprs_packed_packet at d (which it advances) */
+static void latlon_text(uint8_t sep)
+{
+	s = mprs_packed_packet + 6;
+	mprs_lat_format();
+	*d++ = s[2] & 0x80 ? 'S' : 'N';
+	*d++ = sep;
+	s = mprs_packed_packet + 9;
+	mprs_lon_format();
+	*d++ = s[2] & 0x80 ? 'W' : 'E';
+}
+
 static void mbus_mprs_out_logger(void)
 {
 	/* 120000 6103.52N 02806.18E KP41BB 0 80 OH5NXO-15 */
 	d = mbus_mprs_buffer;
 	*d++ = ' ';
-	s = mprs_packed_packet + 6;
-	mprs_lat_format();
-	*d++ = s[2] & 0x80 ? 'S' : 'N';
-	*d++ = ' ';
-	s = mprs_packed_packet + 9;
-	mprs_lon_format();
-	*d++ = s[2] & 0x80 ? 'W' : 'E';
+	latlon_text(' ');
 	*d++ = ' ';
 	*d = EOS;
 	for (s = gps_utc; *s != EOS; s++)	/* (runs on without EOS, v3_Z) */
@@ -549,13 +533,7 @@ static void mbus_mprs_call_latlon(void)
 	}
 	d = mbus_mprs_buffer;
 	*d++ = '!';
-	s = mprs_packed_packet + 6;
-	mprs_lat_format();
-	*d++ = s[2] & 0x80 ? 'S' : 'N';
-	*d++ = '/';				/* primary symbol table */
-	s = mprs_packed_packet + 9;
-	mprs_lon_format();
-	*d++ = s[2] & 0x80 ? 'W' : 'E';
+	latlon_text('/');			/* primary symbol table */
 	symbol_nibble();
 	*d++ = a == 15 ? symbols[BY_SSID + (mprs_packed_packet[4] >> 4)] : symbols[a];
 	*d = EOS;
@@ -642,14 +620,12 @@ static void gps_mprs_call_latlon(void)
 
 /* ---- receive */
 
-/* at: packet_good, a 4x packet in fsk_history (nibbles) */
+/* start: packet_good, a 4x packet in fsk_history (nibbles) */
 void handle_mprs_packets(uint8_t start)
 {
 	at = start + 2;				/* tag, minor digit ignored */
-	for (i = 0; i < 12; i++) {
-		a = fsk_history[at++] << 4;
-		mprs_packed_packet[i] = a | fsk_history[at++];
-	}
+	for (i = 0; i < 12; i++)
+		mprs_packed_packet[i] = nibbles();
 	mute_fsk_at_mprs_end_maybe();
 
 	packet_callsign_unpack();
@@ -887,30 +863,19 @@ static void stuffed_8bits(void)
 	b = 0x80;
 }
 
-static void zero_bit(void)
+/* shift a 0 or 1 (top, 0x00 or 0x80) into b, LSB first, stuffing on a 1 */
+static void put_bit(uint8_t top)
 {
 	c = b & 1;
-	b >>= 1;
-	if (c)
-		stuffed_8bits();
-}
-
-static void one_bit(void)
-{
-	c = b & 1;
-	b = b >> 1 | 0x80;
+	b = b >> 1 | top;
 	if (c)
 		stuffed_8bits();
 }
 
 static void flag(void)
 {
-	for (a = 0x7E, i = 0; i < 8; i++, a >>= 1) {
-		if (a & 1)
-			one_bit();
-		else
-			zero_bit();
-	}
+	for (a = 0x7E, i = 0; i < 8; i++, a >>= 1)
+		put_bit(a & 1 ? 0x80 : 0);
 }
 
 void send_aprs_report_packet(void)
@@ -929,19 +894,19 @@ void send_aprs_report_packet(void)
 	b = 0x80;
 	/* preamble: zero bits (36 = 30 ms by default), the flag */
 	for (a = cfg_ax25_padbits ? cfg_ax25_padbits : 36; a; a--)
-		zero_bit();
+		put_bit(0);
 	flag();
 	/* the frame and its CRC, a zero after five ones */
 	ones = 0;
 	for (s = aprs_packet_out, n += 2; n; n--, s++) {
 		for (h = *s, l = 0; l < 8; l++, h >>= 1) {
 			if (h & 1) {
-				one_bit();
+				put_bit(0x80);
 				if (++ones < 5)
 					continue;
 			}
 			ones = 0;
-			zero_bit();
+			put_bit(0);
 		}
 	}
 	flag();

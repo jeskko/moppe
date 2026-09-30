@@ -2,10 +2,10 @@
  * GPS sentence processing in C, in ROM bank 2 (Phase 4,
  * notes/hybrid-plan.md).  Replaces the bank-1 assembler from
  * gps_process_aisin_seiki to gps_information_has_been_updated (the
- * assembler originals are in git tag asm-final) except the two APRS
- * symbol tables in it.  The byte gatherer gps_check stays fixed (it
- * runs on every mainloop pass); it calls these once per complete
- * sentence through far_* stubs.
+ * assembler originals are in git tag asm-final); the two APRS symbol
+ * tables that used to sit in that range are c/aprs.c's symbols[] now.
+ * The byte gatherer gps_check stays fixed (it runs on every mainloop
+ * pass); it calls these once per complete sentence through far_* stubs.
  *
  * Kept from the assembler on purpose (test_gps_diff.py pins them):
  * number fields only reject characters below '0' (a letter is stored as
@@ -87,7 +87,7 @@ static void gps_process_aisin_seiki_CACA(void)
 	gps_information_has_been_updated();
 }
 
-/* e: index in gps_history after a 0x0D; the block CA CA [40] cksum 0D
+/* end: index in gps_history after a 0x0D; the block CA CA [40] cksum 0D
  * ends there.  cksum: the complement of the 8-bit sum of CA CA and the
  * 40 bytes. */
 void gps_process_aisin_seiki(uint8_t end)
