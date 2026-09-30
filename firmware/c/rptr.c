@@ -104,11 +104,13 @@ static const uint16_t note_pitch[26] = {
 	SILENCE,
 };
 
-static const uint8_t cw_msg_roger[SIZE_STR] = { 'R', EOS, EOS, EOS, EOS, EOS, EOS, EOS };
-static const uint8_t cw_msg_u_are[SIZE_STR] = { 'U', 'R', ' ', EOS, EOS, EOS, EOS, EOS };
-static const uint8_t cw_msg_qrt[SIZE_STR] = { 'Q', 'R', 'T', EOS, EOS, EOS, EOS, EOS };
+/* send_cw/send_cw_chr stop at EOS, so these need no padding to SIZE_STR
+ * (unlike the repeater_cfg_* strings, which are fixed-size NV fields) */
+static const uint8_t cw_msg_roger[] = { 'R', EOS };
+static const uint8_t cw_msg_u_are[] = { 'U', 'R', ' ', EOS };
+static const uint8_t cw_msg_qrt[] = { 'Q', 'R', 'T', EOS };
 
-static uint8_t pat, dit, ch, sval, delta, borrow, pitch, custom, gpio, local, was_tx, next, mprs_bit;
+static uint8_t pat, ch, sval, delta, pitch, gpio, local, was_tx, next, mprs_bit;
 static uint16_t acc;
 static const uint8_t *msg, *mp, *mend;
 static const uint8_t *const *ids;
@@ -185,10 +187,9 @@ static uint8_t cw_chr_1(void)
 	if (!pat)
 		pat = 0xCE;			/* ? */
 	while (pat != 0x80) {
-		dit = pat & 0x80;
-		pat <<= 1;
-		if (cw_slots(dit ? cw_slot_ticks : (uint8_t)(cw_slot_ticks * 3), cw_pitch_cnt))
+		if (cw_slots((pat & 0x80) ? cw_slot_ticks : (uint8_t)(cw_slot_ticks * 3), cw_pitch_cnt))
 			return 1;
+		pat <<= 1;
 		if (cw_slots(cw_slot_ticks, SILENCE))
 			return 1;
 	}
@@ -239,13 +240,12 @@ static void send_cw_prolog(void)
 {
 	/* CUSTOM: CTCSS during the message, stopped by the epilog if turned
 	 * on here */
-	custom = 0;
+	ctcss_custom_flag = 0;
 	if (cfg_ctcss_output_when == 4 && !ctcss_is_on) {
 		ctcss_maybe();
 		if (ctcss_is_on)
-			custom = 1;
+			ctcss_custom_flag = 1;
 	}
-	ctcss_custom_flag = custom;
 	cw_calc_delays();
 	nosir = 1;
 	repeater_cw_sendit_all = 1;
@@ -401,14 +401,9 @@ static void repeater_check_report_req(void)
 		sval = 1;
 	} else {
 		/* S = 7 * fraction / fullscale + 2 */
-		delta = cfg_rssi_S9 - cfg_rssi_S1;	/* fullscale */
+		delta = cfg_rssi_S9 - cfg_rssi_S1;	/* fullscale, > 0 here */
 		acc = (uint16_t)(uint8_t)(repeater_sig - cfg_rssi_S1) * 7;
-		sval = 1;
-		do {
-			sval++;
-			borrow = acc < delta;
-			acc -= delta;
-		} while (!borrow);
+		sval = (uint8_t)(acc / delta) + 2;
 	}
 	send_cw_chr(sval);
 	send_cw_epilog();
@@ -488,14 +483,30 @@ static uint8_t txon_to_active(void)
 	return to_active();
 }
 
+/* back to open with a fresh TOPEN, blip timer running (active -> open,
+ * reopening -> open) */
+static uint8_t to_open(void)
+{
+	start_timer_BLIP();
+	rptr_set_other(repeater_cfg_TOPEN);
+	return ST_OPEN;
+}
+
+/* open with a fresh TOPEN and the ID timer running (a greeting ID follows,
+ * or is already under way) */
+static uint8_t open_at_TOPEN(void)
+{
+	start_timer_ID();
+	rptr_set_other(repeater_cfg_TOPEN);
+	return ST_OPEN;
+}
+
 /* from opening, /LOCAL and the end of a suspension */
 static uint8_t open_by_reset(void)
 {
 	repeater_txon();
 	repeater_send_id_greet();
-	start_timer_ID();
-	rptr_set_other(repeater_cfg_TOPEN);
-	return ST_OPEN;
+	return open_at_TOPEN();
 }
 
 /* closing time over: the bye message, if any, on its own */
@@ -558,9 +569,7 @@ static uint8_t poll(uint8_t s)
 		repeater_check_report_req();
 		if (repeater_check_timer_BLIP())
 			repeater_send_blip();
-		if (squelch_open && !repeater_recheck_beep_quickly())
-			return to_active();
-		if (is_ptt_pressed())
+		if ((squelch_open && !repeater_recheck_beep_quickly()) || is_ptt_pressed())
 			return to_active();
 		if (!rptr_id_running()) {
 			repeater_send_id_during();
@@ -582,9 +591,7 @@ static uint8_t poll(uint8_t s)
 	case ST_ACTIVE:		/* TX and audio on (or forced with PTT) */
 		if (!squelch_open && !is_ptt_pressed()) {
 			repeater_aoff();
-			start_timer_BLIP();
-			rptr_set_other(repeater_cfg_TOPEN);
-			return ST_OPEN;
+			return to_open();
 		}
 		/* (no ID here: it would let noise through at the end of an
 		 * over, oh5rab) */
@@ -614,9 +621,7 @@ static uint8_t poll(uint8_t s)
 			if (squelch_open)
 				return txon_to_active();
 			repeater_txon();
-			start_timer_BLIP();
-			rptr_set_other(repeater_cfg_TOPEN);
-			return ST_OPEN;
+			return to_open();
 		}
 		if (is_ptt_pressed())
 			return txon_to_active();
@@ -744,7 +749,5 @@ void repeater_operator_ptt(void)
 	repeater_txon();
 	repeater_aoff();
 	repeater_send_blip();
-	start_timer_ID();
-	rptr_set_other(repeater_cfg_TOPEN);
-	go(ST_OPEN);
+	go(open_at_TOPEN());
 }
