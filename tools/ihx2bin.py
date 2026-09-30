@@ -2,16 +2,18 @@
 """
 Intel HEX (sdldz80 output) -> ROM image.
 
-    ihx2bin.py r58.ihx r58.bin [--map r58.map --cksum rom_cksum] [--size N]
+    ihx2bin.py r58.ihx r58.bin [--map r58.map --cksum rom_cksum]
 
 Gaps are 0xFF (unprogrammed EPROM, and what as80 left in .org gaps).  The
-image runs from address 0 to the last byte written, or is padded to --size.
+image runs from address 0 to the last byte written, or, for a banked
+build, is padded to 64 KB.
 
 Bank 1 (notes/hybrid-plan.md): code linked at the CPU window 0x8000-0xBFFF
 is EPROM0 0xC000-0xFFFF, so it goes to file offset +0x4000, and the image
 becomes 64 KB.  Bank 2 is EPROM0 0x8000-0xBFFF; it is linked at the
 virtual address 0x28000-0x2BFFF (extended linear address records), which
-goes to file 0x8000.  Any other address above 0xFFFF is an error.
+goes to file 0x8000.  Any other address above 0xFFFF is an error.  (The
+bank windows and their file deltas are tools/fwlink.py's BANKS table.)
 
 --bank1-sum SYM / --bank2-sum SYM store the 16-bit sum of the bank 1 / 2
 page at SYM (a word; the bench test compares it with what the window
@@ -20,8 +22,9 @@ reads).
 .cksum(0, .)); applied last.
 """
 import argparse
-import re
 import sys
+
+from fwlink import BANKS, read_map
 
 
 def read_ihx(path):
@@ -51,15 +54,6 @@ def read_ihx(path):
     return mem
 
 
-def map_symbol(path, name):
-    rx = re.compile(r"^\s+([0-9A-F]{8})\s+(\S+)")
-    for line in open(path):
-        m = rx.match(line)
-        if m and m.group(2) == name:
-            return int(m.group(1), 16)
-    sys.exit("%s: symbol %s not found" % (path, name))
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ihx")
@@ -68,38 +62,42 @@ def main():
     ap.add_argument("--cksum")
     ap.add_argument("--bank1-sum")
     ap.add_argument("--bank2-sum")
-    ap.add_argument("--size", type=lambda s: int(s, 0))
     a = ap.parse_args()
     mem = read_ihx(a.ihx)
     if any(0xC000 <= k < 0x10000 for k in mem):
         sys.exit("ihx2bin: data linked into RAM (0xC000-0xFFFF)")
-    if any(0x8000 <= k < 0xC000 or k >= 0x10000 for k in mem):
+    banked = any(any(b["lo"] <= k < b["hi"] for b in BANKS.values()) or k >= 0x10000
+                 for k in mem)
+    if banked:
         out = {}
         for k, v in mem.items():
-            if 0x8000 <= k < 0xC000:
-                k += 0x4000                     # bank 1
-            elif 0x28000 <= k < 0x2C000:
-                k -= 0x20000                    # bank 2
-            elif k >= 0x10000:
-                sys.exit("ihx2bin: address 0x%X is in no bank" % k)
+            for b in BANKS.values():
+                if b["lo"] <= k < b["hi"]:
+                    k += b["delta"]
+                    break
+            else:
+                if k >= 0x10000:
+                    sys.exit("ihx2bin: address 0x%X is in no bank" % k)
             out[k] = v
         mem = out
-        a.size = a.size or 0x10000
-    end = max(mem) + 1 if mem else 0
-    if a.size is not None:
-        if end > a.size:
-            sys.exit("image is 0x%X bytes, larger than --size 0x%X" % (end, a.size))
-        end = a.size
+    end = 0x10000 if banked else (max(mem) + 1 if mem else 0)
     img = bytearray(b"\xff" * end)
     for k, v in mem.items():
         img[k] = v
+    mapsyms = read_map(a.map) if a.map else {}
+
+    def sym_addr(name):
+        if name not in mapsyms:
+            sys.exit("%s: symbol %s not found" % (a.map, name))
+        return mapsyms[name]
+
     for sym, page in ((a.bank1_sum, 0xC000), (a.bank2_sum, 0x8000)):
         if sym:
-            at = map_symbol(a.map, sym)
+            at = sym_addr(sym)
             v = sum(img[page:page + 0x4000]) & 0xFFFF
             img[at], img[at + 1] = v & 0xFF, v >> 8
     if a.cksum:
-        at = map_symbol(a.map, a.cksum)
+        at = sym_addr(a.cksum)
         img[at] = -sum(img[:at]) & 0xFF
     open(a.bin, "wb").write(img)
 

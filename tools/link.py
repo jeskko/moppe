@@ -29,18 +29,9 @@ import re
 import subprocess
 import sys
 
+from fwlink import BANKS, read_map, read_rel
+
 ROM_END = 0x8000
-# banked C areas: (assembler symbol it follows, end of the bank)
-BANKS = {"_CODE_1": ("bank1_end", 0xC000), "_CODE_2": ("bank2_end", 0x2C000)}
-
-
-def rel_symbols(path):
-    syms = {}
-    for line in open(path, errors="replace"):
-        m = re.match(r"S (\S+) Def([0-9A-Fa-f]+)", line)
-        if m:
-            syms[m.group(1)] = int(m.group(2), 16)
-    return syms
 
 
 def sdcc_libdir():
@@ -67,40 +58,21 @@ def map_areas(path):
     return areas
 
 
-# bank windows as linked: bank 1 at the window addresses, bank 2 virtual
-WINDOWS = {"_CODE_1": (0x8000, 0xC000), "_CODE_2": (0x28000, 0x2C000)}
 # C compares these with pointers and never reads or calls them
 ADDRESS_ONLY = {"_menu_rfc_change", "_menu_sql_change", "_menu_sqB_change",
                 "_tune_tone_position"}
 
 
-def map_symbols(path):
-    rx = re.compile(r"^\s+([0-9A-F]{8})\s+(\S+)")
-    return {m.group(2): int(m.group(1), 16)
-            for m in map(rx.match, open(path)) if m}
-
-
-def rel_refs(path):
-    """(code areas with bytes, symbols referenced) of a .rel"""
-    areas, refs = set(), set()
-    for line in open(path, errors="replace"):
-        m = re.match(r"A (\S+) size ([0-9A-Fa-f]+)", line)
-        if m and int(m.group(2), 16) and m.group(1).startswith("_CODE"):
-            areas.add(m.group(1))
-        m = re.match(r"S (\S+) Ref", line)
-        if m:
-            refs.add(m.group(1))
-    return areas, refs
-
-
 def cross_bank_refs(cmods, mapsyms):
     bad = []
     for path in cmods:
-        areas, refs = rel_refs(path)
-        for name in sorted(refs - ADDRESS_ONLY):
+        rel = read_rel(path)
+        areas = {name for name, size in rel.areas.items()
+                 if size and name.startswith("_CODE")}
+        for name in sorted(rel.refs - ADDRESS_ONLY):
             v = mapsyms.get(name)
-            for area, (lo, hi) in WINDOWS.items():
-                if v is not None and lo <= v < hi and area not in areas:
+            for area, bank in BANKS.items():
+                if v is not None and bank["lo"] <= v < bank["hi"] and area not in areas:
                     bad.append("%s uses %s (0x%X, %s)" % (os.path.basename(path), name, v, area))
     return bad
 
@@ -112,7 +84,7 @@ def main():
     ap.add_argument("cmods", nargs="*")
     a = ap.parse_args()
 
-    syms = rel_symbols(a.asm)
+    syms = read_rel(a.asm).defs
     if "rom_end" not in syms:
         sys.exit("link.py: %s does not define rom_end" % a.asm)
     # the SDCC library is always searched: assembler code uses its
@@ -121,10 +93,10 @@ def main():
            "-k", sdcc_libdir(), "-l", "z80"]
     used = set()
     for path in [a.asm] + a.cmods:
-        used |= {l.split()[1] for l in open(path, errors="replace") if l.startswith("A ")}
-    for area, (sym, _) in BANKS.items():
-        if sym in syms and area in used:
-            cmd += ["-b", "%s=0x%X" % (area, syms[sym])]
+        used |= set(read_rel(path).areas)
+    for area, bank in BANKS.items():
+        if bank["end_sym"] in syms and area in used:
+            cmd += ["-b", "%s=0x%X" % (area, syms[bank["end_sym"]])]
     if a.cmods:
         for s in ("c_bss", "c_bss_end"):
             if s not in syms:
@@ -154,9 +126,9 @@ def main():
             if addr + size > ROM_END:
                 bad.append("%s 0x%04X-0x%04X passes 0x%04X" % (name, addr, addr + size, ROM_END))
         elif name in BANKS:
-            end = BANKS[name][1]
-            if BANKS[name][0] not in syms:
-                bad.append("%s: no %s" % (name, BANKS[name][0]))
+            end = BANKS[name]["hi"]
+            if BANKS[name]["end_sym"] not in syms:
+                bad.append("%s: no %s" % (name, BANKS[name]["end_sym"]))
             elif addr + size > end:
                 bad.append("%s 0x%X-0x%X passes 0x%X" % (name, addr, addr + size, end))
         elif name == "_DATA" and "c_bss_end" in syms:
@@ -165,7 +137,7 @@ def main():
                            % (size, syms["c_bss_end"] - syms["c_bss"]))
         else:
             bad.append("area %s is not empty (%d bytes)" % (name, size))
-    bad += cross_bank_refs(a.cmods, map_symbols(a.o + ".map"))
+    bad += cross_bank_refs(a.cmods, read_map(a.o + ".map"))
     if bad:
         # no output left behind, or make would take the build as done
         for ext in (".ihx", ".map"):
