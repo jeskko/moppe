@@ -110,7 +110,7 @@ static const uint8_t cw_msg_roger[] = { 'R', EOS };
 static const uint8_t cw_msg_u_are[] = { 'U', 'R', ' ', EOS };
 static const uint8_t cw_msg_qrt[] = { 'Q', 'R', 'T', EOS };
 
-static uint8_t pat, ch, sval, delta, pitch, gpio, local, was_tx, next, mprs_bit;
+static uint8_t pat, ch, sval, delta, pitch, gpio, was_tx, next, mprs_bit;
 static uint16_t acc;
 static const uint8_t *msg, *mp, *mend;
 static const uint8_t *const *ids;
@@ -681,8 +681,8 @@ void repeater_run(void)
 	}
 
 	/* /LOCAL rising resets the repeater into the open state */
-	if (!(sio_bctrl_local & SB_LOCAL) && (local = sio_bctrl_mirror & SB_LOCAL)) {
-		sio_bctrl_local = local;
+	if (!(sio_bctrl_local & SB_LOCAL) && (sio_bctrl_mirror & SB_LOCAL)) {
+		sio_bctrl_local = SB_LOCAL;
 		go(open_by_reset());
 		return;
 	}
