@@ -60,7 +60,19 @@ interrupts 3146, mainline hardware 2376, mainline plain 3777):
 | Maths helpers (`bin_bcd`, `a2i*`, `mul248`, the GPS unit conversions), `aisin_seiki_parse_latlon` (IX/IY) | register interfaces for asm and C shims |
 | Boot (`main`, `cu58af_init`, hardware init), bank trampolines, page-aligned tables | fixed addresses, raw CPU |
 
-**Next task: to be decided (user).** Options: GitHub CI and releases
+**Next task (user, 2026-10-01): the open-bug decisions.** Every entry in
+**notes/open-bugs.md** that is not fixed ends with a "Question (user)";
+the user is answering them. For each answer: a test that fails on the
+release (`R58_ROM=firmware/build-release/r58.bin R58_LST=...r58.map`
+runs a standalone test against it), the fix in C (the asm is gone), the
+entry moved to "Firmware behaviour the tests pinned down" below. A fix
+makes the differential tests differ from `build-ref` where their
+scenarios reach the fixed case: keep those scenarios on the unaffected
+side (as `test_aprs_diff.ref_degmin` does for S/W/.50 positions) and cover
+the fixed case with a standalone test against a model, not by loosening
+the comparison.
+
+Then, options: GitHub CI and releases
 for publishing (build, `make verify ref`, the tests; release images and
 the setup map `build/r58.setup` on a tag, nightlies; pin SDCC 4.6.0;
 later maybe a Markdown or richer setup map); the real-board bench test (EPROM
