@@ -65,6 +65,37 @@ class Dtmf(RadioTest):
         self.dtmf(P8N)
 
 
+def maidenhead8(lat, lon):
+    """8-character locator of degrees (south and west negative)."""
+    lon, lat = lon + 180, lat + 90
+    return "".join([chr(65 + int(lon // 20)), chr(65 + int(lat // 10)),
+                    str(int(lon % 20 // 2)), str(int(lat % 10)),
+                    chr(65 + int(lon % 2 * 12)), chr(65 + int(lat % 1 * 24)),
+                    str(int(lon * 12 % 1 * 10)), str(int(lat * 24 % 1 * 10))]).encode()
+
+
+class OwnLocator(RadioTest):
+    """cfg_gps_locator from a GPRMC position (gps_own_locator)."""
+
+    def locator(self, lat, ns, lon, ew):
+        r = self.boot()
+        r.serial_rx(0, nmea("GPRMC,123519,A,%s,%s,%s,%s,000.0,000.0,280926,," % (lat, ns, lon, ew)))
+        r.run(0.5)
+        return r.peek("cfg_gps_locator", 8)
+
+    def test_north_east(self):
+        self.assertEqual(self.locator("6130.12", "N", "02345.67", "E"),
+                         maidenhead8(61 + 30.12 / 60, 23 + 45.67 / 60))
+
+    def test_south(self):
+        """a southern latitude is negative (v3_Z read it as northern: only
+        'W' set the sign bit; fixed 2026-09-30)"""
+        self.assertEqual(self.locator("3352.08", "S", "15112.34", "E"),
+                         maidenhead8(-(33 + 52.08 / 60), 151 + 12.34 / 60))
+        self.assertEqual(self.locator("2254.60", "S", "04312.20", "W"),   # (not on
+                         maidenhead8(-(22 + 54.60 / 60), -(43 + 12.20 / 60)))  # an edge)
+
+
 class Aprs(RadioTest):
     def aprs(self, card, m1_wait=None, gps=None):
         self.card = card

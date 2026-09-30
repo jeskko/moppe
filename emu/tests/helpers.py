@@ -81,6 +81,17 @@ def gps_state(r):
             r.peek("cfg_gps_longitude", 8), r.peek("cfg_gps_locator", 8))
 
 
+def gps_state_no_locator(r):
+    """gps_state without the locator, for the Aisin Seiki path: it writes a
+    garbage centiminute byte (open bug), and the locator made from it
+    differs from the reference since the locator fixes of 2026-09-30."""
+    return gps_state(r)[:-1]
+
+
+# the locator bytes as difftest `ignore` names them
+LOCATOR_NV = ("cfg_gps_locator",) + tuple("cfg_gps_locator+%d" % i for i in range(1, 8))
+
+
 # ---------------------------------------------------------------- packets
 
 def with_crc(data, seed=b""):

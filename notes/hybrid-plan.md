@@ -20,7 +20,7 @@ module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
 differs from the release only by the bug fixes. `make verify` still
 rebuilds the release from `r58.asm`. Sizes: fixed ROM ends at 0x4EBB incl.
 the C code (12.6 KB free), bank 1 7320 bytes free, bank 2 5288 bytes free;
-C statics 216 of the 256-byte `c_bss`. **302 tests** pass.
+C statics 216 of the 256-byte `c_bss`. **309 tests** pass.
 
 The 2026-09-29 code review is applied (details in the commits): one
 shared header `c/r58.h` (163 symbols had been declared in several modules,
@@ -235,7 +235,9 @@ notes/open-bugs.md):
   `send_cw_epilog`, and both wait 200 ms (r58.asm L15996/L16009).
 - SAnE does not reset CFG_DYN records (`reset_menurec` L17684), so the
   squelch level stays 0 after SAnE although its REC default is 127.
-- cSEC entry drops the last typed digit ("150" stores 15, shown as 150 ms).
+- cSEC records (scan rates, squelch open delay) hold 10 ms units and show
+  a fake trailing 0: typing "150" stores 15 = 150 ms, as meant (listed as
+  a dropped digit until 2026-09-30).
 - Lower colon flickered off in ~10 % of frames while transmitting in the
   menu (clear-then-set in each redraw). **Fixed 2026-09-28.**
 - CFG_EXE (type 10) is defined but no record uses it.
@@ -256,10 +258,10 @@ notes/open-bugs.md):
   ~1956 Hz). **Fixed 2026-09-28** (obvious bug): `div248_full` (any 8-bit
   divisor; the same results wherever `div248` was right, checked
   exhaustively for the CW inputs and on 200 000 random ones) for the CW
-  counts only; `test_scan_rptr.test_fast_cw_and_high_pitch`. **Open:** the
-  other `div248` callers (blip Hz, frequency, GPS, locator maths) have not
-  been checked for divisors ≥ 128; the frequency code also uses the carry
-  `div248` leaves, so do not swap it blindly.
+  counts only; `test_scan_rptr.test_fast_cw_and_high_pitch`. The other
+  callers, audited 2026-09-30: `freq2div` divides by 10, 15 or 25 only
+  (exact, carry included), the MPRS maths by 100; `init_LPF` was wrong,
+  see the TX low-pass entry.
 - MPRS distance/bearing (QRB) was wrong for nearly every received position:
   `centiminutes_to_meters` (east-west metres) kept the hundredths of a
   minute in A, adding hundredths × 655 m (a station 13.5 km east showed
@@ -299,10 +301,36 @@ notes/open-bugs.md):
   reference.
 - MBUS logger format (`cfg_mbus_mprs` 4) prints `gps_utc` up to EOS; before
   the first GPS fix there is none and it prints the RAM after it. Kept.
-- MPRS position (`mprs_degmin_pack`): only 'W' sets the sign bit, so a
-  southern latitude is sent as northern. Kept as is (asm and C): the
-  radios are used in Finland only, so the southern case never mattered
-  and was likely never tested (user, 2026-09-28). Low priority.
+- MPRS position (`mprs_degmin_pack`): only 'W' set the sign bit, so a
+  southern latitude was sent as northern, and the own locator was the
+  northern one. And the locator of any packed position
+  (`packed_latlon_to_locator`: the own one and every received station's)
+  counted the south/west sign bit as hundredths above .50 and took
+  exactly .50 as below, so southern, western and x.50' positions came out
+  half a minute (and a last digit) off. **Fixed 2026-09-30** (user
+  decision): 'S' sets the bit, the fractions mask it and .50 is in the
+  upper half; `test_signalling.OwnLocator`, `test_fsk.ReceivedLocator`
+  (against a Maidenhead model; fail on the release). The reference
+  comparisons in `test_aprs_diff`/`test_gps_diff` keep to north/east and
+  avoid .50. Left: exactly on a cell edge a southern/western last
+  character is one low (open-bugs.md).
+- TX audio low-pass (PH:LPFILt, `init_LPF`): the switched-capacitor
+  filter clock divider 2016 / (Hz / 20) used `div248`, wrong for divisors
+  from 128 (settings from 2560 Hz): 10 of the 32 settings in 100 Hz steps
+  loaded a wrong count, the default 3600 Hz loaded 8 instead of 11 (a
+  ~5040 Hz cutoff instead of ~3665) and 5100 Hz loaded 0 (the 8254 takes
+  it as 65536: no TX audio). **Fixed 2026-09-30** (obvious bug):
+  `div248_full`; `test_radio.TxLowPass`.
+- Remote config while a remote reply was displayed (`display_buffer_time`)
+  wrote the value into the reply buffer the menu shows, not the variable
+  (on a DYN or RST record it would have called into that RAM), and the DC
+  reply and the menu's config query took the buffer's address too:
+  `load_menu_ptr` swapped for every use. And the record search compared the
+  slot after the last record (TAB data, a pointer field like 0x43FF), so a
+  packet for that pointer set `menu_ptr = end_menu`. **Fixed 2026-09-30**
+  (obvious bugs): only drawing shows the buffer (`shown_ptr`), the search
+  stops at the last record; `test_fsk.test_config_enter_while_reply_shown`,
+  `test_config_search_stops_at_the_last_record`.
 - CFGSnd sent the last NV byte twice instead of the checksum
   (`all_config_send` computed it in A, `putchar` sends C), so CFGGEt
   refused a plain CFGSnd dump. **Fixed 2026-09-28** (user decision);
@@ -757,7 +785,7 @@ first, port, differential test against stock, size check, commit.
   C-only leaves. As in the asm build, the ENT safety delay, `waitkey`
   and CFGGEt's `getchar` loop busy-wait with bank 1 selected (multiboard
   readers off meanwhile); could go through `bank0_call` if that matters.
-  Kept bit for bit: the cSEC digit drop, SAnE not resetting
+  Kept bit for bit: the cSEC entry (not a bug, see above), SAnE not resetting
   DYN, the search reading the slot at `end_menu`, the remote display
   buffer taking the place of the variable (open-bugs.md).
   Safety net first: `test_menu_diff.py` (34 tests, asm build vs `C=1`):

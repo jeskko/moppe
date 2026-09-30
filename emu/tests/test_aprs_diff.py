@@ -90,6 +90,7 @@ def mprs_packet(rnd, own=None):
         lat[2] |= 0x80                                      # south
     if not own and rnd.random() < 0.3:
         lon[2] |= 0x80                                      # west
+    lat, lon = ref_packed(lat), ref_packed(lon)
     if rnd.random() < 0.1:
         lat[0] |= 0x80                                      # reserved: no position
     return with_crc(bytes([0x40 | rnd.randrange(16)] + p + lat + lon))
@@ -101,8 +102,29 @@ def degmin_digits(rnd, maxdeg, hemis):
                   rnd.randrange(10), rnd.randrange(10), ord(rnd.choice(hemis))])
 
 
+def ref_degmin(d):
+    """An own position the reference computes right: north/east, not at
+    exactly .50 minute (v3_Z's southern, western and .50 locators and own
+    positions were wrong, fixed 2026-09-30; test_signalling.OwnLocator and
+    test_fsk.ReceivedLocator check those against a model)"""
+    d = bytearray(d)
+    d[7] = {ord("S"): ord("N"), ord("W"): ord("E")}.get(d[7], d[7])
+    if d[5:7] == b"\x05\x00":
+        d[6] = 1
+    return bytes(d)
+
+
+def ref_packed(v):
+    """the same for a packed [deg, min, centimin | sign] of a packet"""
+    v[2] &= 0x7F
+    if v[2] == 50:
+        v[2] = 51
+    return v
+
+
 def own_position(rnd):
     lat, lon = degmin_digits(rnd, 88, "NNNS"), degmin_digits(rnd, 179, "EEEW")
+    lat, lon = ref_degmin(lat), ref_degmin(lon)
     return (lat, lon), [("poke", "cfg_gps_latitude", lat), ("poke", "cfg_gps_longitude", lon)]
 
 
@@ -130,8 +152,9 @@ def locator_scenario(seed, n):
     for i in range(n):
         lat = "%02d%02d.%02d" % (rnd.randrange(90), rnd.randrange(60), rnd.randrange(100))
         lon = "%03d%02d.%02d" % (rnd.randrange(180), rnd.randrange(60), rnd.randrange(100))
-        body = "GPRMC,120000,A,%s,%s,%s,%s,0.0,0.0,280926,," % (
-            lat, rnd.choice("NS"), lon, rnd.choice("EW"))
+        rnd.choice("NS"), rnd.choice("EW")      # drawn as before: the seeded sequence stays
+        lat, lon = (x[:-2] + "51" if x.endswith("50") else x for x in (lat, lon))
+        body = "GPRMC,120000,A,%s,%s,%s,%s,0.0,0.0,280926,," % (lat, "N", lon, "E")   # see ref_degmin
         steps += [("serial_rx", 0, nmea(body)), ("run", 0.25),
                   ("probe", "locator %d" % i, lambda r: r.peek("cfg_gps_locator", 8))]
     return steps + [("check", "end")]

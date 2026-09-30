@@ -19,7 +19,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from difftest import builds, skip_unless_built, DiffCase  # noqa: E402
-from helpers import gps_state, nmea as nmea_raw, aisin, enter, at as _at  # noqa: E402
+from helpers import gps_state, gps_state_no_locator, LOCATOR_NV, nmea as nmea_raw, aisin, enter, at as _at  # noqa: E402
 from r58emu import P8N, CU58AF  # noqa: E402
 
 REF, CAND = builds("MAIN")
@@ -39,7 +39,7 @@ def state(r):
 def at(label, gps=False):
     out = _at(label, state)
     if gps:
-        out.append(("probe", label + " gps", gps_state))
+        out.append(("probe", label + " gps", gps if callable(gps) else gps_state))
     return out
 
 
@@ -47,8 +47,8 @@ def rmc(t="123519", ck=None):
     return nmea_raw("GPRMC,%s,A,6130.12,N,02345.67,E,012.3,084.4,280926,," % t, ck)
 
 
-def gps(data, label, wait=0.3):
-    return [("serial_rx", 0, data), ("run", wait)] + at(label, gps=True)
+def gps(data, label, wait=0.3, probe=gps_state):
+    return [("serial_rx", 0, data), ("run", wait)] + at(label, gps=probe)
 
 
 def script(which, keys):
@@ -95,15 +95,16 @@ class MainloopDiff(DiffCase):
         self.diff(s)
 
     def test_gps_gatherer_aisin_seiki(self):
+        p = gps_state_no_locator
         s = list(BOOT) + [("poke", "cfg_gps_config", 3), ("run", 0.2)]
-        s += gps(aisin(), "one block")
+        s += gps(aisin(), "one block", probe=p)
         blk = aisin(speed=50)
-        s += gps(blk[:17], "block part 1") + gps(blk[17:], "block part 2")
-        s += gps(b"\x0d\x0d\x0d" + aisin(heading=0x200), "leading CRs")
+        s += gps(blk[:17], "block part 1", probe=p) + gps(blk[17:], "block part 2", probe=p)
+        s += gps(b"\x0d\x0d\x0d" + aisin(heading=0x200), "leading CRs", probe=p)
         for i in range(8):
-            s += gps(aisin(speed=i * 10) * 2, "wrap %d" % i, wait=0.2)
-        s += [("poke", "cfg_gps_config", 0), ("run", 0.2)] + gps(rmc("191919"), "nmea again")
-        self.diff(s)
+            s += gps(aisin(speed=i * 10) * 2, "wrap %d" % i, wait=0.2, probe=p)
+        s += [("poke", "cfg_gps_config", 0), ("run", 0.2)] + gps(rmc("191919"), "nmea again", probe=p)
+        self.diff(s, ignore=LOCATOR_NV)
 
     # ---- hook scripts
 

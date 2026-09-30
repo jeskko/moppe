@@ -4555,7 +4555,8 @@ init_LPF:
 	ld c, l                  ; /= (Hz/20)
 	xor a
 	ld hl, #2016
-	call div248
+	call div248_full         ; Hz/20 reaches 128 from 2560 Hz (v3_Z: div248,
+				 ; so 3600 Hz loaded 8, a 5 kHz cutoff, and 5100 Hz 0)
 
 	ld a, #TMR_0 | TMR_BOTH | TMR_SQWAVE
 	out (TMR + TMRCTRL), a

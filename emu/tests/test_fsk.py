@@ -16,7 +16,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_radio import RadioTest  # noqa: E402
+from test_radio import RadioTest, ROM  # noqa: E402
 from helpers import nmea, with_crc, mprs_packet, REMOTE_ID, PASSWD  # noqa: E402
 from r58emu import P8E, P8N  # noqa: E402
 
@@ -141,6 +141,33 @@ class FskRx(RadioTest):
         self.assertEqual(r.peek("cfg_remote_dpy_secs"), 7)
         self.assertEqual(self.modem_tx(), [])
 
+    def test_config_enter_while_reply_shown(self):
+        """An Enter-config packet while this radio shows a remote reply
+        (display_buffer_time) sets the variable, not the reply buffer the
+        menu shows meanwhile (v3_Z wrote the buffer; fixed 2026-09-30)."""
+        r = self.config_radio()
+        r.poke("remote_display_buffer", bytes(range(16)))
+        r.poke("display_buffer_time", 5)
+        a = r.addr("cfg_remote_dpy_secs")
+        self.rx(with_crc(self.enter_packet(a, [1, 2]), PASSWD), 1.0)
+        self.assertEqual(r.peek("cfg_remote_dpy_secs"), 12)
+        self.assertEqual(r.peek("remote_display_buffer", 16), bytes(range(16)))
+        pkts = self.modem_tx()
+        self.assertEqual(pkts[0][:2], bytes([0xDC, 12]))
+
+    def test_config_search_stops_at_the_last_record(self):
+        """The slot after the last menu record (TAB data) is not a record:
+        an Enter-config packet for the pointer field found there changes
+        nothing (v3_Z moved menu_ptr to end_menu; fixed 2026-09-30)."""
+        r = self.config_radio()
+        rom = open(ROM, "rb").read()
+        end = r.sym["end_menu"]
+        at = end if end < 0x8000 else end - 0x8000 + 0xC000    # bank 1 in the image
+        a = rom[at + 8] | rom[at + 9] << 8                         # REC: tag[2] title[6] ptr
+        before = r.peek16("menu_ptr")
+        self.rx(with_crc(self.enter_packet(a, [1]), PASSWD), 1.0)
+        self.assertEqual(r.peek16("menu_ptr"), before)
+
     def test_relay_to_mbus(self):
         """5x packet: its 12 nibbles, tag included, go out on MBUS."""
         r = self.boot()
@@ -232,6 +259,32 @@ def mprs_position(call, lat, lon):
     """an MPRS packet of call at lat/lon ((deg, min, hundredths), N/E)"""
     from test_aprs_diff import pack_callsign
     return with_crc(bytes([0x40] + pack_callsign(call) + list(lat) + list(lon)))
+
+
+class ReceivedLocator(RadioTest):
+    """The locator shown for a received MPRS position. v3_Z counted the
+    south/west sign bit as hundredths above .50 and took exactly .50 as
+    below, so southern, western and .50 positions came out half a minute
+    off (fixed 2026-09-30)."""
+
+    def locator(self, lat, lon):
+        r = self.boot()
+        r.poke("cfg_remote_dpy_secs", 5)
+        r.modem_rx(mprs_position("OH3XYZ", lat, lon))
+        r.run(0.8)
+        return r.peek("locator_display_buffer", 6)   # 6 shown
+
+    def test_hemispheres(self):
+        from test_signalling import maidenhead8
+        for (lat, s), (lon, w) in ((((61, 30, 12), 0), ((23, 45, 67), 0)),
+                                   (((33, 52, 8), 1), ((151, 12, 34), 0)),
+                                   (((22, 54, 60), 1), ((43, 12, 20), 1)),
+                                   (((51, 28, 50), 0), ((0, 7, 50), 1))):
+            with self.subTest(lat=lat, s=s, lon=lon, w=w):
+                deg = lambda d: d[0] + (d[1] + d[2] / 100) / 60
+                got = self.locator(lat[:2] + (lat[2] | 0x80 * s,), lon[:2] + (lon[2] | 0x80 * w,))
+                self.assertEqual(got, maidenhead8(-deg(lat) if s else deg(lat),
+                                                  -deg(lon) if w else deg(lon))[:6])
 
 
 class Qrb(RadioTest):
@@ -344,6 +397,25 @@ class FskTx(RadioTest):
         r.run(1.5)
         self.assertEqual(self.modem_tx(), [mprs_packet()])
 
+
+    def test_mprs_report_south_west(self):
+        """The report from a south-west fix has both sign bits (bit 7 of
+        the hundredths): v3_Z set only the western one (fixed 2026-09-30)."""
+        r = self.boot()
+        r.poke("cfg_report_type", 0)
+        r.poke("cfg_keyup_mprs", 1)
+        r.poke("cfg_mprs_callsign", b"OH3XYZ\xff\xff")
+        r.serial_rx(0, nmea("GPRMC,123519,A,3352.08,S,15112.34,W,000.0,000.0,280926,,"))
+        r.run(0.5)
+        self.enter("433500")
+        r.ptt(True)
+        r.run(0.5)
+        r.take_events()
+        r.ptt(False)
+        r.run(1.5)
+        p = self.modem_tx()[0]
+        self.assertEqual((p[7], p[8] & 0x3F, p[9]), (33, 52, 0x80 | 8))       # 33 52.08 S
+        self.assertEqual((p[10], p[11] & 0x3F, p[12]), (151, 12, 0x80 | 34))  # 151 12.34 W
 
 if __name__ == "__main__":
     unittest.main()

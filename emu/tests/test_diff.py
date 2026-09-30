@@ -232,7 +232,8 @@ def _fsk_scenarios():
         ("modem_rx", with_crc(b"\xDD" + b"HELLO 42" + b"\xFF" * 4)), ("run", 0.3),
         ("check", "display data"),
         ("modem_rx", with_crc(bytes([0xAC]) + REMOTE_ID + ptr + b"\xFF")), ("run", 1.0),
-        ("check", "config query answered"),
+        ("check", "config query answered"), ("run", 5.0),   # the remote display over (v3_Z
+        # wrote a config entered meanwhile into its buffer; fixed 2026-09-30)
         ("modem_rx", with_crc(bytes([0xEC]) + REMOTE_ID + ptr + bytes([1, 2]) + b"\xFF" * 6, PASSWD)),
         ("run", 1.0),
         ("check", "config entered"),
@@ -259,8 +260,8 @@ def _fsk_edge_scenarios():
     """The FSK layer's less travelled paths (c/fsk.c port): special config
     pointers, replies while transmitting, packets across the end of the
     fsk_history ring, call packets of every digit count and the 0* resend,
-    TX refused, 8/9-digit config entry, MPRS on demand, W/S positions and
-    symbol bits."""
+    TX refused, 8/9-digit config entry, MPRS on demand and symbol bits
+    (S/W positions: test_fsk, the release packs them wrong)."""
     from r58emu import load_symbols
     from helpers import with_crc, REMOTE_ID, PASSWD, nmea
     sym = load_symbols(STOCK_LST)
@@ -322,11 +323,11 @@ def _fsk_edge_scenarios():
         ("poke", "cfg_mprs_callsign", b"OH3XYZ\xff\xff"),
         ("poke", "cfg_mprs_ssid", 11),
         ("poke", "cfg_mprs_symbol", 0x0F),
-        ("serial_rx", 0, nmea("GPRMC,123519,A,3352.08,S,15112.34,W,000.0,000.0,280926,,")),
+        ("serial_rx", 0, nmea("GPRMC,123519,A,3352.08,N,15112.34,E,000.0,000.0,280926,,")),   # S/W: test_fsk
         ("run", 0.5),
         ("poke", "cfg_keyup_mprs", 1),
         ("ptt", True), ("run", 0.5), ("ptt", False), ("run", 1.5),
-        ("check", "mprs all, S/W"),
+        ("check", "mprs all"),
         ("poke", "cfg_keyup_mprs", 2),
         ("poke", "cfg_mprs_seconds", bytes([100, 0])),
         ("poke", "mprs_report_timer", bytes([10, 0])),

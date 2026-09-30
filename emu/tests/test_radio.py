@@ -189,6 +189,22 @@ class Frequency(RadioTest):
         self.assertRx(325, 3)
 
 
+class TxLowPass(RadioTest):
+    """PH:LPFILt (cfg_lpf_hz): init_LPF loads 8254 counter 0 with
+    2016 / (Hz / 20), the switched-capacitor filter clock divider. v3_Z
+    divided with div248, wrong for divisors of 128 and more: from 2900 Hz
+    on some settings loaded 8 (3600 Hz, the default, gave a ~5 kHz cutoff)
+    and 5100 Hz loaded 0 (fixed 2026-09-30)."""
+
+    def test_filter_divider(self):
+        a = self.boot().addr("cfg_lpf_hz")
+        for hz in list(range(2000, 5101, 100)) + [2560, 2580, 5080]:
+            with self.subTest(hz=hz):
+                nv = bytearray(make_sane_nv(self.card, self.cu, self.synth_card))
+                nv[a - 0xC000:a - 0xC000 + 2] = hz.to_bytes(2, "little")
+                r = self.boot(nv=bytes(nv))
+                self.assertEqual(r.pit(0)["count"], 2016 // (hz // 20))
+
 class Transmit(RadioTest):
     def test_simplex_tx(self):
         r = self.boot()

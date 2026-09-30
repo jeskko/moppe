@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from difftest import builds, DiffCase  # noqa: E402
-from helpers import gps_state, nmea as nmea_raw, aisin  # noqa: E402
+from helpers import gps_state, gps_state_no_locator, LOCATOR_NV, nmea as nmea_raw, aisin  # noqa: E402
 from r58emu import P8N  # noqa: E402
 
 REF, CAND = builds("GPS")
@@ -28,9 +28,10 @@ def reset():
             ("poke", "cfg_gps_latitude", b"\x07" * 8), ("poke", "cfg_gps_longitude", b"\x06" * 8)]
 
 
-def sentence(label, data):
-    return reset() + [("serial_rx", 0, data), ("run", 0.25), ("probe", label, gps_state),
+def sentence(label, data, probe=gps_state):
+    return reset() + [("serial_rx", 0, data), ("run", 0.25), ("probe", label, probe),
                       ("check", label)]
+
 
 
 RMC = "GPRMC,123519,A,6130.12,N,02345.67,E,012.5,054.7,280926,020.3,E"
@@ -49,7 +50,7 @@ GPRMC_CASES = [
     ("status V", nmea_raw("GPRMC,123519,V,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("short utc", nmea_raw("GPRMC,1235,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("letter in utc", nmea_raw("GPRMC,12351X,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
-    ("3 decimals, S/W", nmea_raw("GPRMC,000001,A,3352.083,S,15112.345,W,000.0,359.9,010100,,")),
+    ("3 decimals, N/E", nmea_raw("GPRMC,000001,A,3352.083,N,15112.345,E,000.0,359.9,010100,,")),   # S/W: test_signalling.OwnLocator
     ("1 decimal", nmea_raw("GPRMC,000001,A,6130.1,N,02345.6,E,0.0,0.0,010100,,")),
     ("no decimals", nmea_raw("GPRMC,000001,A,6130.,N,02345.,E,5,7,010100,,")),
     ("long degrees", nmea_raw("GPRMC,000001,A,0006130.12,N,1002345.67,E,1,2,010100,,")),
@@ -88,10 +89,10 @@ AISIN_CASES = [
 ]
 
 
-def scenario(cases, gps_config=0):
+def scenario(cases, gps_config=0, probe=gps_state):
     steps = [("boot", 2.5), ("poke", "cfg_gps_config", gps_config), ("run", 0.2)]
     for label, data in cases:
-        steps += sentence(label, data)
+        steps += sentence(label, data, probe)
     return steps
 
 
@@ -106,7 +107,8 @@ class GpsDiff(DiffCase):
         self.diff(scenario(GPRMC_CASES[:8]), card=P8N)
 
     def test_aisin_seiki(self):
-        self.diff(scenario(AISIN_CASES, gps_config=3))
+        self.diff(scenario(AISIN_CASES, gps_config=3, probe=gps_state_no_locator),
+                  ignore=LOCATOR_NV)
 
     def test_updates_in_menu_redraw(self):
         self.diff([("boot", 2.5), ("press", "E"), ("run", 0.3)] +

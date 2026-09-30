@@ -14,9 +14,7 @@
  * table is indexed by the own latitude degrees; the assembler read past its
  * 90 entries for invalid latitudes (90 and up), C uses the 89 degree entry.
  *
- * Kept v3_Z behaviour: only 'W' makes the own position negative in
- * gps_own_locator (southern latitudes read as northern; the radios are
- * used in Finland); the logger output prints gps_utc up to EOS.
+ * Kept v3_Z behaviour: the logger output prints gps_utc up to EOS.
  *
  * The assembler routines called here do not preserve IX: no stack frame
  * in a function that calls them, state is static.  mprs_degmin_pack is a
@@ -176,7 +174,8 @@ static void packet_callsign_unpack(void)
 }
 
 /* deg[3] min[2] decimal_min[2] unpacked BCD and the hemisphere at s into
- * 3 bytes at d (only 'W' is negative); shared with c/fsk.c and
+ * 3 bytes at d, bit 7 of the last for 'S' or 'W' (v3_Z only 'W', so
+ * southern latitudes went out as northern); shared with c/fsk.c and
  * gps_own_locator (C-only leaf, calls no asm: SDCC gives it a small frame
  * to spill s/d, but that is harmless since it never calls into asm) */
 void mprs_degmin_pack(const uint8_t *s, uint8_t *d)
@@ -184,7 +183,7 @@ void mprs_degmin_pack(const uint8_t *s, uint8_t *d)
 	d[0] = (s[0] ? 100 : 0) + s[1] * 10 + s[2];
 	d[1] = s[3] * 10 + s[4];
 	d[2] = s[5] * 10 + s[6];
-	if (s[7] == 'W')
+	if (s[7] == 'S' || s[7] == 'W')
 		d[2] |= 0x80;
 }
 
@@ -205,13 +204,17 @@ static void packed_latlon_to_locator(void)
 	c = 'J' - 1 + count_down(10);
 	d[1] = c;
 	d[3] = a + 10 + '0';
-	/* subsquare: half minutes (one more above .50; the sign bit counts
-	 * as above) */
-	a = (s[1] << 1 | (50 < s[2])) & 0x7F;
+	/* subsquare: half minutes (one more from .50 on).  The fractions
+	 * leave out the sign bit, and .50 is in the upper half as in the
+	 * last digit: v3_Z counted the sign bit as above .50 and took .50
+	 * as below, so southern and western locators, and any at exactly
+	 * .50, came out half a minute off (fixed 2026-09-30) */
+	b = s[2] & 0x7F;
+	a = (s[1] << 1 | (50 <= b)) & 0x7F;
 	c = 'A' - 1 + count_down(5);
 	d[5] = c;
 	c = (a + 5) << 1;
-	a = s[2];
+	a = b;
 	if (a >= 50)
 		a -= 50;
 	if (a >= 25)
@@ -231,7 +234,7 @@ static void packed_latlon_to_locator(void)
 		a += 60;
 	c = 'A' - 1 + count_down(5);
 	d[4] = c;
-	d[6] = ((uint8_t)((a + 5) << 1) | (50 < s[5])) + '0';
+	d[6] = ((uint8_t)((a + 5) << 1) | (50 <= (s[5] & 0x7F))) + '0';
 	if (s[5] & 0x80)			/* west */
 		mirror(d);
 }
@@ -239,7 +242,7 @@ static void packed_latlon_to_locator(void)
 /* the own locator from cfg_gps_latitude / longitude into cfg_gps_locator */
 void gps_own_locator(void)
 {
-	mprs_degmin_pack(cfg_gps_latitude, gps_latlon_tmp);	/* (not 'S', v3_Z) */
+	mprs_degmin_pack(cfg_gps_latitude, gps_latlon_tmp);
 	mprs_degmin_pack(cfg_gps_longitude, gps_latlon_tmp + 3);
 	s = gps_latlon_tmp;
 	d = cfg_gps_locator;

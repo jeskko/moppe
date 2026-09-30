@@ -112,14 +112,12 @@ static void put24(uint8_t *a, uint32_t x)
 	a[2] = x >> 16;
 }
 
-/* ---- the value a record shows and edits (load_menu_ptr) */
+/* ---- the value a record edits (load_menu_ptr) and shows */
 
 static uint8_t *value_ptr(const struct rec *x)
 {
 	uint8_t *a;
 
-	if (display_buffer_time)
-		return remote_display_buffer;	/* a remote config reply */
 	a = x->ptr;
 	/* on a memory, the CTCSS records edit the memory's copy (CtCSSt is
 	 * a TAB record, CtCSSr a BYTE; v3_Z only swapped BYTE records) */
@@ -135,6 +133,17 @@ static uint8_t *value_ptr(const struct rec *x)
 uint8_t *menu_value_ptr(void)
 {
 	return value_ptr(menu_ptr);
+}
+
+/* what the record shows: a remote config reply while one is displayed.
+ * Only drawing uses it: v3_Z's load_menu_ptr swapped for everything, so a
+ * remote Enter-config while a reply showed wrote the reply buffer (and
+ * would have called into it on a DYN or RST record) */
+static uint8_t *shown_ptr(const struct rec *x)
+{
+	if (display_buffer_time)
+		return remote_display_buffer;
+	return value_ptr(x);
 }
 
 void init_menu(void)
@@ -185,18 +194,18 @@ void draw_menu_lower_row(void)
 	switch (r->type) {
 	case CFG_BYTE:
 		dpy_str("    ");			/* 3 zero-blanked digits */
-		dpy_val255(*value_ptr(r));
+		dpy_val255(*shown_ptr(r));
 		break;
 	case CFG_WORD:
 		dpy_str("  ");				/* 5 zero-blanked digits */
-		p = value_ptr(r);
+		p = shown_ptr(r);
 		dpy_word(p[0] | p[1] << 8);
 		break;
 	case CFG_FREQ:
-		dpy_freq(value_ptr(r));
+		dpy_freq(shown_ptr(r));
 		break;
 	case CFG_TAB:
-		v = *value_ptr(r);
+		v = *shown_ptr(r);
 		s = r->arg;
 		if (v < s[0])
 			dpy_str_rj(s + 1 + (uint16_t)v * SIZE_STR);	/* TAB entries are STR()-sized (r58.s) */
@@ -210,10 +219,10 @@ void draw_menu_lower_row(void)
 		dpy_str("  666 ?");
 		break;
 	case CFG_STR:
-		dpy_str_rj_scores(value_ptr(r));
+		dpy_str_rj_scores(shown_ptr(r));
 		break;
 	case CFG_DPX:
-		p = value_ptr(r);
+		p = shown_ptr(r);
 		if (p[0] | p[1] | p[2])
 			dpy_freq_signed(p);
 		else
@@ -221,7 +230,7 @@ void draw_menu_lower_row(void)
 		break;
 	case CFG_cSEC:
 		dpy_str("   ");			/* NNN0 ms */
-		v = *value_ptr(r);
+		v = *shown_ptr(r);
 		if (v) {
 			dpy_val255(v);
 			dpy_ch('0');
@@ -442,8 +451,7 @@ static void tab_value_changed(void)
 		update_gpio12_foo();
 }
 
-/* a DYN record's change routine; the pointer is value_ptr's, i.e. the
- * remote display buffer while a remote config reply is shown */
+/* a DYN record's change routine (its value_ptr) */
 static void dyn_step(uint8_t d)
 {
 	if (p)				/* 0: not editable */
@@ -617,9 +625,9 @@ void remote_config_execute(uint16_t ptr, const uint8_t *data)
 		else
 			return;
 	} else {
-		/* the search looks at the record at end_menu too (TAB data) */
+		/* (v3_Z compared the slot at end_menu too: TAB data) */
 		for (r = start_menu; (uint16_t)r->ptr != w; r++)
-			if (r == end_menu)
+			if (r + 1 == end_menu)
 				return;		/* no such record */
 	}
 	menu_ptr = r;
