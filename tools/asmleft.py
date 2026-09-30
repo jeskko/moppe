@@ -23,17 +23,28 @@ import re
 import subprocess
 import sys
 
+from fwlink import read_map
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FW = os.path.join(ROOT, "firmware")
-CPP = ["cpp", "-undef", "-nostdinc", "-traditional", "-DLANGUAGE_ASSEMBLY", "-Dz80",
-       "-DP8x", "-I" + FW, "-I" + os.path.join(FW, "build")]
 LABEL = re.compile(r"^([A-Za-z_]\w*):")
 HW = re.compile(r"\bout\s*\(|\bin\s+a\s*,\s*\(|\bouti\b|\bdi\b|\bhalt\b|\bexx\b|\bex\s+af")
 INSN = re.compile(r"\b(ld|call|jp|jr|ret|push|pop|inc|dec|add|sub|and|or|xor|cp)\b")
 
 
+def cpp_command():
+    """The cpp invocation `make -C firmware` uses to build r58.s (its CPP
+    and DEFS variables), read from the Makefile so both places agree.
+    Plain cpp output is used, not build/r58.pp.s: asmpp.py rewrites every
+    label in the (ABS) fixed-ROM area from 'name:' to 'name = ...', which
+    would break this script's label parsing below."""
+    flags = subprocess.run(["make", "-s", "-C", FW, "print-cpp-flags"],
+                           capture_output=True, text=True, check=True).stdout.split()
+    return flags + ["-I" + FW, "-I" + os.path.join(FW, "build"), os.path.join(FW, "r58.s")]
+
+
 def main():
-    src = subprocess.run(CPP + [os.path.join(FW, "r58.s")], capture_output=True, text=True,
+    src = subprocess.run(cpp_command(), capture_output=True, text=True,
                          encoding="latin-1").stdout.split("\n")
     reach = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "isrreach.py"),
                             os.path.join(FW, "r58.s")], capture_output=True, text=True).stdout
@@ -46,11 +57,7 @@ def main():
             bodies[cur] = []
         elif cur:
             bodies[cur].append(l.split(";")[0])
-    syms = {}
-    for l in open(os.path.join(FW, "build", "r58.map")):
-        m = re.match(r"^\s+([0-9A-F]{8})\s+(\S+)", l)
-        if m:
-            syms[m.group(2)] = int(m.group(1), 16)
+    syms = read_map(os.path.join(FW, "build", "r58.map"))
     end = syms["s__CODE"]
     fixed = sorted((a, n) for n, a in syms.items() if n in bodies and 0x100 <= a < end)
     rows, tot = [], {}

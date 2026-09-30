@@ -43,6 +43,12 @@ $(BUILD)/r58.pp.s: $(SRC) asm.h $(TOOLS)/asmpp.py $(GLUE)
 	@mkdir -p $(BUILD)
 	$(CPP) $(DEFS) -I. -I$(BUILD) $(SRC) | python3 $(TOOLS)/asmpp.py --labels $(BUILD)/r58.labels --linemap $(BUILD)/r58.linemap > $@
 
+# tools/asmleft.py needs the same cpp invocation, outside a C-module build
+# (asmpp.py's ABS-area label rewrite breaks its parsing); this prints the
+# flags so both places define them once
+print-cpp-flags:
+	@echo $(CPP) $(DEFS)
+
 $(BUILD)/r58.rel: $(BUILD)/r58.pp.s
 	$(SDAS) -plosgffwa -o $@ $<
 
@@ -93,4 +99,4 @@ build-ref/r58.bin:
 clean:
 	rm -rf build build-c build-as80 build-release build-banktest build-ref
 
-.PHONY: all verify release as80 banktest ref clean
+.PHONY: all verify release as80 banktest ref clean print-cpp-flags
