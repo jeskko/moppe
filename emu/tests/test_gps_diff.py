@@ -13,32 +13,11 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from r58emu import P8E, P8N, CU53AN  # noqa: E402
+from difftest import builds, DiffCase  # noqa: E402
+from helpers import gps_state, nmea as nmea_raw, aisin  # noqa: E402
+from r58emu import P8N  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_GPS_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_GPS_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_GPS_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_GPS_CAND_LST", os.path.join(FW, "build", "r58.map")))
-
-
-def gps_state(r):
-    return (r.peek("gps_utc", 8), r.peek("gps_date", 8), r.peek16("gps_knots"),
-            r.peek("gps_speed"), r.peek16("gps_course"), r.peek("gps_status", 8),
-            r.peek("gps_valid_seconds"), r.peek("cfg_gps_latitude", 8),
-            r.peek("cfg_gps_longitude", 8), r.peek("cfg_gps_locator", 8))
-
-
-def nmea_raw(body, ck=None):
-    if ck is None:
-        c = 0
-        for ch in body:
-            c ^= ord(ch)
-        ck = "%02X" % c
-    return ("$%s*%s\r\n" % (body, ck)).encode("latin-1")
+REF, CAND = builds("GPS")
 
 
 def reset():
@@ -95,21 +74,6 @@ GPRMC_CASES = [
 ]
 
 
-def aisin(fix=3, lat=(61, 30, 7, 128), lon=(23, 45, 40, 0), heading=0x100, speed=100,
-          datetime=b"\x26\x09\x28\x12\x34\x56", sats=b"\x00\x00\x00\x00\x12\x34\xAB\xCD", ck=None):
-    p = bytearray(40)
-    p[0] = fix
-    for at, (d, m, s, f) in ((1, lat), (5, lon)):
-        p[at:at + 4] = (((d * 3600 + m * 60 + s) * 256) + f).to_bytes(4, "big")
-    p[13:15] = heading.to_bytes(2, "big")
-    p[16:18] = speed.to_bytes(2, "big")
-    p[22:28] = datetime
-    p[31:39] = sats
-    if ck is None:
-        ck = (-(0xCA + 0xCA + sum(p))) & 0xFF
-    return bytes([0xCA, 0xCA]) + bytes(p) + bytes([ck, 0x0D])
-
-
 AISIN_CASES = [
     ("2D fix", aisin()),
     ("3D fix, changed flag", aisin(fix=0x14)),
@@ -131,10 +95,9 @@ def scenario(cases, gps_config=0):
     return steps
 
 
-class GpsDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E):
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=CU53AN, nv=make_sane_nv(card, CU53AN))
-        self.assertEqual(diffs, [], "\n".join(diffs))
+class GpsDiff(DiffCase):
+    REF = REF
+    CAND = CAND
 
     def test_gprmc(self):
         self.diff(scenario(GPRMC_CASES))

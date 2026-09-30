@@ -11,6 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_radio import RadioTest, make_sane_nv, ROM, LST  # noqa: E402
 from r58emu import Radio, P8E, P8N  # noqa: E402
+from helpers import nmea  # noqa: E402
 import afsk  # noqa: E402
 
 DTMF_ROWS = [697, 770, 852, 941]
@@ -26,13 +27,6 @@ def goertzel(x, rate, f):
     for v in x:
         s1, s2 = v + c * s1 - s2, s1
     return math.sqrt(max(0.0, s1 * s1 + s2 * s2 - c * s1 * s2)) / len(x)
-
-
-def nmea(body):
-    ck = 0
-    for ch in body:
-        ck ^= ord(ch)
-    return ("$%s*%02X\r\n" % (body, ck)).encode()
 
 
 class Dtmf(RadioTest):

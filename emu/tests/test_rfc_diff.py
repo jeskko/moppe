@@ -17,23 +17,12 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from test_menu_diff import rec, pos  # noqa: E402
-from r58emu import P8E, P8N, CU53AN  # noqa: E402
+from difftest import builds, skip_unless_built, DiffCase  # noqa: E402
+from helpers import rec, pos, at as _at  # noqa: E402
+from r58emu import P8N  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_RFC_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_RFC_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_RFC_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_RFC_CAND_LST", os.path.join(FW, "build", "r58.map")))
-
-
-def setUpModule():
-    for rom, lst in (REF, CAND):
-        if not (os.path.exists(rom) and os.path.exists(lst)):
-            raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
+REF, CAND = builds("RFC")
+setUpModule = skip_unless_built(REF, CAND)
 
 
 def table(points, last=0):
@@ -50,7 +39,7 @@ def state(r):
 
 
 def at(label):
-    return [("check", label), ("probe", label, state)]
+    return _at(label, state)
 
 
 def fill(t, label):
@@ -75,11 +64,11 @@ TABLES = [
 ]
 
 
-class RfcDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, **kw):
-        nv = make_sane_nv(card, CU53AN, None)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=CU53AN, nv=nv, **kw)
-        self.assertEqual(diffs, [], "\n".join(d[:3000] for d in diffs[:10]))
+class RfcDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    msg_max_items = 10
+    msg_max_chars = 3000
 
     def test_fill(self):
         s = [("boot", 2.5)]

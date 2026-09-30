@@ -28,16 +28,12 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from r58emu import P8E, P8N, CU53AN, CU58AF, AD_SQL, load_symbols  # noqa: E402
+from difftest import builds, skip_unless_built, DiffCase  # noqa: E402
+from helpers import f24, at as _at  # noqa: E402
+from r58emu import P8N, CU58AF, load_symbols  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_KEYS_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_KEYS_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_KEYS_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_KEYS_CAND_LST", os.path.join(FW, "build", "r58.map")))
+REF, CAND = builds("KEYS")
+setUpModule = skip_unless_built(REF, CAND)
 
 MEM_SIZE = 12
 _SYM = {}
@@ -47,16 +43,6 @@ def sym(name):
     if not _SYM:
         _SYM.update(load_symbols(REF[1]))
     return _SYM[name]
-
-
-def setUpModule():
-    for rom, lst in (REF, CAND):
-        if not (os.path.exists(rom) and os.path.exists(lst)):
-            raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
-
-
-def f24(v):
-    return (v & 0xFFFFFF).to_bytes(3, "little")
 
 
 def memory(n, rx, tx=None, flags=0x05, ctcss_t=0, ctcss_r=0):
@@ -91,7 +77,7 @@ def state(r):
 
 
 def at(label):
-    return [("check", label), ("probe", label, state)]
+    return _at(label, state)
 
 
 def key(k, hold=0.15, label=None, gap=0.3):
@@ -129,11 +115,11 @@ def script(ks, label):
 BOOT = [("boot", 2.5)]		# copy before +=
 
 
-class KeysDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None, **kw):
-        nv = make_sane_nv(card, cu, synth_card)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=cu, nv=nv, **kw)
-        self.assertEqual(diffs, [], "\n".join(d[:3000] for d in diffs[:10]))
+class KeysDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    msg_max_items = 10
+    msg_max_chars = 3000
 
     # ---- digit entry, backspace
 
@@ -157,8 +143,7 @@ class KeysDiff(unittest.TestCase):
         self.diff(s)
 
     def test_vip_walk(self):
-        s = list(BOOT)
-        s += memory(3, 433300) + memory(17, 433425, 431825) + memory(88, 145500)
+        s = BOOT + memory(3, 433300) + memory(17, 433425, 431825) + memory(88, 145500)
         for d in ("433500", "3", "433600", "17", "433500", "88", "145525", "3", "433700",
                   "433725", "367964", "51000", "433775", "433800"):
             s += enter(d)
@@ -194,8 +179,7 @@ class KeysDiff(unittest.TestCase):
         self.diff(s)
 
     def test_memory_up_down(self):
-        s = list(BOOT)
-        s += memory(0, 433100) + memory(4, 433200, flags=0x03) + memory(7, 433300, flags=0x01)
+        s = BOOT + memory(0, 433100) + memory(4, 433200, flags=0x03) + memory(7, 433300, flags=0x01)
         s += memory(8, 433325, 431725, flags=0x05, ctcss_t=5, ctcss_r=9)
         s += memory(128, 433400) + memory(129, 433425, flags=0x00) + memory(64, 145500, flags=0x07)
         s += enter("7") + enter("433500")

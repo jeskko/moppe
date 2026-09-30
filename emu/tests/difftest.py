@@ -87,13 +87,16 @@ checkpoint (or scenario start).
 import os
 import re
 import sys
+import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+FW = os.path.join(ROOT, "firmware")
 sys.path.insert(0, os.path.join(ROOT, "emu", "python"))
 
-from r58emu import Radio, CU53AN  # noqa: E402
+from r58emu import Radio, P8E, CU53AN  # noqa: E402
 import r58emu  # noqa: E402
+from test_radio import make_sane_nv  # noqa: E402
 
 # The candidate build may take a slightly different number of cycles to
 # reach the same observable state (different code size/paths for the same
@@ -106,6 +109,33 @@ NV_BASE = 0xC000
 NV_SIZE = 4096
 
 _nv_symtab_cache = {}
+
+
+# ------------------------------------------------------------------ builds
+
+def builds(prefix):
+    """(REF, CAND) build (rom, lst) pairs for a differential test module,
+    each overridable through R58_<prefix>_REF_ROM/_REF_LST and
+    R58_<prefix>_CAND_ROM/_CAND_LST (default firmware/build-ref/ and
+    firmware/build/); tools/mutate.py's ENV_PREFIXES relies on the
+    R58_<prefix>_CAND_* names, so `prefix` must match a module's own
+    docstring/comment and mutate.py entry."""
+    ref = (os.environ.get("R58_%s_REF_ROM" % prefix, os.path.join(FW, "build-ref", "r58.bin")),
+           os.environ.get("R58_%s_REF_LST" % prefix, os.path.join(FW, "build-ref", "r58.map")))
+    cand = (os.environ.get("R58_%s_CAND_ROM" % prefix, os.path.join(FW, "build", "r58.bin")),
+            os.environ.get("R58_%s_CAND_LST" % prefix, os.path.join(FW, "build", "r58.map")))
+    return ref, cand
+
+
+def skip_unless_built(*builds):
+    """A setUpModule that skips the module's tests if any of the given
+    (rom, lst) build pairs is missing: `setUpModule = skip_unless_built(REF,
+    CAND)`."""
+    def setUpModule():
+        for rom, lst in builds:
+            if not (os.path.exists(rom) and os.path.exists(lst)):
+                raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
+    return setUpModule
 
 
 # --------------------------------------------------------------- symbols
@@ -335,40 +365,27 @@ def _resolve_adc_channel(ch):
     return getattr(r58emu, ch) if isinstance(ch, str) else ch
 
 
+# Every step whose Radio call is a plain `radio.<method>(*step[1:])`
+# (kind == method name unless mapped otherwise here). "adc" (channel name
+# resolution) and "boot"/"check"/"tones"/"trace"/"visits"/"probe"/"reboot"
+# (handled specially in run_diff itself) are not in this map.
+_STEP_METHODS = {
+    "run": "run", "press": "press", "key_down": "key_down", "key_up": "key_up",
+    "ptt": "ptt", "poke": "poke", "power": "power", "hook": "hook", "local": "local",
+    "ccir": "ccir", "multiboard": "multiboard", "serial_rx": "serial_rx",
+    "modem_rx": "modem_rx", "keys": "type",
+}
+
+
 def _apply_step(radio, step):
     kind = step[0]
-    if kind == "run":
-        radio.run(step[1])
-    elif kind == "keys":
-        radio.type(*step[1:])
-    elif kind == "press":
-        radio.press(*step[1:])
-    elif kind == "key_down":
-        radio.key_down(step[1])
-    elif kind == "key_up":
-        radio.key_up()
-    elif kind == "ptt":
-        radio.ptt(step[1])
-    elif kind == "adc":
+    if kind == "adc":
         radio.adc(_resolve_adc_channel(step[1]), step[2])
-    elif kind == "poke":
-        radio.poke(step[1], step[2])
-    elif kind == "power":
-        radio.power(step[1])
-    elif kind == "hook":
-        radio.hook(step[1])
-    elif kind == "local":
-        radio.local(step[1])
-    elif kind == "ccir":
-        radio.ccir(step[1])
-    elif kind == "multiboard":
-        radio.multiboard(step[1])
-    elif kind == "serial_rx":
-        radio.serial_rx(step[1], step[2])
-    elif kind == "modem_rx":
-        radio.modem_rx(step[1])
-    else:
+        return
+    method = _STEP_METHODS.get(kind)
+    if method is None:
         raise ValueError("unknown scenario step %r" % (step,))
+    getattr(radio, method)(*step[1:])
 
 
 def _make_radio(rom_lst, kw, nv=None):
@@ -602,3 +619,46 @@ def run_diff(scenario, stock, cand, tolerance_s=DEFAULT_TOLERANCE_S,
         for r in radios.values():
             _apply_step(r, step)
     return diffs
+
+
+# ------------------------------------------------------------------- cases
+
+class DiffCase(unittest.TestCase):
+    """Base for a differential-scenario TestCase: build the starting NV
+    with test_radio.make_sane_nv(), run_diff() the scenario against REF and
+    CAND, and assertEqual the result to [].
+
+    A subclass sets the class attributes that its module's tests treat as
+    fixed (only REF/CAND are mandatory); whatever a test itself may vary is
+    left to diff()'s keyword arguments, which override the matching
+    default_* attribute for that one call. msg_max_items/msg_max_chars
+    control how a non-empty diff list is rendered into the assertion
+    message (both None: the full list of full messages).
+
+    A subclass whose diff() must always add something (test_ptt_diff's
+    extra "ignore" entry) overrides diff() to adjust `kw` and delegate to
+    super().diff(scenario, **kw)."""
+
+    REF = None
+    CAND = None
+    default_card = P8E
+    default_cu = CU53AN
+    default_synth_card = None
+    default_tolerance_s = DEFAULT_TOLERANCE_S
+    default_ignore = ()
+    msg_max_items = None
+    msg_max_chars = None
+
+    def diff(self, scenario, **kw):
+        card = kw.pop("card", self.default_card)
+        cu = kw.pop("cu", self.default_cu)
+        synth_card = kw.pop("synth_card", self.default_synth_card)
+        tolerance_s = kw.pop("tolerance_s", self.default_tolerance_s)
+        ignore = tuple(kw.pop("ignore", self.default_ignore))
+        nv = make_sane_nv(card, cu, synth_card)
+        diffs = run_diff(scenario, self.REF, self.CAND, card=card, cu=cu, nv=nv,
+                         tolerance_s=tolerance_s, ignore=ignore, **kw)
+        msgs = diffs if self.msg_max_items is None else diffs[:self.msg_max_items]
+        if self.msg_max_chars is not None:
+            msgs = [d[:self.msg_max_chars] for d in msgs]
+        self.assertEqual(diffs, [], "\n".join(msgs))

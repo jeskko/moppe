@@ -36,16 +36,11 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from r58emu import P8E, P8N, CU53AN, AD_SQL, load_symbols  # noqa: E402
+from difftest import builds, DiffCase  # noqa: E402
+from helpers import f24, at as _at  # noqa: E402
+from r58emu import P8N, AD_SQL, load_symbols  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_SCAN_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_SCAN_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_SCAN_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_SCAN_CAND_LST", os.path.join(FW, "build", "r58.map")))
+REF, CAND = builds("SCAN")
 
 MEM_SIZE = 12
 # per stay: 15 ms + 10 %.  A mainloop pass of the C build can take up to
@@ -56,10 +51,6 @@ MEM_SIZE = 12
 STEP_TOL = (0.015, 0.1)
 # a channel visit: a band frequency, or a memory recalled
 CHANGED = [("changed_frequency", "_changed_frequency"), ("go_mem_a", "_go_mem_a")]
-
-
-def f24(v):
-    return (v & 0xFFFFFF).to_bytes(3, "little")
 
 
 def visit(r):
@@ -109,7 +100,7 @@ def paused(label):
 
 def at(label):
     """a full comparison: only where the scanner has stopped"""
-    return [("check", label), ("probe", label, stopped_state)]
+    return _at(label, stopped_state)
 
 
 def visits(label, seconds, world=None):
@@ -150,12 +141,13 @@ def stop():
 SQL = [("poke", "cfg_squelch_level", 127)]
 
 
-class ScanDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, synth_card=None):
-        nv = make_sane_nv(card, CU53AN, synth_card)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=CU53AN, nv=nv, tolerance_s=0.05,
-                         ignore=("SYNTH", "rx_loads", "tx_loads", "ctrl_loads"))
-        self.assertEqual(diffs, [], "\n".join(d[:3000] for d in diffs[:10]))
+class ScanDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    default_tolerance_s = 0.05
+    default_ignore = ("SYNTH", "rx_loads", "tx_loads", "ctrl_loads")
+    msg_max_items = 10
+    msg_max_chars = 3000
 
     def test_default_start(self):
         self.diff([("boot", 2.5)] + start() + visits("default bands", 3.0) + stop() + at("stopped"))
@@ -323,7 +315,7 @@ class ScanDiff(unittest.TestCase):
         self.diff(steps)
 
     def test_fsk_carrier_skip(self):
-        from test_fsk import with_crc
+        from helpers import with_crc
         pkt = with_crc(b"\xDD" + b"HELLO 42" + b"\xFF" * 4)
         for skip in (0, 1):
             w = World({433475: 4.0})
