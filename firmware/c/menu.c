@@ -199,7 +199,7 @@ void draw_menu_lower_row(void)
 		v = *value_ptr(r);
 		s = r->arg;
 		if (v < s[0])
-			dpy_str_rj(s + 1 + (uint16_t)v * 8);
+			dpy_str_rj(s + 1 + (uint16_t)v * SIZE_STR);	/* TAB entries are STR()-sized (r58.s) */
 		else
 			dpy_str_rj(question_marks);
 		break;
@@ -254,13 +254,15 @@ void draw_rfc_dpy(void)
 	dpy_val255(ad_rssi);
 }
 
+/* d: +1, -1 (0xFF, from dyn_step) or 0 (the typed number); the only
+ * caller besides dyn_step's is remote_config_execute, which returns
+ * early for the RFC pointer (1) before reaching menu_new_value */
 void menu_rfc_change(uint8_t d)
 {
-	if (d != 0xFF && d != 1) {
+	if (d)
+		rfc += d;
+	else
 		rfc = a2i_byte();
-		d = 0;
-	}
-	rfc += d;
 	da_rfc = rfc;
 	save_rfc();
 }
@@ -381,7 +383,7 @@ void toggle_or_position_menu(void)
 	if (t0 >= 10)
 		t0 = 9;				/* someone might alpha-input these */
 	/* the records end in 255 * 16 bytes of address space (asserted) */
-	r = (const struct rec *)((uint16_t)menu_quickspots[t0] + (uint16_t)t1 * sizeof(struct rec));
+	r = (const struct rec *)((uint16_t)menu_quickspots[t0] + t1 * sizeof(struct rec));
 	if (r >= end_menu)
 		r = end_menu - 1;		/* stick at the last */
 	menu_ptr = r;
@@ -391,9 +393,11 @@ void toggle_or_position_menu(void)
 
 /* ---- walking */
 
-static void menu_next(void)
+/* wraps the static r (set by the caller) and stores it in menu_ptr;
+ * both checks apply in both directions (menu_ptr can sit at end_menu
+ * after the remote-search quirk, notes/open-bugs.md) */
+static void menu_wrap(void)
 {
-	r = menu_ptr + 1;
 	if (r == end_menu)
 		r = start_menu;
 	if (r == start_menu - 1)
@@ -401,14 +405,16 @@ static void menu_next(void)
 	menu_ptr = r;
 }
 
+static void menu_next(void)
+{
+	r = menu_ptr + 1;
+	menu_wrap();
+}
+
 void menu_prev(void)
 {
 	r = menu_ptr - 1;
-	if (r == end_menu)
-		r = start_menu;
-	if (r == start_menu - 1)
-		r = end_menu - 1;
-	menu_ptr = r;
+	menu_wrap();
 }
 
 void menu_next_group(void)
@@ -474,9 +480,9 @@ static void menu_new_value(void)
 	} else if (type == CFG_STR) {
 		for (i = 0; i < SIZE_STR; i++)
 			p[i] = EOS;
+		/* n == 0: the checks below and the copy loop are no-ops
+		 * (the asm needed an early-out for its ldir with BC == 0) */
 		n = digidx;
-		if (!n)
-			return;
 		if (n >= SIZE_STR)
 			n = SIZE_STR;		/* then no EOS */
 		for (i = 0; i < n; i++)
@@ -525,6 +531,10 @@ static void menu_step_value(void)
 		*p = v;
 		tab_value_changed();
 	} else if (type == CFG_WORD) {
+		/* dir is 1 or -1 (0xFF); (int8_t)dir reads the same but tips
+		 * the code-size optimizer into spilling p to an IX frame here
+		 * (checked the .asm), and this function calls into assembler
+		 * through tab/word_value_changed and dyn_step -- kept as is */
 		w = (p[0] | p[1] << 8) + (dir == 1 ? 1 : -1);
 		p[0] = w;
 		p[1] = w >> 8;
@@ -661,7 +671,9 @@ static void reset_menurecords(void)
 		reset_menurec(rr);
 }
 
-static void copy_default(uint8_t *dst, uint8_t len)
+/* len first: A, DE (--sdcccall 1) -- avoids the IX frame len on the
+ * stack cost with the old (dst, len) order */
+static void copy_default(uint8_t len, uint8_t *dst)
 {
 	while (len--)
 		*dst++ = *s++;
@@ -678,15 +690,15 @@ static void set_defaults_band(void)
 		s = defaults_2m;
 	else
 		s = defaults_70cm;
-	copy_default(cfg_implied, 6);
-	copy_default(cfg_if_freq, 3);
-	copy_default(cfg_rx_vco_center, 3);
-	copy_default(cfg_tx_vco_center, 3);
-	copy_default(cfg_tx_band_start, 6);	/* and end */
-	copy_default(cfg_band1_start, 10);	/* and end, duplex, step */
-	copy_default(cfg_band2_start, 10);
-	copy_default(cfg_other_duplex, 3);
-	copy_default(&cfg_other_step, 1);
+	copy_default(6, cfg_implied);
+	/* if_freq, rx_vco_center, tx_vco_center: contiguous in the NV map
+	 * and in the defaults source alike (r58.s ASSERTs both) */
+	copy_default(9, cfg_if_freq);
+	copy_default(6, cfg_tx_band_start);	/* and end */
+	copy_default(10, cfg_band1_start);	/* and end, duplex, step */
+	copy_default(10, cfg_band2_start);
+	copy_default(3, cfg_other_duplex);
+	copy_default(1, &cfg_other_step);
 	save_nvdata();
 	powerdown_now();
 }
