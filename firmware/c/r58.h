@@ -109,8 +109,8 @@ extern void changed_frequency(void), changed_frequency_duplex_okay(void),
 	temporary_change_rx_freq(void), update_tx_vco_band(void);
 
 /* c/fsk.c (bank 2) */
-extern uint8_t at;		/* fsk_history read index; c/aprs.c shares it via nibbles() */
-extern uint8_t nibbles(void);	/* the byte from fsk_history[at], [at + 1] */
+extern uint8_t fsk_at;		/* fsk_history read index; c/aprs.c shares it via nibbles() */
+extern uint8_t nibbles(void);	/* the byte from fsk_history[fsk_at], [fsk_at + 1] */
 extern void send_mprs_report_packet_1(void);
 
 /* c/keys.c */

@@ -39,17 +39,17 @@ extern void fsk_remote_config_execute(uint16_t ptr, const uint8_t *data);
 
 static const uint8_t onesies[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-uint8_t at;			/* shared with c/aprs.c: nibbles() */
+uint8_t fsk_at;			/* shared with c/aprs.c: nibbles() */
 static uint8_t i, n, b, c;
 static uint16_t ptr;
 static uint8_t *d;
 static const uint8_t *s, *from;
 
-/* the byte from the nibbles at fsk_history[at], [at + 1] */
+/* the byte from the nibbles at fsk_history[fsk_at], [fsk_at + 1] */
 uint8_t nibbles(void)
 {
-	uint8_t v = fsk_history[at++] << 4;
-	return v | fsk_history[at++];
+	uint8_t v = fsk_history[fsk_at++] << 4;
+	return v | fsk_history[fsk_at++];
 }
 
 /* ---- receive */
@@ -57,9 +57,9 @@ uint8_t nibbles(void)
 static void handle_relay_packets(void)
 {
 	/* the 12 nibbles from the tag on, wraps in the ring; v3_Z did not */
-	at = packet_good;
+	fsk_at = packet_good;
 	for (i = 0; i < 12; i++)
-		fsk_putchar(fsk_history[at++]);
+		fsk_putchar(fsk_history[fsk_at++]);
 }
 
 static void send_display_config_packet(void);
@@ -67,8 +67,8 @@ static void send_display_config_packet(void);
 static void handle_config_packets(void)
 {
 	/* c still holds the tag ('A' ask / 'E' enter) from packet_for_whom */
-	at = packet_good + 1;
-	if (fsk_history[at++] != 0xC)	/* AC/EC ii DD ptr PTR possible data */
+	fsk_at = packet_good + 1;
+	if (fsk_history[fsk_at++] != 0xC)	/* AC/EC ii DD ptr PTR possible data */
 		return;
 	if (!cfg_remote_id)		/* remote id zero equals not used */
 		return;
@@ -83,7 +83,7 @@ static void handle_config_packets(void)
 	    && ptr > (uint16_t)(cfg_remote_passwd - SIZE_STR))
 		return;
 	if (c == 0xE) {
-		fsk_remote_config_execute(ptr, &fsk_history[at]);
+		fsk_remote_config_execute(ptr, &fsk_history[fsk_at]);
 		far_leaved_setup();
 	}
 	send_display_config_packet();	/* FSK reply in either case */
@@ -91,7 +91,7 @@ static void handle_config_packets(void)
 
 static void display_packet(void)
 {
-	at = packet_good + 2;
+	fsk_at = packet_good + 2;
 	for (i = 0; i < 8; i++)
 		remote_display_buffer[i] = nibbles();
 	remote_display_buffer[8] = EOS;
@@ -117,9 +117,9 @@ static void handle_display_packets(void)
 
 static void handle_call_packet(void)
 {
-	at = packet_good + 6;		/* destination address */
+	fsk_at = packet_good + 6;		/* destination address */
 	for (i = 0; i < 5; i++)
-		if (fsk_history[at++] != cfg_mycall_1[i])
+		if (fsk_history[fsk_at++] != cfg_mycall_1[i])
 			return;
 	start_call_timer(1);
 	cu_lights_on();

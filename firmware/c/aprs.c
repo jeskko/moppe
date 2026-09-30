@@ -623,7 +623,7 @@ static void gps_mprs_call_latlon(void)
 /* start: packet_good, a 4x packet in fsk_history (nibbles) */
 void handle_mprs_packets(uint8_t start)
 {
-	at = start + 2;				/* tag, minor digit ignored */
+	fsk_at = start + 2;				/* tag, minor digit ignored */
 	for (i = 0; i < 12; i++)
 		mprs_packed_packet[i] = nibbles();
 	mute_fsk_at_mprs_end_maybe();
