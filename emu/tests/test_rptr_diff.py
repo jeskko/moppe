@@ -116,10 +116,10 @@ def command(label, req, before=(), seconds=1.0):
     return list(before) + [("poke", "repeater_req", req), ("tones", label, seconds)] + at(label)
 
 
-def trace(label, fn, seconds):
+def trace(label, fn, seconds, settle=1):
     """fn(radio) traced (difftest "trace"): for what changes and changes
     back between checkpoints."""
-    return [("trace", label, fn, seconds)]
+    return [("trace", label, fn, seconds, settle)]
 
 
 def ctcss_now(r):
@@ -148,9 +148,11 @@ SCN_EMPTY_BYE = setup(repeater_cfg_id_bye1=cw_str(""), repeater_cfg_id_bye2=cw_s
 # CUSTOM (4): send_cw_prolog turns CTCSS on, and when the message ends with
 # a carrier present (aon after the last element keeps it on) the epilog
 # turns it off for its 200 ms wait, until the open state's poll goes active
+# The carrier turns CTCSS on within the trace's first sample, so one build
+# may see it off for 5 ms: settle=2 drops that leading transient.
 SCN_CTCSS_CUSTOM_EPILOG = setup(cfg_ctcss_output_when=4, cfg_ctcss_tx_hz=10,
                                 repeater_cfg_TOPEN=w(60)) + open_by_tone() + [
-    CARRIER, ("poke", "repeater_req", 1)] + trace("roger with carrier", ctcss_now, 1.2) + [
+    CARRIER, ("poke", "repeater_req", 1)] + trace("roger with carrier", ctcss_now, 1.2, settle=2) + [
     NO_CARRIER, ("run", 1.0)] + at("after")
 
 SCN_LOCAL_SUSPEND = setup() + [
