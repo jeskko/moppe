@@ -17,18 +17,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_radio import RadioTest  # noqa: E402
-from test_signalling import nmea  # noqa: E402
+from helpers import nmea, with_crc, mprs_packet, REMOTE_ID, PASSWD  # noqa: E402
 from r58emu import P8E, P8N  # noqa: E402
-import afsk  # noqa: E402
 
 HEADER = bytes([0xAA, 0xAA, 0xAA, 0xC4, 0xD7])
-REMOTE_ID = bytes([0x34, 0x12])          # cfg_remote_id 0x1234, low byte first
-PASSWD = b"12345678"
-
-
-def with_crc(data, seed=b""):
-    v = afsk.crc16_x25(bytes(seed) + bytes(data))
-    return bytes(data) + bytes([v >> 8, v & 0xFF])
 
 
 def split_tx(tx):
@@ -36,12 +28,6 @@ def split_tx(tx):
     parts = tx.split(HEADER)
     assert parts[0] == b"", tx.hex()
     return parts[1:]
-
-
-def mprs_packet():
-    """An MPRS report as the firmware itself sends it: OH3XYZ-7 at
-    61 30.12 N, 023 45.67 E (from a GPRMC sentence)."""
-    return with_crc(bytes.fromhex("402f3ae1b97e003d1e0c172d43"))
 
 
 class FskRx(RadioTest):

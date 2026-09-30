@@ -17,17 +17,11 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from test_scan_rptr import cw_str, repeater_state_name  # noqa: E402
-from r58emu import P8E, P8N, CU53AN, AD_SQL, AD_TP4, AD_RPM  # noqa: E402
+from difftest import builds, DiffCase  # noqa: E402
+from helpers import cw_str, repeater_state_name, at as _at  # noqa: E402
+from r58emu import P8N, AD_SQL, AD_TP4, AD_RPM  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_RPTR_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_RPTR_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_RPTR_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_RPTR_CAND_LST", os.path.join(FW, "build", "r58.map")))
+REF, CAND = builds("RPTR")
 
 WORDS = ("repeater_timer_other", "repeater_timer_ID")
 BYTES = ("repeater_timer_BLIP_state", "squelch_tightening", "txpwr_increment",
@@ -48,7 +42,7 @@ def w(v):
 
 
 def at(label):
-    return [("check", label), ("probe", label, probe)]
+    return _at(label, probe)
 
 
 CARRIER, NO_CARRIER = ("adc", AD_SQL, 0xC0), ("adc", AD_SQL, 0)
@@ -233,11 +227,9 @@ def ctcss(when):
         over("over") + [("run", 3.2), ("tones", "bye", 3.0)] + at("idle")
 
 
-class RepeaterDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E):
-        nv = make_sane_nv(card, CU53AN)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=CU53AN, nv=nv)
-        self.assertEqual(diffs, [], "\n".join(diffs))
+class RepeaterDiff(DiffCase):
+    REF = REF
+    CAND = CAND
 
     def test_cycle(self):
         self.diff(SCN_CYCLE)

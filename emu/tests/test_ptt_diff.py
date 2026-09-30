@@ -24,28 +24,12 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from test_fsk import nmea  # noqa: E402
-from test_menu_diff import rec, pos  # noqa: E402
-from r58emu import P8E, P8N, CU53AN, CU58AF  # noqa: E402
+from difftest import builds, skip_unless_built, DiffCase  # noqa: E402
+from helpers import nmea, rec, pos, f24, enter, at as _at  # noqa: E402
+from r58emu import P8N, CU58AF  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_PTT_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_PTT_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_PTT_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_PTT_CAND_LST", os.path.join(FW, "build", "r58.map")))
-
-
-def setUpModule():
-    for rom, lst in (REF, CAND):
-        if not (os.path.exists(rom) and os.path.exists(lst)):
-            raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
-
-
-def f24(v):
-    return (v & 0xFFFFFF).to_bytes(3, "little")
+REF, CAND = builds("PTT")
+setUpModule = skip_unless_built(REF, CAND)
 
 
 def keying(r):
@@ -66,7 +50,7 @@ def state(r):
 
 
 def at(label):
-    return [("check", label), ("probe", label, state)]
+    return _at(label, state)
 
 
 def ptt(seconds, label, trace=True, tones=False):
@@ -83,10 +67,6 @@ def ptt(seconds, label, trace=True, tones=False):
         at(label + " released")
 
 
-def enter(digits):
-    return [("keys", digits), ("press", "#"), ("run", 0.3)]
-
-
 def key(k, hold=0.15, label=None):
     return [("press", k, hold), ("run", 0.3)] + at(label or "key %r" % k)
 
@@ -94,13 +74,16 @@ def key(k, hold=0.15, label=None):
 BOOT = [("boot", 2.5)]
 
 
-class PttDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None, **kw):
-        nv = make_sane_nv(card, cu, synth_card)
+class PttDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    msg_max_items = 10
+    msg_max_chars = 3000
+
+    def diff(self, scenario, **kw):
         # whole seconds of TX: a few ms of keying offset flip it at a boundary
-        kw["ignore"] = tuple(kw.get("ignore", ())) + ("transmitter_hours_second_counter",)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=cu, nv=nv, **kw)
-        self.assertEqual(diffs, [], "\n".join(d[:3000] for d in diffs[:10]))
+        kw["ignore"] = tuple(kw.get("ignore", self.default_ignore)) + ("transmitter_hours_second_counter",)
+        return super().diff(scenario, **kw)
 
     # ---- keying
 

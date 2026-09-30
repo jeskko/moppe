@@ -16,16 +16,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_radio import RadioTest  # noqa: E402
 from r58emu import AD_SQL  # noqa: E402
-
-EOS = 0xFF  # r58.asm L432
-SIZE_STR = 8  # r58.asm L447
-
-
-def cw_str(s):
-    """Pack a short ASCII message into an 8-byte CFG_STR field (EOS-padded,
-    r58.asm L447 `#define STRING : .rs SIZE_STR`)."""
-    b = s.encode("ascii") + bytes([EOS] * SIZE_STR)
-    return b[:SIZE_STR]
+from helpers import cw_str, repeater_state_name  # noqa: E402
 
 
 def poke_word(r, name, v):
@@ -96,40 +87,14 @@ def tone_and_gaps(runs):
     return tones, gaps
 
 
-# ---------------------------------------------------------------------
-# Repeater FSM state, derived from repeater_state (r58.asm L19456, a
-# "jump pointer" WORD). repeater_setstate (L15065-15068) pops the return
-# address pushed by `call repeater_setstate` and stores it as the resume
-# point for the *next* repeater_run tick, so the stored value is not the
-# state label itself but somewhere inside that state's own code. Since
-# as80 lays out the file in order, bucket the address between
-# consecutive state labels (r58.asm L15243-15538).
-
-STATE_LABELS = [
-    "repeater_boot", "repeater_idle", "repeater_opening",
-    "repeater_beep_too_long", "repeater_open", "repeater_active",
-    "repeater_closing", "repeater_reopening", "repeater_lockout",
-]
-
-
-# c/rptr.c: repeater_state is a state number instead, in the
-# order of its enum (0 = boot not entered yet).
-C_STATES = ["repeater_boot"] + STATE_LABELS
-
-
-def repeater_state_name(r):
-    if "_repeater_run" in r.sym:
-        return C_STATES[r.peek("repeater_state")]
-    marks = sorted((r.sym[n], n) for n in STATE_LABELS)
-    name = marks[0][1]
-    pc = r.peek16("repeater_state")
-    for addr, n in marks:
-        if pc >= addr:
-            name = n
-        else:
-            break
-    return name
-
+# repeater_state_name (below, in helpers.py) resolves the repeater FSM
+# state from repeater_state (r58.asm L19456, a "jump pointer" WORD):
+# repeater_setstate (L15065-15068) pops the return address pushed by
+# `call repeater_setstate` and stores it as the resume point for the
+# *next* repeater_run tick, so the stored value is not the state label
+# itself but somewhere inside that state's own code. Since as80 lays out
+# the file in order, it buckets the address between consecutive state
+# labels (r58.asm L15243-15538).
 
 # send_cw_prolog does not simply return: it falls into send_cw_epilog's
 # own tail through a shared `1:` label (r58.asm L15969-16013, `jp 1f` at

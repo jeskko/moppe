@@ -15,22 +15,12 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from r58emu import P8E, P8N, CU53AN, CU58AF  # noqa: E402
+from difftest import builds, skip_unless_built, DiffCase  # noqa: E402
+from helpers import enter  # noqa: E402
+from r58emu import P8N, CU58AF  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_DPY_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_DPY_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_DPY_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_DPY_CAND_LST", os.path.join(FW, "build", "r58.map")))
-
-
-def setUpModule():
-    for rom, lst in (REF, CAND):
-        if not (os.path.exists(rom) and os.path.exists(lst)):
-            raise unittest.SkipTest("build not found (%s); run make -C firmware [ref]" % rom)
+REF, CAND = builds("DPY")
+setUpModule = skip_unless_built(REF, CAND)
 
 
 def at(label):
@@ -39,10 +29,6 @@ def at(label):
 
 def show(label, *pokes):
     return [("poke", k, v) for k, v in pokes] + [("poke", "redraw_req", 1), ("run", 0.3)] + at(label)
-
-
-def enter(digits):
-    return [("keys", digits), ("press", "#"), ("run", 0.3)]
 
 
 def scenario():
@@ -73,11 +59,11 @@ def scenario():
     return s
 
 
-class DisplayDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, cu=CU53AN, **kw):
-        nv = make_sane_nv(card, cu, None)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=cu, nv=nv, **kw)
-        self.assertEqual(diffs, [], "\n".join(d[:3000] for d in diffs[:10]))
+class DisplayDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    msg_max_items = 10
+    msg_max_chars = 3000
 
     def test_indicators_cu53an(self):
         self.diff(scenario())

@@ -16,64 +16,19 @@ record index (the record addresses differ between the builds).
 """
 import os
 import random
-import re
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
+from difftest import builds, DiffCase  # noqa: E402
+from helpers import RECS, rec, pos, at as _at  # noqa: E402
 from test_radio import make_sane_nv  # noqa: E402
 from r58emu import Radio, P8E, P8N, CU53AN, CU58AF, load_symbols  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_MENU_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_MENU_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_MENU_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_MENU_CAND_LST", os.path.join(FW, "build", "r58.map")))
+REF, CAND = builds("MENU")
 
 EOS = 0xFF
 SIZE_REC = 16
-
-
-def parse_records():
-    """The REC() lines of r58.s in order: dicts with group (menu_N),
-    idx (record in the group), tag, title, type, ptr, arg, default."""
-    src = open(os.path.join(FW, "r58.s"), encoding="latin-1").read().split("\n")
-    a = next(i for i, l in enumerate(src) if l.startswith("start_menu:"))
-    b = next(i for i, l in enumerate(src) if l.startswith("end_menu:"))
-    recs, skip, group, idx = [], False, -1, 0
-    for line in src[a:b]:
-        s = line.strip()
-        if s.startswith("#if 0"):
-            skip = True
-        elif s.startswith("#endif"):
-            skip = False
-        elif skip:
-            continue
-        m = re.match(r"menu_(\d):", s)
-        if m:
-            group, idx = int(m.group(1)), 0
-            continue
-        m = re.match(r'REC\("(..)",\s*"(.{6})",\s*CFG_(\w+),\s*(\w+),\s*(\w+),\s*(-?\d+)', s)
-        if m:
-            recs.append(dict(group=group, idx=idx, tag=m.group(1), title=m.group(2),
-                             type=m.group(3), ptr=m.group(4), arg=m.group(5),
-                             default=int(m.group(6))))
-            idx += 1
-    return recs
-
-
-RECS = parse_records()
-
-
-def rec(tag, title):
-    return next(r for r in RECS if r["tag"] == tag and r["title"].rstrip() == title)
-
-
-def pos(r):
-    """digits for toggle_or_position_menu: group * 100 + record"""
-    return "%d%02d" % (r["group"], r["idx"])
 
 
 def menu_index(r):
@@ -93,7 +48,7 @@ def probe(r):
 
 
 def at(label):
-    return [("check", label), ("probe", label, probe)]
+    return _at(label, probe)
 
 
 def keys(k, label=None, hold=0.15):
@@ -164,11 +119,10 @@ def walk(seed, gap=0.1):
     return steps
 
 
-class MenuDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None, **kw):
-        nv = make_sane_nv(card, cu, synth_card)
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=cu, nv=nv, **kw)
-        self.assertEqual(diffs, [], "\n".join(diffs[:40]))
+class MenuDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    msg_max_items = 40
 
     def test_records_parsed(self):
         sym = load_symbols(REF[1])
@@ -479,7 +433,7 @@ class MenuDiff(unittest.TestCase):
     # ---- remote configuration (EC packets) of every record type
 
     def test_remote_config_every_type(self):
-        from test_fsk import with_crc, REMOTE_ID, PASSWD
+        from helpers import with_crc, REMOTE_ID, PASSWD
         sym = load_symbols(REF[1])
 
         def ec(ptr, digits):

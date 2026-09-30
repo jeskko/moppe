@@ -24,18 +24,11 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from difftest import run_diff  # noqa: E402
-from test_radio import make_sane_nv  # noqa: E402
-from test_fsk import with_crc  # noqa: E402
-from test_signalling import nmea  # noqa: E402
-from r58emu import P8E, P8N, CU53AN  # noqa: E402
+from difftest import builds, DiffCase  # noqa: E402
+from helpers import with_crc, nmea  # noqa: E402
+from r58emu import P8N  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FW = os.path.join(ROOT, "firmware")
-REF = (os.environ.get("R58_APRS_REF_ROM", os.path.join(FW, "build-ref", "r58.bin")),
-       os.environ.get("R58_APRS_REF_LST", os.path.join(FW, "build-ref", "r58.map")))
-CAND = (os.environ.get("R58_APRS_CAND_ROM", os.path.join(FW, "build", "r58.bin")),
-        os.environ.get("R58_APRS_CAND_LST", os.path.join(FW, "build", "r58.map")))
+REF, CAND = builds("APRS")
 
 EOS = 0xFF
 CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
@@ -233,11 +226,11 @@ def rx_boundaries():
 TX_TOLERANCE_S = 0.030
 
 
-class AprsDiff(unittest.TestCase):
-    def diff(self, scenario, card=P8E, tolerance_s=TX_TOLERANCE_S):
-        diffs = run_diff(scenario, REF, CAND, card=card, cu=CU53AN, nv=make_sane_nv(card, CU53AN),
-                         tolerance_s=tolerance_s)
-        self.assertEqual(diffs, [], "\n".join(diffs[:20]))
+class AprsDiff(DiffCase):
+    REF = REF
+    CAND = CAND
+    default_tolerance_s = TX_TOLERANCE_S
+    msg_max_items = 20
 
     def test_mprs_receive(self):
         self.diff(rx_scenario(1, 60))

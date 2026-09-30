@@ -215,7 +215,7 @@ class BankedC(unittest.TestCase):
     def test_fsk_dispatch_runs_in_bank2(self):
         sys.path.insert(0, os.path.dirname(__file__))
         from test_radio import make_sane_nv
-        from test_fsk import with_crc
+        from helpers import with_crc
         for card in (P8E, P8N):
             r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
                       card=card, nv=make_sane_nv(card))
@@ -257,7 +257,7 @@ class BankedC(unittest.TestCase):
         """c/gps.c: a complete GPRMC sentence is parsed in bank 2."""
         sys.path.insert(0, os.path.dirname(__file__))
         from test_radio import make_sane_nv
-        from test_signalling import nmea
+        from helpers import nmea
         r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
                   card=P8E, nv=make_sane_nv(P8E))
         r.run(2.5)
@@ -276,7 +276,7 @@ class BankedC(unittest.TestCase):
         by c/fsk.c there, no bank switch between them)."""
         sys.path.insert(0, os.path.dirname(__file__))
         from test_radio import make_sane_nv
-        from test_fsk import mprs_packet
+        from helpers import mprs_packet
         r = Radio(os.path.join(FW_C, "r58.bin"), os.path.join(FW_C, "r58.map"),
                   card=P8E, nv=make_sane_nv(P8E))
         r.run(2.5)

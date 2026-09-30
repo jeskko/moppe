@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(ROOT, "emu", "python"))
 
 from r58emu import P8E, P8N, CU53AN, CU58AF, AD_SQL  # noqa: E402
 from test_radio import make_sane_nv  # noqa: E402
-from difftest import run_diff  # noqa: E402
+from difftest import run_diff, DiffCase  # noqa: E402
 
 STOCK_ROM = os.environ.get("R58_REF_ROM", os.path.join(ROOT, "firmware", "build-release", "r58.bin"))
 STOCK_LST = os.environ.get("R58_REF_LST", os.path.join(ROOT, "firmware", "build-release", "r58.map"))
@@ -214,7 +214,7 @@ def _fsk_scenarios():
     config pointers are NV addresses, the same in both builds (v3_Z NV
     layout), taken from the stock listing."""
     from r58emu import load_symbols
-    from test_fsk import with_crc, mprs_packet, REMOTE_ID, PASSWD
+    from helpers import with_crc, mprs_packet, REMOTE_ID, PASSWD
     sym = load_symbols(STOCK_LST)
     a = sym["cfg_remote_dpy_secs"]
     ptr = bytes([a & 0xFF, a >> 8])
@@ -262,8 +262,7 @@ def _fsk_edge_scenarios():
     TX refused, 8/9-digit config entry, MPRS on demand, W/S positions and
     symbol bits."""
     from r58emu import load_symbols
-    from test_fsk import with_crc, REMOTE_ID, PASSWD
-    from test_signalling import nmea
+    from helpers import with_crc, REMOTE_ID, PASSWD, nmea
     sym = load_symbols(STOCK_LST)
     a = sym["cfg_remote_dpy_secs"]
     ptr = bytes([a & 0xFF, a >> 8])
@@ -340,17 +339,15 @@ def _fsk_edge_scenarios():
     return rx, tx
 
 
-class DiffTest(unittest.TestCase):
+class DiffTest(DiffCase):
     """The pinned assembler build (firmware/build-ref) vs. the current one
     (firmware/build) on the same scenario. An empty `run_diff()` result means the two
     builds produced the same display, icons, synth registers, held output
     latches, event sequence (within a timing tolerance) and NV image at
     every ("check", ...) step."""
 
-    def diff(self, scenario, card=P8E, cu=CU53AN, synth_card=None, **kw):
-        nv = make_sane_nv(card, cu, synth_card)
-        diffs = run_diff(scenario, STOCK, CAND, card=card, cu=cu, nv=nv, **kw)
-        self.assertEqual(diffs, [], "\n".join(diffs))
+    REF = STOCK
+    CAND = CAND
 
     # ---- the harness itself
 
