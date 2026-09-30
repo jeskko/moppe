@@ -115,31 +115,12 @@ SIZE_REC = 16
 
 
 def parse_records():
-    """The REC() lines of r58.s in order: dicts with group (menu_N),
-    idx (record in the group), tag, title, type, ptr, arg, default."""
-    src = open(os.path.join(FW, "r58.s"), encoding="latin-1").read().split("\n")
-    a = next(i for i, l in enumerate(src) if l.startswith("start_menu:"))
-    b = next(i for i, l in enumerate(src) if l.startswith("end_menu:"))
-    recs, skip, group, idx = [], False, -1, 0
-    for line in src[a:b]:
-        s = line.strip()
-        if s.startswith("#if 0"):
-            skip = True
-        elif s.startswith("#endif"):
-            skip = False
-        elif skip:
-            continue
-        m = re.match(r"menu_(\d):", s)
-        if m:
-            group, idx = int(m.group(1)), 0
-            continue
-        m = re.match(r'REC\("(..)",\s*"(.{6})",\s*CFG_(\w+),\s*(\w+),\s*(\w+),\s*(-?\d+)', s)
-        if m:
-            recs.append(dict(group=group, idx=idx, tag=m.group(1), title=m.group(2),
-                             type=m.group(3), ptr=m.group(4), arg=m.group(5),
-                             default=int(m.group(6))))
-            idx += 1
-    return recs
+    """The REC() lines of r58.s in order (tools/setupmap.py): dicts with
+    group (menu_N), idx (record in the group), tag, title, type, ptr, arg,
+    default, help."""
+    sys.path.insert(0, os.path.join(FW, "..", "tools"))
+    from setupmap import parse_records as parse
+    return parse(os.path.join(FW, "r58.s"))
 
 
 RECS = parse_records()

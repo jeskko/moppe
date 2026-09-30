@@ -20,7 +20,7 @@ module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
 differs from the release only by the bug fixes. `make verify` still
 rebuilds the release from `r58.asm`. Sizes: fixed ROM ends at 0x4EBB incl.
 the C code (12.6 KB free), bank 1 7320 bytes free, bank 2 5288 bytes free;
-C statics 216 of the 256-byte `c_bss`. **309 tests** pass.
+C statics 216 of the 256-byte `c_bss`. **310 tests** pass.
 
 The 2026-09-29 code review is applied (details in the commits): one
 shared header `c/r58.h` (163 symbols had been declared in several modules,
@@ -61,8 +61,9 @@ interrupts 3146, mainline hardware 2376, mainline plain 3777):
 | Boot (`main`, `cu58af_init`, hardware init), bank trampolines, page-aligned tables | fixed addresses, raw CPU |
 
 **Next task: to be decided (user).** Options: GitHub CI and releases
-for publishing (build, `make verify ref`, the tests; release images on a
-tag, nightlies; pin SDCC 4.6.0); the real-board bench test (EPROM
+for publishing (build, `make verify ref`, the tests; release images and
+the setup map `build/r58.setup` on a tag, nightlies; pin SDCC 4.6.0;
+later maybe a Markdown or richer setup map); the real-board bench test (EPROM
 programmer); the open bugs (**notes/open-bugs.md**); new features in the
 free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
 open questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK

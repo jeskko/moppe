@@ -1,6 +1,7 @@
 # R58 ham firmware build (notes/toolchain.md).
 #   make          - build/r58.bin: r58.s (sdasz80) and the C modules c/*.c
-#                   (SDCC), linked with sdldz80; map and listing next to it
+#                   (SDCC), linked with sdldz80; map and listing next to it,
+#                   and build/r58.setup, the setup map (tools/setupmap.py)
 #   make banktest - build-banktest/r58-banktest.bin: 64 KB EPROM image that
 #                   checks the banked ROM window at boot (bank_test in r58.s)
 #   make verify   - the released v3_Z ALs binary, byte-for-byte, twice:
@@ -27,7 +28,10 @@ CMODS  ?= $(patsubst %,$(BUILD)/%.rel,$(MODULES))
 
 CFLAGS  = -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size --max-allocs-per-node 200000
 
-all: $(BUILD)/r58.bin
+all: $(BUILD)/r58.bin $(BUILD)/r58.setup
+
+# a failed step leaves no half-written target behind
+.DELETE_ON_ERROR:
 
 $(BUILD)/%.rel: c/%.c c/r58.h
 	@mkdir -p $(BUILD)
@@ -57,6 +61,11 @@ $(BUILD)/r58.ihx: $(BUILD)/r58.rel $(CMODS) $(TOOLS)/link.py
 
 $(BUILD)/r58.bin: $(BUILD)/r58.ihx $(TOOLS)/ihx2bin.py
 	python3 $(TOOLS)/ihx2bin.py $< $@ --map $(BUILD)/r58.map --cksum rom_cksum $(IHXFLAGS)
+
+# the setup map: menu record numbers for digits + ENT
+$(BUILD)/r58.setup: $(SRC) $(TOOLS)/setupmap.py
+	@mkdir -p $(BUILD)
+	python3 $(TOOLS)/setupmap.py $(SRC) > $@
 
 # sha256 of the released r58p8x3Z.bin (v3_Z ALs 24.09.2018)
 ALS_SHA256 = cdfe7016a991766454f1b3aa49e9a1eac0978f42e9a5638bf8828b1f725d8fb7
