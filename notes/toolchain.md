@@ -107,6 +107,10 @@ symbols C only compares as numbers.
   `_INITIALIZER`).
 - SDCC runtime helpers come from SDCC's `z80.lib`, searched in every build
   (the assembler uses its banked-call trampoline `___sdcc_bcall_ehl`).
+- The image depends on the SDCC *build*, not only its version: the
+  official 4.6.0 binary tarball and Arch's package of the same revision
+  (#16555) allocate registers differently (found 2026-10-01). Release
+  images use the tarball (`tools/ci/install-sdcc.sh`, notes/ci.md).
 - C → firmware names: C `x` is `_x`; `tools/cglue.py` emits `_x = x` for
   every `_x` the C objects reference (`build/cglue.inc`, included by
   r58.s).

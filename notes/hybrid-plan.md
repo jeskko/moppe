@@ -80,11 +80,16 @@ side (as `test_aprs_diff.ref_degmin` does for S/W/.50 positions) and cover
 the fixed case with a standalone test against a model, not by loosening
 the comparison.
 
-Next, options: GitHub CI and releases
-for publishing (build, `make verify ref`, the tests; release images and
-the setup map `build/r58.setup` on a tag, nightlies; pin SDCC 4.6.0;
-later maybe a Markdown or richer setup map); the real-board bench test (EPROM
-programmer); new features in the
+**Done 2026-10-01: CI and releases, prepared locally** (notes/ci.md):
+`.github/workflows/ci.yml`, `tools/ci/` (pinned SDCC tarball, pipeline,
+parallel test runner, packaging, `docker.sh` for a clean Ubuntu run). Not
+on GitHub yet: publishing waits for the original authors (OH1E asked
+2026-10-01). Release images come from the CI SDCC: another SDCC build of
+the same version allocates registers differently (notes/ci.md).
+
+Next, options: the first GitHub run (private repository, or public
+after the authors' reply; later maybe a Markdown or richer setup map);
+the real-board bench test (EPROM programmer); new features in the
 free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
 open questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK
 frequency). Earlier handoffs: notes/hybrid-plan-history.md.

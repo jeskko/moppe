@@ -1,0 +1,80 @@
+# Build, verify and test on every push and pull request (tools/ci/check.sh;
+# tools/ci/docker.sh runs the same locally).  A v* tag publishes a release,
+# a push to master replaces the "nightly" pre-release: the EPROM images,
+# the link map, the setup map and SHA256SUMS (tools/ci/package.sh).
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # make ref builds the tag asm-final
+
+      - name: Packages
+        run: sudo apt-get install -qq -y --no-install-recommends python3-numpy
+
+      - name: Cache SDCC
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sdcc-4.6.0
+          key: sdcc-4.6.0-${{ hashFiles('tools/ci/install-sdcc.sh') }}
+
+      - name: SDCC
+        run: tools/ci/install-sdcc.sh >> "$GITHUB_PATH"
+
+      - name: Build, verify, test
+        run: tools/ci/check.sh
+
+      - name: Package
+        run: |
+          case "$GITHUB_REF" in
+          refs/tags/*) v=$GITHUB_REF_NAME ;;
+          *) v=nightly-$(date -u +%Y%m%d)-$(git rev-parse --short HEAD) ;;
+          esac
+          tools/ci/package.sh "$v"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: dist/
+          retention-days: 30
+
+  publish:
+    needs: check
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: dist
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes dist/*
+
+      - name: Nightly
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly --prerelease --target "$GITHUB_SHA" \
+            --title "Nightly $(date -u +%Y-%m-%d) ($(echo "$GITHUB_SHA" | cut -c1-7))" \
+            --notes "Latest build of ${GITHUB_REF_NAME}, not a release: untested on a real radio." dist/*

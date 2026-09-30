@@ -14,7 +14,7 @@ without burning an EPROM for every change.
 | C in firmware | The firmware is C plus assembler: `make` links the C modules (squelch, packet CRCs, systick timers, battery check, key dispatch and handlers, memories and VIP list, PTT/TX flow, the mainloop, display composition, frequency/band/duplex logic, scanner; banked: FSK packets, repeater/CW, GPS, MPRS/APRS, the setup menu engine) with r58.s as normal SDCC objects. Assembler is left only for interrupt code, hardware sequencing, the frequency kernel and display primitives. The differential tests show no behaviour difference to the last assembler build (git tag `asm-final`, `make ref`), which differs from the release by bug fixes and the removed Aisin Seiki GPS path. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
-| **Next** | [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Bank 1 (EPROM0 chip 0xC000) holds the setup menu: its records and tables as asm data and the engine in C (`c/menu.c`); bank 2 (EPROM0 chip 0x8000, both cards) holds the FSK packet layer, repeater/CW, GPS and MPRS/APRS in C. Next: GitHub CI and releases, new features in the free space. Pending: the ROM window bench test on a real board (`make -C firmware banktest`, checks both pages). |
+| **Next** | [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Bank 1 (EPROM0 chip 0xC000) holds the setup menu: its records and tables as asm data and the engine in C (`c/menu.c`); bank 2 (EPROM0 chip 0x8000, both cards) holds the FSK packet layer, repeater/CW, GPS and MPRS/APRS in C. CI and releases are prepared locally ([notes/ci.md](notes/ci.md)), not on GitHub until the original authors reply. Next: new features in the free space. Pending: the ROM window bench test on a real board (`make -C firmware banktest`, checks both pages). |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md) (none since 2026-10-01; decided ones in [notes/open-bugs-history.md](notes/open-bugs-history.md)).
@@ -31,6 +31,8 @@ make -C firmware verify ref   # release rebuilt byte-identical; the asm referenc
 make -C emu                   # emulator (r58emu, libr58.so)
 
 python3 -m unittest discover -s emu/tests      # test suite, ~9 min
+python3 tools/ci/runtests.py                   # the same, one process per module (~3 min)
+tools/ci/docker.sh                             # the CI pipeline in a clean Ubuntu container
 
 python3 emu/python/r58tui.py --nv my.nv        # interactive radio in the terminal
 python3 emu/python/r58tui.py --script '433500#. '   # headless: keys, then screen
