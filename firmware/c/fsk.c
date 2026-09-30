@@ -59,7 +59,7 @@ static void handle_relay_packets(void)
 	/* the 12 nibbles from the tag on, wraps in the ring; v3_Z did not */
 	fsk_at = packet_good;
 	for (i = 0; i < 12; i++)
-		fsk_putchar(fsk_history[fsk_at++]);
+		mbus_putchar(fsk_history[fsk_at++]);
 }
 
 static void send_display_config_packet(void);
@@ -250,7 +250,7 @@ static void fill_display_config_packet(void)
 static void send_display_config_packet(void)
 {
 	b = txon;			/* in case tx already on, repeater ? */
-	if (!b && fsk_tx_on_failed()) {
+	if (!b && tx_on_failed()) {
 		tx_error();
 		return;
 	}
@@ -330,7 +330,7 @@ void send_mprs_report_packet_maybe(void)
 {
 	if (!cfg_keyup_mprs)		/* oFF */
 		return;
-	if (cfg_keyup_mprs != 1 && fsk_mprs_not_yet())	/* on demand */
+	if (cfg_keyup_mprs != 1 && mprs_timer_not_yet())	/* on demand */
 		return;
 	send_mprs_report_packet();	/* 1: ALL */
 }
@@ -365,7 +365,7 @@ static void build_call_packet_buffer(void)
 
 void send_call_packet(void)
 {
-	if (fsk_tx_on_failed()) {
+	if (tx_on_failed()) {
 		tx_error();
 		return;
 	}

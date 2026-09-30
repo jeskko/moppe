@@ -139,7 +139,7 @@ static void mprs_lon_format(void)
 static void out_string(const uint8_t *p)
 {
 	while (*p != EOS)
-		fsk_putchar(*p++);
+		mbus_putchar(*p++);
 }
 
 static uint8_t ascify(uint8_t x)
@@ -151,13 +151,13 @@ static uint8_t ascify(uint8_t x)
 
 static void putchar_hex_nybble(uint8_t x)
 {
-	fsk_putchar(ascify(x & 0x0F));
+	mbus_putchar(ascify(x & 0x0F));
 }
 
 static void crlf(void)
 {
-	fsk_putchar(0x0D);
-	fsk_putchar(0x0A);
+	mbus_putchar(0x0D);
+	mbus_putchar(0x0A);
 }
 
 /* ---- callsigns and positions of the packet */
@@ -462,13 +462,13 @@ static void symbol_nibble(void)
 static void putchar_slipped(uint8_t x)
 {
 	if (x == 192) {
-		fsk_putchar(219);
-		fsk_putchar(220);
+		mbus_putchar(219);
+		mbus_putchar(220);
 	} else if (x == 219) {
-		fsk_putchar(219);
-		fsk_putchar(221);
+		mbus_putchar(219);
+		mbus_putchar(221);
 	} else {
-		fsk_putchar(x);
+		mbus_putchar(x);
 	}
 }
 
@@ -510,16 +510,16 @@ static void mbus_mprs_out_logger(void)
 	*d++ = ' ';
 	*d = EOS;
 	for (s = gps_utc; *s != EOS; s++)	/* (runs on without EOS, v3_Z) */
-		fsk_putchar(ascify(*s));
+		mbus_putchar(ascify(*s));
 	out_string(mbus_mprs_buffer);
 	out_string(locator_display_buffer);
-	fsk_putchar(' ');
+	mbus_putchar(' ');
 	symbol_nibble();
 	putchar_hex_nybble(a);
-	fsk_putchar(' ');
+	mbus_putchar(' ');
 	putchar_hex_nybble(packet_rssi >> 4);
 	putchar_hex_nybble(packet_rssi);
-	fsk_putchar(' ');
+	mbus_putchar(' ');
 	out_string(remote_display_buffer);
 	crlf();
 }
@@ -541,41 +541,41 @@ static void mbus_mprs_call_latlon(void)
 	switch (cfg_mbus_mprs) {
 	case 1:					/* TNC emulation */
 		out_string(remote_display_buffer);
-		fsk_putchar('>');
+		mbus_putchar('>');
 		out_string(dst_aprs);
-		fsk_putchar(',');
+		mbus_putchar(',');
 		out_string(dst_relay);
-		fsk_putchar(',');
+		mbus_putchar(',');
 		out_string(dst_wide);
-		fsk_putchar(':');
+		mbus_putchar(':');
 		out_string(mbus_mprs_buffer);
 		crlf();
 		break;
 	case 2:					/* KISS */
-		fsk_putchar(192);
-		fsk_putchar(0x00);		/* data from TNC 0 */
+		mbus_putchar(192);
+		mbus_putchar(0x00);		/* data from TNC 0 */
 		s = dst_aprs;
 		last = 0;
 		mbus_mprs_out_address_kiss();
 		s = remote_display_buffer;
 		last = 1;
 		mbus_mprs_out_address_kiss();
-		fsk_putchar(0x03);		/* control */
-		fsk_putchar(0xF0);		/* PID */
+		mbus_putchar(0x03);		/* control */
+		mbus_putchar(0xF0);		/* PID */
 		out_string(mbus_mprs_buffer);
-		fsk_putchar(192);
+		mbus_putchar(192);
 		break;
 	case 3:					/* third party, CONVERS */
-		fsk_putchar('}');
+		mbus_putchar('}');
 		out_string(remote_display_buffer);
-		fsk_putchar('>');
+		mbus_putchar('>');
 		out_string(dst_aprs);
-		fsk_putchar(',');
+		mbus_putchar(',');
 		out_string(dst_mprs);
-		fsk_putchar('*');
-		fsk_putchar(':');
+		mbus_putchar('*');
+		mbus_putchar(':');
 		out_string(mbus_mprs_buffer);
-		fsk_putchar(0x0D);
+		mbus_putchar(0x0D);
 		break;
 	}
 }

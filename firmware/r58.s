@@ -3604,30 +3604,25 @@ store_next_6bits:
 	ret
 
 ; FSK packet dispatch, remote config and MPRS sending: c/fsk.c, bank 2.
-far_packet_for_whom:	call bank2_call
-	.dw _packet_for_whom
-far_send_remote_config_packets:	call bank2_call
-	.dw _send_remote_config_packets
-far_send_mprs_report_packet_maybe:	call bank2_call
-	.dw _send_mprs_report_packet_maybe
-far_send_mprs_report_packet:	call bank2_call
-	.dw _send_mprs_report_packet
-far_send_call_packet:	call bank2_call
-	.dw _send_call_packet
+	FAR(far_packet_for_whom, bank2_call, _packet_for_whom)
+	FAR(far_send_remote_config_packets, bank2_call, _send_remote_config_packets)
+	FAR(far_send_mprs_report_packet_maybe, bank2_call, _send_mprs_report_packet_maybe)
+	FAR(far_send_mprs_report_packet, bank2_call, _send_mprs_report_packet)
+	FAR(far_send_call_packet, bank2_call, _send_call_packet)
 	ASSERT_EQ(SHORT_PACLEN, 8)
 
 ;  c/fsk.c shims: register interfaces as --sdcccall 1 passes them
-fsk_putchar:			; A: MBUS putchar takes C
+mbus_putchar:			; A: MBUS putchar takes C
 	ld c, a
 	jp putchar
 fsk_send:			; A: send_packet_buffer takes the length in B
 	ld b, a
 	jp send_packet_buffer
-fsk_tx_on_failed:		; A = 0xFF if tx_on returned carry
+tx_on_failed:		; A = 0xFF if tx_on returned carry
 	call tx_on
 	sbc a, a
 	ret
-fsk_mprs_not_yet:		; A = 0xFF if check_for_mprs_timer says not yet
+mprs_timer_not_yet:		; A = 0xFF if check_for_mprs_timer says not yet
 	call check_for_mprs_timer
 	sbc a, a
 	ret
@@ -4129,11 +4124,9 @@ ccir_tx_timer_wait:
 
 ; For the repeater/CW code in bank 1: the same waits with bank 0 selected.
 
-b0_ccir_tx_timer_wait:	call bank0_call
-	.dw ccir_tx_timer_wait
+	FAR(b0_ccir_tx_timer_wait, bank0_call, ccir_tx_timer_wait)
 
-b0_cw_wait_tone:	call bank0_call
-	.dw cw_wait_tone
+	FAR(b0_cw_wait_tone, bank0_call, cw_wait_tone)
 
 ; Wait for the marker tone (or pause) to end: Z.  NZ = carrier came up
 ; while repeater_cw_sendit_all is 0, i.e. the sequence must be pre-empted.
@@ -5767,8 +5760,9 @@ set_bank:
 
 ;----------------------------------------------------------------------
 ;
-;  Assembler calls into bank 1:  fn_stub:  call bank1_call / .dw fn
-;  (bank 2: far2_fn:  call bank2_call / .dw fn)
+;  Assembler calls into a bank go through a fixed-ROM stub,
+;  FAR(far_fn, bank1_call, fn) (bank 2: bank2_call; bank0_call runs a wait
+;  with bank 0 selected).
 ;  All registers pass to fn and back unchanged (flags too); the previous
 ;  bank is restored after fn returns, so calls nest.  The RAM temporaries
 ;  are only live until fn starts; interrupts never call bank code.
@@ -5899,8 +5893,7 @@ bank_test:
 	set DPYSIR, (hl)
 	ret			; Z: passed
 
-far2_bank_test_ping2:	call bank2_call
-	.dw bank_test_ping2
+	FAR(far2_bank_test_ping2, bank2_call, bank_test_ping2)
 
 bank_test_sum:			; DE = 16-bit byte sum of bank A's window
 	call set_bank
@@ -8604,8 +8597,7 @@ far_repeater_run:
 	ld (hl), a
 	call bank2_call
 	.dw _repeater_run
-far_repeater_operator_ptt:	call bank2_call
-	.dw _repeater_operator_ptt
+	FAR(far_repeater_operator_ptt, bank2_call, _repeater_operator_ptt)
 
 ;  c/rptr.c shims
 rptr_tone:			; A = ticks, DE = timer count
@@ -9289,28 +9281,17 @@ a2i_word:
 ; Fixed code calls it through these stubs (bank1_call); menu_ptr holds
 ; bank 1 addresses, which fixed code only compares or passes back.
 
-far_init_menu:	call bank1_call
-	.dw init_menu
-far_update_gpio12_foo:	call bank1_call
-	.dw update_gpio12_foo
-far_toggle_or_position_menu:	call bank1_call
-	.dw toggle_or_position_menu
-far_menu_enter_or_walk:	call bank1_call
-	.dw menu_enter_or_walk
-far_menu_defval_or_exec:	call bank1_call
-	.dw menu_defval_or_exec
-far_menu_up_value:	call bank1_call
-	.dw menu_up_value
-far_menu_dn_value:	call bank1_call
-	.dw menu_dn_value
-far_menu_next_group:	call bank1_call
-	.dw menu_next_group
-far_menu_prev:	call bank1_call
-	.dw menu_prev
-far_decoder_hist_rewind:	call bank1_call
-	.dw decoder_hist_rewind
-far_leaved_setup:	call bank1_call
-	.dw leaved_setup
+	FAR(far_init_menu, bank1_call, init_menu)
+	FAR(far_update_gpio12_foo, bank1_call, update_gpio12_foo)
+	FAR(far_toggle_or_position_menu, bank1_call, toggle_or_position_menu)
+	FAR(far_menu_enter_or_walk, bank1_call, menu_enter_or_walk)
+	FAR(far_menu_defval_or_exec, bank1_call, menu_defval_or_exec)
+	FAR(far_menu_up_value, bank1_call, menu_up_value)
+	FAR(far_menu_dn_value, bank1_call, menu_dn_value)
+	FAR(far_menu_next_group, bank1_call, menu_next_group)
+	FAR(far_menu_prev, bank1_call, menu_prev)
+	FAR(far_decoder_hist_rewind, bank1_call, decoder_hist_rewind)
+	FAR(far_leaved_setup, bank1_call, leaved_setup)
 
 ; read by the APRS code, so not in the bank with the other menu tables
 	TAB(tab_ax25_digi)      ; must be literal as used in packet, chr by chr
@@ -10107,7 +10088,7 @@ bank1_end:
 ;== BANK 2 ============================================================
 ;
 ;  EPROM0 0x8000-0xBFFF, mapped at 0x8000 by set_bank(2); the same rules
-;  as bank 1, entered through far2_* stubs (bank2_call).  Linked at the
+;  as bank 1, entered through FAR stubs with bank2_call.  Linked at the
 ;  virtual address 0x28000 (bank 1 has the window addresses): labels here
 ;  are 0x28000 + offset, and every 16-bit use of them (ld, jp, .dw, >> 8,
 ;  & 0xFF) gets the window address; tools/ihx2bin.py puts the area at

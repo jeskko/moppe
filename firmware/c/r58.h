@@ -73,8 +73,8 @@ extern const struct rec *menu_ptr;
 /* ---- assembler routines and shims (r58.s) */
 
 extern uint8_t a2i_byte(void);		/* digits -> A (0xFF if > 255) */
-extern uint8_t fsk_mprs_not_yet(void);	/* check_for_mprs_timer: carry */
-extern uint8_t fsk_tx_on_failed(void);	/* tx_on: carry */
+extern uint8_t mprs_timer_not_yet(void);	/* check_for_mprs_timer: carry */
+extern uint8_t tx_on_failed(void);	/* tx_on: carry */
 extern uint8_t get_ctcss_rx_hz(void);	/* VFO or memory */
 extern uint8_t getchar(void);
 extern uint8_t is_key_down(void);	/* A = keydown; clears key when up */
@@ -82,7 +82,7 @@ extern uint8_t is_ptt_pressed(void);	/* A != 0: pressed */
 extern uint8_t read_squelcher_value(void);
 extern void dpy_ch(uint8_t c);		/* dpydig */
 extern void dpy_freq(const uint8_t *f);	/* draw_long of a 24-bit value */
-extern void fsk_putchar(uint8_t c);	/* MBUS putchar (C) */
+extern void mbus_putchar(uint8_t c);	/* MBUS putchar (C) */
 extern void fsk_send(uint8_t len);	/* send_packet_buffer (B) */
 extern void clear_key(void);		/* preserves A */
 extern void marker_300hz_1s(void);	/* 300 Hz marker, 1 s */

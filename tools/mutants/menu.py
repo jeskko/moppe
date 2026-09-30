@@ -48,7 +48,7 @@ MUTANTS = [
     ("copy_default(cfg_band2_start, 10);", "copy_default(cfg_band2_start, 9);"),
     ("else if (card == S8C)", "else if (card == S8B + 1)"),
     ("\tzero(nvstart, nvend);\n\tcfg_synth_card = card;", "\tzero(nvstart, nvend);"),
-    ("fsk_putchar(-sum);", "fsk_putchar(sum);"),
+    ("mbus_putchar(-sum);", "mbus_putchar(sum);"),
     ("if ((uint8_t)(getchar() + sum))", "if ((uint8_t)(getchar() + sum) > 1)"),
     ("|| getchar() != (uint8_t)(size >> 8))", "|| (getchar() && 0))"),
     ("zero(rfctab, end_rfctab);", "zero(rfctab, end_rfctab - 1);"),

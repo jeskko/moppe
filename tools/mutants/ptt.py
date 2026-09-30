@@ -44,8 +44,8 @@ MUTANTS = [
     ("\tcopy3(tx_freq, save_freq);\n\tupdate_tx_vco_band();\n}", "\tcopy3(tx_freq, save_freq);\n}"),
     # spontaneous MPRS
     ("\tif (txon)\n\t\treturn;", "\tif (0)\n\t\treturn;"),
-    ("\tif (idle_timer < cfg_idlefn_delay)\n\t\treturn;\t\t\t\t/* not idle enough */\n\tif (fsk_mprs_not_yet())", "\tif (fsk_mprs_not_yet())"),
-    ("\tif (fsk_mprs_not_yet())\n\t\treturn;", ""),
+    ("\tif (idle_timer < cfg_idlefn_delay)\n\t\treturn;\t\t\t\t/* not idle enough */\n\tif (mprs_timer_not_yet())", "\tif (mprs_timer_not_yet())"),
+    ("\tif (mprs_timer_not_yet())\n\t\treturn;", ""),
     ("\tif (squelch_open)\n\t\treturn;", ""),
     ("\tif (!aprs_freq_set())\n\t\treturn;\t\t\t\t/* not configured */\n\tto_aprs_freq();", "\tto_aprs_freq();"),
     ("\tfar_send_mprs_report_packet();\n", "\n"),

@@ -9,7 +9,7 @@
  * for their asm callers), ptt_ccir_xmit and the CCIR/marker tone routines
  * (OUT0 and 8254 writes with interrupts off), check_for_mprs_timer (carry),
  * locate_tx_band (IX).  Shims in r58.s: marker_300hz_1s, ptt_tone_count,
- * ptt_1750_tone, ptt_tx_band_step; fsk_tx_on_failed/fsk_mprs_not_yet turn
+ * ptt_1750_tone, ptt_tx_band_step; tx_on_failed/mprs_timer_not_yet turn
  * carry into A.
  *
  * The routines called here do not preserve IX, so no stack frames.
@@ -45,7 +45,7 @@ void pttcheck(void)
 
 	/* PTT is down, normal or slave mode */
 	cu_manipulated();
-	if (fsk_tx_on_failed()) {
+	if (tx_on_failed()) {
 		tx_error();			/* illegal: bail out */
 		return;
 	}
@@ -105,7 +105,7 @@ void tx_error(void)
 /* '*' without digits: the repeater's 1750 Hz tone while the key is held */
 void beep1750(void)
 {
-	if (fsk_tx_on_failed()) {
+	if (tx_on_failed()) {
 		tx_error();
 		return;
 	}
@@ -175,7 +175,7 @@ void spontaneous_mprs_check(void)
 		return;				/* TX on: wait */
 	if (idle_timer < cfg_idlefn_delay)
 		return;				/* not idle enough */
-	if (fsk_mprs_not_yet())
+	if (mprs_timer_not_yet())
 		return;
 	if (squelch_open)
 		return;			/* no traffic, wait - OH1E */

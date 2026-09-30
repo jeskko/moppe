@@ -724,17 +724,17 @@ void all_config_send(void)
 	if (!is_666())
 		return;
 	for (s = banner; *s != EOS; s++)
-		fsk_putchar(*s);		/* banner line */
+		mbus_putchar(*s);		/* banner line */
 	size = nvend - nvstart;
-	fsk_putchar(size);
-	fsk_putchar(size >> 8);			/* length, a binary word */
+	mbus_putchar(size);
+	mbus_putchar(size >> 8);			/* length, a binary word */
 	sum = 0;
 	for (q = nvstart; q != nvend; q++) {
 		v = *q;
 		sum += v;
-		fsk_putchar(v);
+		mbus_putchar(v);
 	}
-	fsk_putchar(-sum);			/* data + checksum == 0 */
+	mbus_putchar(-sum);			/* data + checksum == 0 */
 }
 
 void all_config_get(void)
