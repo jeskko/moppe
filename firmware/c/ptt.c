@@ -142,13 +142,6 @@ static uint8_t aprs_freq_set(void)
 	return cfg_aprs_tx_freq[0] | cfg_aprs_tx_freq[1] | cfg_aprs_tx_freq[2];
 }
 
-static void copy3(uint8_t *d, const uint8_t *s)
-{
-	d[0] = s[0];
-	d[1] = s[1];
-	d[2] = s[2];
-}
-
 static void to_aprs_freq(void)
 {
 	copy3(save_freq, tx_freq);

@@ -60,13 +60,6 @@ static uint8_t lt24(const uint8_t *a, const uint8_t *b)
 	return a[0] < b[0];
 }
 
-static void copy3(uint8_t *dst, const uint8_t *src)
-{
-	dst[0] = src[0];
-	dst[1] = src[1];
-	dst[2] = src[2];
-}
-
 /* ---- rejects */
 
 /* these run for every channel: loops without calls */

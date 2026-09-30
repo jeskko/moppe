@@ -111,6 +111,7 @@ extern void changed_frequency(void), changed_frequency_duplex_okay(void),
 extern void send_mprs_report_packet_1(void);
 
 /* c/keys.c */
+extern void copy3(uint8_t *d, const uint8_t *s);	/* a 24-bit value */
 extern void keycheck(void), leave_memories(void), next_vip(void),
 	remember_vip(void), save_memory_ctcss(void);
 extern void def_memo(uint8_t k), dokey_not_menu(uint8_t k),

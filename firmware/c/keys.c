@@ -177,7 +177,8 @@ static uint8_t *memory_rec(uint8_t m)	/* point_ix_memory_a */
 	return memories + m * MEM_SIZE;
 }
 
-static void copy3(uint8_t *d, const uint8_t *s)
+/* 3 bytes (a 24-bit value); also used by ptt.c, scan.c and menu.c */
+void copy3(uint8_t *d, const uint8_t *s)
 {
 	d[0] = s[0];
 	d[1] = s[1];

@@ -112,13 +112,6 @@ static void put24(uint8_t *a, uint32_t x)
 	a[2] = x >> 16;
 }
 
-static void copy3(uint8_t *dst, const uint8_t *src)
-{
-	dst[0] = src[0];
-	dst[1] = src[1];
-	dst[2] = src[2];
-}
-
 /* ---- the value a record shows and edits (load_menu_ptr) */
 
 static uint8_t *value_ptr(const struct rec *x)
