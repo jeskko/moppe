@@ -171,8 +171,8 @@ The step config BC holds C = divisor and B = shift. The grid is `C / 2^B` kHz.
 The 25 kHz step programs a **12.5 kHz** reference. RX and TX always use the same R (`set_channel_step`, L12503).
 
 `freq2div(f)` (L12584) computes `f·2^B / C` in integer kHz and rounds to the nearest channel. The rounding has quirks:
-the fractional bits are computed using 2r+1, and for B = 0 the final round-up compare depends on the carry. A Python
-model that reproduces it exactly is at `scratchpad/synth.py`.
+the fractional bits are computed using 2r+1, and for B = 0 the final round-up compare depends on the carry. (A Python
+model reproduced it exactly; it was not kept. `test_freq.py` compares the build against the release instead.)
 
 `div2freq` (L12564) computes `D·C >> B`, which truncates. The displayed kHz value is therefore the grid frequency
 truncated to a whole kHz. For example, 433.5125 MHz is displayed and stored as 433512.

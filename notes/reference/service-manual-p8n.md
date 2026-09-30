@@ -4,8 +4,8 @@
 
 Source: `reference/RD58DBG_SBG_Huolto-ohje.pdf`, 244 pages, 3rd edition 08.02.1990.
 Page numbers below are **PDF page numbers**. All pages except p1 are 300 dpi 1-bit scans. The text layer
-only holds the red TTRK/Nokia banner, so I OCR'd every page (tesseract `fin`). OCR text and page PNGs
-are in `scratchpad/manual/pNNN.{png,txt}`.
+only holds the red TTRK/Nokia banner, so I OCR'd every page (tesseract `fin`). The OCR text and page PNGs
+were not kept.
 
 Labels used below: **read** means stated in the manual. **inferred** means derived from the drawings,
 from pin numbers or from datasheet knowledge. **not found** means the manual does not cover it.
