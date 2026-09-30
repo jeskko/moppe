@@ -22,6 +22,11 @@
 #define NUM_TMP_REJECTS	20
 #define MDM_DCD		0x04
 
+/* a scan slice: two 24-bit frequencies, start and end (asm: 2 * SIZE_FREQ,
+ * SIZE_FREQ) */
+#define SLICE		6
+#define SL_END		3
+
 /* resume points of the assembler coroutine */
 #define S_STEP		0		/* scan_do_step */
 #define S_FIRST_FREQ	1		/* scan_first_frequency */
@@ -36,7 +41,7 @@ extern uint8_t scan_slicecnt, cfg_unreject_mins, cfg_scan_skip_fsk_channels,
 	reject_idx;
 extern volatile uint8_t scan_timer, scan_timer_secs;
 extern uint16_t scanner_state;
-extern uint8_t scan_slices[NUM_BANDRECS * 6],
+extern uint8_t scan_slices[NUM_BANDRECS * SLICE],
 	tmp_rejects[NUM_TMP_REJECTS * 4];
 extern const uint8_t cfg_reject_0[30], cfg_reject_10[30];
 
@@ -67,8 +72,9 @@ static uint8_t is_freq_rejected_temp(void)
 {
 	n = load_num_tmp_rejects();
 	for (q = tmp_rejects; n; n--, q += 4)
-		if (q[3] && q[0] == rx_freq[0] && q[1] == rx_freq[1] && q[2] == rx_freq[2])
-			return 1;		/* timer 0: stale */
+		if (q[3] /* timer 0: stale */ && q[0] == rx_freq[0] &&
+		    q[1] == rx_freq[1] && q[2] == rx_freq[2])
+			return 1;
 	return 0;
 }
 
@@ -156,8 +162,10 @@ static uint8_t memory_from(uint8_t k)
 {
 	mk = k;
 	mf = memories + MEM_FLAGS + k * MEM_SIZE;
-	for (mnext = 10, mbit = 0x40; mk >= mnext && mnext < 100; mnext += 10)
-		mbit <<= 1;			/* k's block */
+	/* k's block; k >= 100 shifts mbit off the top (unused: mk < 100
+	 * below is false already, so mnext/mbit's end value never matters) */
+	for (mnext = 10, mbit = 0x40; mk >= mnext; mnext += 10)
+		mbit <<= 1;
 	while (mk < 100) {
 		if (scan_mask & mbit) {
 			for (; mk < mnext; mk++, mf += MEM_SIZE)
@@ -184,21 +192,21 @@ static void build_scan_slicetab(void)
 			continue;
 		if (!(s[0] | s[1] | s[2]))
 			continue;		/* empty band */
-		for (j = 0; j < 6; j++)
+		for (j = 0; j < SLICE; j++)
 			sl[j] = s[j];		/* start, end */
-		sl += 6;
+		sl += SLICE;
 		n++;
 	}
 	scan_slicecnt = n;
 	if (n < 2)
 		return;
 	for (i = n - 1; i; i--)			/* bubble sort */
-		for (j = 0, sl = scan_slices; j < i; j++, sl += 6)
-			if (lt24(sl + 6, sl))
-				for (m = 0; m < 6; m++) {
+		for (j = 0, sl = scan_slices; j < i; j++, sl += SLICE)
+			if (lt24(sl + SLICE, sl))
+				for (m = 0; m < SLICE; m++) {
 					v = sl[m];
-					sl[m] = sl[m + 6];
-					sl[m + 6] = v;
+					sl[m] = sl[m + SLICE];
+					sl[m + SLICE] = v;
 				}
 }
 
@@ -264,7 +272,7 @@ step:						/* scan_do_step */
 	/* scan_next_frequency: the slice we are in, then one channel up */
 	if (!scan_slicecnt)
 		goto first_memory;
-	for (n = scan_slicecnt, sl = scan_slices; !lt24(rx_freq, sl + 3); sl += 6)
+	for (n = scan_slicecnt, sl = scan_slices; !lt24(rx_freq, sl + SL_END); sl += SLICE)
 		if (!--n)
 			goto first_memory;	/* past all slices */
 	if (lt24(rx_freq, sl)) {
@@ -273,11 +281,11 @@ step:						/* scan_do_step */
 		goto did_step_freq;
 	}
 	step_channel_up();
-	if (lt24(rx_freq, sl + 3))
+	if (lt24(rx_freq, sl + SL_END))
 		goto did_step_freq;		/* still in the slice */
 	if (n == 1)
 		goto first_memory;		/* no slice left */
-	sl += 6;
+	sl += SLICE;
 	copy3(rx_freq, sl);
 	changed_frequency();
 	goto did_step_freq;
@@ -355,7 +363,11 @@ listen_on:
 	goto listen;				/* a signal: stay */
 
 tail:						/* N seconds without a signal */
-	if (band_sctail != 255) {		/* 255: listen for ever */
+	if (band_sctail != 255) {		/* 255 does NOT mean "listen for
+						 * ever" here: scan_timer_secs is
+						 * left at 0, so tail_on falls
+						 * through as if the tail were 0
+						 * (open bug, notes/open-bugs.md) */
 		v = band_sctail;
 		__asm__("di");
 		scan_timer_secs = v;
