@@ -85,7 +85,6 @@ and are always collected for events, using the window since the previous
 checkpoint (or scenario start).
 """
 import os
-import re
 import sys
 import unittest
 
