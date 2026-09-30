@@ -14,47 +14,31 @@
  * The routines called here do not preserve IX (the menu drawers use it),
  * so nothing here has a stack frame: loop state is static.  Mainline only.
  */
-#include <stdint.h>
-
-#define EOS		0xFF
-#define MEM_VALID	0x01
-#define MEM_HIDDEN	0x02
-#define MEM_SCANNABLE	0x04
+#include "r58.h"
 
 extern const uint8_t *dpy_cursor;
 extern const uint8_t CU53AN_segs_u_digit_5[], CU58AF_segs_u_digit_7[],
 	CU53AN_segs_bottom_row[], CU58AF_segs_bottom_row[];
 
-extern uint8_t cu_is_alfa, menu_active, call_dpyed, locator_dpyed, volume,
-	audio_dst, cfg_squelch_level, cfg_function, txon, srssi,
-	call_timer_hour, call_timer_min, call_timer_sec, digidx,
-	display_buffer_time, scan_on, scan_paused, squelch_forced, mem_flags,
-	mem_idx, packet_good, yucko_alfa_draw_long_6_only;
-extern uint8_t locator_display_buffer[], digbuf[], remote_display_buffer[],
-	fsk_history[256], rx_freq[3], tx_freq[3];
+extern uint8_t audio_dst, srssi, yucko_alfa_draw_long_6_only;
 extern const uint8_t *adj_feedback;
-extern uint16_t scan_mask;
 
 /* r58.s shims: the cursor in dpy_cursor */
-extern void dpy_ch(uint8_t c);			/* dpydig */
 extern void dpy_div9(uint8_t v);		/* 0..255 as 0..9 */
 extern void dpy_div99(uint8_t v);		/* 0..255 as 0..99 */
 extern void dpy_val99(uint8_t v);		/* 0..99, zero-blanked */
-extern void dpy_freq(const uint8_t *f);		/* draw_long of a 24-bit value */
 extern void dpy_menu_title(void);		/* bank 1 */
 extern void dpy_menu_lower_row(void);		/* bank 1 */
 
 /* firmware routines (assembler) */
 extern uint8_t real_txpwr(void);		/* 0..255 */
-extern void draw_upper_colons(void), clear_upper_colons(void),
-	clear_lower_colon(void);
-extern uint8_t get_ctcss_tx_hz(void), get_ctcss_rx_hz(void);	/* VFO or memory */
+extern void draw_upper_colons(void), clear_lower_colon(void);
+extern uint8_t get_ctcss_tx_hz(void);	/* VFO or memory */
 
 /* the indicators redraw sets: single segments (constants asserted in
  * r58.s).  Only mainline code writes `segments` (the display interrupt
  * reads it), so a read-modify-write is safe. */
 extern uint8_t segments[], dpx_ind_flags;
-extern volatile uint8_t squelch_muted, gps_valid_seconds;
 #define CU53AN_SEG_V_U		0x43
 #define CU53AN_SEG_PHONE	0x47
 #define CU53AN_SEG_V_D		0x53

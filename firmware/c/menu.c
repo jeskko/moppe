@@ -19,11 +19,8 @@
  */
 #pragma bank 1
 
-#include <stdint.h>
+#include "r58.h"
 
-#define EOS		0xFF
-#define SIZE_STR	8
-#define MEM_VALID	0x01
 #define S8C		1
 #define S8B		2
 
@@ -61,46 +58,31 @@ extern const struct rec *const menu_quickspots[10];
 extern const uint8_t defaults_70cm[], defaults_2m[], defaults_6m[];
 extern const uint8_t banner[];
 
-extern const struct rec *menu_ptr;
-extern uint8_t cu_is_alfa, display_buffer_time, mem_flags, menu_active, digidx,
-	cfg_enter_time, cfg_synth_card, rfc, cfg_squelch_level, cfg_squelch_BIG,
-	cfg_ctcss_tx_hz, cfg_ctcss_rx_hz, mem_ctcss_tx_hz, mem_ctcss_rx_hz,
-	cfg_gpio1_state, cfg_gpio2_state, cfg_other_step,
-	ccir_hist_idx, dtmf_hist_idx, fsk_hist_idx, gps_hist_idx,
-	ccir_hist_finger, dtmf_hist_finger, fsk_hist_finger, gps_hist_finger;
-extern volatile uint8_t key_time, ad_rssi, mbusrx_cnt;
-extern uint8_t digbuf[16], remote_display_buffer[10], cfg_other_duplex[3],
-	rx_freq[3], cfg_external_serial_A[2], cfg_external_serial_B[2],
-	cfg_implied[6], cfg_if_freq[3], cfg_rx_vco_center[3], cfg_tx_vco_center[3],
-	cfg_tx_band_start[3], cfg_band1_start[3], cfg_band2_start[3],
-	ccir_history[256], dtmf_history[256], fsk_history[256], gps_history[256],
-	nvstart[], nvend[], memories[], end_memories[], rfctab[], end_rfctab[],
+extern uint8_t cfg_enter_time, cfg_synth_card, cfg_ctcss_tx_hz,
+	cfg_ctcss_rx_hz, cfg_other_step, ccir_hist_idx, dtmf_hist_idx,
+	fsk_hist_idx, ccir_hist_finger, dtmf_hist_finger, fsk_hist_finger,
+	gps_hist_finger;
+extern uint8_t cfg_external_serial_A[2], cfg_external_serial_B[2],
+	cfg_if_freq[3], cfg_band2_start[3], ccir_history[256],
+	dtmf_history[256], nvstart[], nvend[], end_memories[], end_rfctab[],
 	cfg_image_buffer[];
 
 /* firmware routines (assembler) */
-extern void clear_upper_colons(void), draw_lower_colon(void),
-	save_memory_ctcss(void), ctcss_dec_startstop(void), save_nvdata(void),
+extern void draw_lower_colon(void), ctcss_dec_startstop(void),
 	feedback_hold(void), feedback_let_go_the_darn_button(void),
 	feedback_ready(void), feedback_loading(void), feedback_error(void),
-	no_feedback(void), redraw(void), force_redraw(void), waitkey(void),
-	clear_buffer(void), clear_key(void), update_gpio12(void),
-	shift_external_serial_A(void), shift_external_serial_B(void),
-	save_rfc(void), powerdown_now(void);
-extern uint8_t is_key_down(void), a2i_byte(void), read_squelcher_value(void),
-	getchar(void);
+	update_gpio12(void), shift_external_serial_A(void),
+	shift_external_serial_B(void), save_rfc(void);
 
 /* r58.s shims */
-extern void dpy_ch(uint8_t c);			/* dpydig */
 extern void dpy_val255(uint8_t v);		/* dpyval255 */
 extern void dpy_word(uint16_t v);		/* draw_word */
-extern void dpy_freq(const uint8_t *f);		/* draw_long of a 24-bit value */
 extern void dpy_freq_signed(const uint8_t *f);	/* draw_long_signed */
 extern void dpy_str_rj(const uint8_t *s);	/* draw_string_rightjust */
 extern void dpy_str_rj_scores(const uint8_t *s);	/* ..._scores */
 extern void dpy_history(const uint8_t *at);	/* draw_decoder_history */
 extern uint32_t menu_a2i(void);			/* a2i: AHL */
 extern uint16_t menu_a2i_word(void);		/* a2i_word: HL */
-extern void fsk_putchar(uint8_t c);		/* MBUS putchar (C) */
 
 static const struct rec *r, *rr;
 static uint8_t *p, *q;

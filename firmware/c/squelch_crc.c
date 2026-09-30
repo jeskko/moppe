@@ -7,25 +7,20 @@
  * in r58.s and are declared extern here; the small helpers it calls stay
  * in assembler because other code uses them.
  */
-#include <stdint.h>
+#include "r58.h"
 
 /* firmware variables */
-extern uint8_t squelch_open, squelch_delay, squelch_forced, squelch_muted,
-	repeater_sitters_special, ad_rssi, last_sqtail;
+extern uint8_t squelch_delay;
 extern uint16_t squelch_prev_ones;
-extern uint8_t cfg_squelch_hyst, cfg_squelch_level, cfg_squelch_BIG,
-	cfg_squelch_ctcss;
+extern uint8_t cfg_squelch_hyst, cfg_squelch_ctcss;
 extern volatile uint8_t sir;
 #define DPYSIR 1
 
 /* firmware routines (assembler); byte results come back in A */
-extern uint8_t read_squelcher_value(void);
-extern uint8_t get_ctcss_rx_hz(void);
 extern uint8_t read_ctcss_detect(void);
 extern void squelch_is_closed(void);
 extern void squelch_is_open(void);
 extern void audioc_on(void);
-extern void audioc_off(void);
 extern void cu_serv_on(void);
 extern void cu_serv_off(void);
 extern void cu_lights_on_from_squelch(void);
@@ -99,7 +94,6 @@ void squelch(void)
 /* ---- FSK packet CRC: reflected CCITT via the firmware's page tables,
  * init 0xFFFF, stored complemented, high byte first */
 extern const uint8_t crctbl_hi[256], crctbl_lo[256];
-extern uint8_t outpacket[16], cfg_remote_passwd[8];
 
 static uint16_t crc_run(uint16_t crc, const uint8_t *p, uint8_t n)
 {

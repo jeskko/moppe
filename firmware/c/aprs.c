@@ -25,31 +25,23 @@
  */
 #pragma bank 2
 
-#include <stdint.h>
+#include "r58.h"
 
-#define EOS		0xFF
-#define SIZE_STR	8
-
-extern uint8_t mprs_packed_packet[12], remote_display_buffer[16],
-	locator_display_buffer[8], distance_bearing[8], mbus_mprs_buffer[64],
-	my_coord_tmp_6bytes[6], gps_latlon_tmp[6], aprs_packet_out[124],
-	aprs_bits_out[189], fsk_history[256], gps_utc[8], cfg_gps_latitude[8],
-	cfg_gps_longitude[8], cfg_gps_locator[8], cfg_mprs_callsign[8],
+extern uint8_t mprs_packed_packet[12], distance_bearing[8],
+	mbus_mprs_buffer[64], my_coord_tmp_6bytes[6], gps_latlon_tmp[6],
+	aprs_packet_out[124], aprs_bits_out[189], cfg_gps_locator[8],
 	cfg_ax25_digi_other[8];
-extern uint8_t mprs_qrb_dir_bits, packet_rssi, cfg_mbus_mprs, cfg_gps_upload,
-	cfg_remote_dpy_secs, locator_dpyed, display_buffer_time, cfg_report_type,
-	cfg_mprs_symbol, cfg_mprs_ssid, cfg_ax25_digi0, cfg_ax25_digi1,
+extern uint8_t mprs_qrb_dir_bits, packet_rssi, cfg_mbus_mprs,
+	cfg_gps_upload, cfg_remote_dpy_secs, cfg_ax25_digi0, cfg_ax25_digi1,
 	cfg_ax25_digi2, cfg_ax25_digi3, cfg_ax25_padbits, cfg_mic_e_message,
 	cfg_mic_e_dest_ssid;
-extern uint16_t gps_knots, gps_course;
 extern const uint8_t tab_ax25_digi[];
 extern const uint8_t AX25_DIGI_OTHER_IDX[];	/* an equate: its "address" */
 
 /* firmware routines (assembler) */
-extern void redraw(void), mute_fsk_at_mprs_end_maybe(void);
+extern void mute_fsk_at_mprs_end_maybe(void);
 extern void emit_ax25_packet(const uint8_t *bits);	/* HL, fixed ROM */
 /* r58.s shims */
-extern void fsk_putchar(uint8_t c);			/* MBUS putchar (C) */
 extern uint16_t aprs_crc(uint8_t len, const uint8_t *p);	/* calc_ax25_crc: A | C << 8 */
 extern void gps_upload_start(const uint8_t *msg);	/* gps_upload_ptr, '$' out */
 

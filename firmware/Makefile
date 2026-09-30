@@ -29,7 +29,7 @@ CFLAGS  = -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size --max-allocs-per-
 
 all: $(BUILD)/r58.bin
 
-$(BUILD)/%.rel: c/%.c
+$(BUILD)/%.rel: c/%.c c/r58.h
 	@mkdir -p $(BUILD)
 	$(SDCC) $(CFLAGS) -c $< -o $@
 

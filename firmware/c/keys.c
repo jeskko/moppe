@@ -21,57 +21,27 @@
  * '+', '-'; 0x0B/0x0C/0x0E are B/C/E from the CU53AN; 0x80-0x89 long
  * presses of 0-9.
  */
-#include <stdint.h>
+#include "r58.h"
 
-#define NUM_MEMORIES	130
 #define MEM_DEFAULT	99		/* point_ix_memory: out of range -> 99 */
-#define MEM_SIZE	12		/* record layout asserted in r58.s */
-#define MEM_FLAGS	6
 #define MEM_CTCSST	7
 #define MEM_BAND	8
 #define MEM_CTCSSR	9
 #define MEM_FOO2	10
 #define MEM_FOO3	11
-#define MEM_VALID	0x01
-#define MEM_HIDDEN	0x02
-#define MEM_SCANNABLE	0x04
 #define VIP_COUNT	10
-#define DIGBUF_SIZE	16
 #define KEYDOWN_LONG	20		/* 10 ms ticks: 200 ms */
 
-extern uint8_t menu_active, cu_is_alfa, scan_on, digidx, digbuf[DIGBUF_SIZE],
-	vip_idx, vip_list[3 * VIP_COUNT], vip_freq[3], mem_idx, mem_flags,
-	memories[NUM_MEMORIES * MEM_SIZE], rx_freq[3], tx_freq[3], volume,
-	cfg_def_volume, cfg_def_memory, cfg_def_frequency[3], cfg_squelch_level,
-	cfg_def_squelch, squelch_forced, band_step, mem_ctcss_tx_hz,
-	mem_ctcss_rx_hz, cfg_implied[3];
-extern volatile uint8_t key, key_time, keydown;	/* keypad interrupt */
+extern uint8_t vip_list[3 * VIP_COUNT], cfg_def_volume, cfg_def_memory,
+	cfg_def_frequency[3], cfg_def_squelch;
 
-extern void clear_key(void);			/* preserves A */
-extern void no_feedback(void);
-extern void open_selective(void);
-extern void redraw(void);
-extern uint8_t is_key_down(void);		/* A = keydown; clears key when up */
-extern void waitkey(void);
 extern void feedback_default(void), feedback_stored(void), feedback_reject(void),
 	feedback_cleared(void), feedback_shift_neg(void), feedback_shift_pos(void),
 	feedback_split(void);
-extern void save_nvdata(void), force_squelch(void), unforce_squelch(void),
-	far_decoder_hist_rewind(void), far_send_call_packet(void), beep1750(void),
-	set_channel_step(void);
-extern uint8_t duplex_state, duplex_shift[3];
-#define DPX_DUPLEX	1		/* asserted in r58.s */
-#define DPX_SPLIT	3
+extern void force_squelch(void), far_decoder_hist_rewind(void),
+	far_send_call_packet(void);
 extern void set_vola_a(uint8_t v);		/* clamps to 0..9, drives OUT0 */
-extern uint8_t a2i_byte(void);			/* digits -> A (0xFF if > 255) */
 extern void keys_a2i(uint8_t *p);		/* digits -> 24 bits at p */
-/* c/freq.c, c/scan.c */
-extern void changed_frequency(void), changed_frequency_duplex_okay(void),
-	temporary_change_rx_freq(void), locate_band(void),
-	set_duplex_from_tx_rx(void), step_duplex_state(void),
-	step_channel_up(void), step_channel_down(void), scanner_start(void),
-	scanner_stop(void), add_reject(void), clear_rejects(void),
-	toggle_scan_mask(uint8_t k);
 
 extern void mute_squelch_selective(uint8_t), far_toggle_or_position_menu(uint8_t),
 	step_audio_dst(uint8_t),

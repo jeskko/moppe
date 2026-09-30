@@ -14,33 +14,24 @@
  * return at once when there is nothing to do.  The routines called here
  * do not preserve IX, so no stack frames.
  */
-#include <stdint.h>
+#include "r58.h"
 
-#define EOS		0xFF
-#define SIZE_STR	8
 #define GPS_SENTENCE_SIZE	100	/* asserted in r58.s */
 #define GPS_MIN_SENTENCE	10	/* shorter is junk */
 #define GPS_AISIN_SEIKI	3		/* cfg_gps_config */
 #define RELAY_BYTES	12
-#define LONG_PACLEN	15		/* asserted in r58.s */
 #define PKT_RELAY	0x50
 
-extern uint8_t gps_hist_rp, gps_sentence_len, gps_sentence[GPS_SENTENCE_SIZE],
-	gps_history[256], cfg_gps_config, cfg_onhook_script[SIZE_STR],
-	cfg_offhook_script[SIZE_STR], cfg_idlefn, cfg_light_seconds,
-	cfg_bus_rf_relay, cfg_spontaneous_mprs, outpacket[16];
-extern volatile uint8_t gps_hist_idx, script_req, idlefn_flag, mbusrx_cnt,
-	lights_timer, redraw_req, ding_req, key_time, keydown, key;
+extern uint8_t gps_hist_rp, gps_sentence_len, cfg_gps_config,
+	cfg_onhook_script[SIZE_STR], cfg_offhook_script[SIZE_STR],
+	cfg_idlefn, cfg_light_seconds, cfg_bus_rf_relay,
+	cfg_spontaneous_mprs;
+extern volatile uint8_t script_req, ding_req;
 
 extern void gpsc_sentence(uint8_t len), gpsc_aisin(uint8_t idx);
-extern void open_selective(void), dokey_not_menu(uint8_t k), scanner_start(void),
-	def_memo(uint8_t k), append_long_packet_crc(void), fsk_send(uint8_t len),
-	cu_lights_off(void), redraw(void), ding(void);
-extern uint8_t getchar(void);
+extern void cu_lights_off(void);
 /* the per-pass checks of other modules */
-extern void battcheck(void), pttcheck(void), aprs_ptt_check(void), keycheck(void),
-	fskcheck(void), scanner_run(void), far_repeater_run(void),
-	spontaneous_mprs_check(void);
+extern void fskcheck(void), far_repeater_run(void);
 
 void gps_check(void), script_check(void), idlefn_check(void), bus_rf_relay(void),
 	dim_lights_if_idle(void), redrawcheck(void), ccircheck(void);

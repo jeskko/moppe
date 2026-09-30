@@ -20,21 +20,13 @@
  */
 #pragma bank 2
 
-#include <stdint.h>
+#include "r58.h"
 
-#define EOS	0xFF
-
-extern uint8_t gps_sentence[100], gps_history[256], gps_utc[8], gps_date[8],
-	gps_status[8], cfg_gps_latitude[8], cfg_gps_longitude[8];
-extern uint8_t gps_speed, gps_valid_seconds, menu_active;
-extern uint16_t gps_knots, gps_course;
+extern uint8_t gps_date[8], gps_status[8];
 
 /* firmware routines (assembler) */
 extern uint8_t knots_to_kmh(uint16_t knots);		/* HL -> A, max 255 */
 extern uint8_t quarter_ms_to_kmh(uint16_t qms);	/* HL -> A, max 255 */
-extern void redraw(void);
-/* c/aprs.c */
-extern void gps_own_locator(void);
 /* r58.s shim: aisin_seiki_parse_latlon (IY, IX) */
 extern void gps_latlon(const uint8_t *from, uint8_t *to);
 
@@ -103,7 +95,7 @@ void gps_process_aisin_seiki(uint8_t end)
 	l = end - 44;
 	if (gps_history[l++] != 0xCA || gps_history[l++] != 0xCA)
 		return;
-	c = 0xCA + 0xCA;
+	c = (uint8_t)(0xCA + 0xCA);
 	for (i = 0; i < 40; i++) {
 		a = gps_history[l++];
 		gps_sentence[i] = a;

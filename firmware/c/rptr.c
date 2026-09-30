@@ -26,12 +26,9 @@
  */
 #pragma bank 2
 
-#include <stdint.h>
+#include "r58.h"
 
-#define EOS		0xFF
-#define SIZE_STR	8
 #define PA_CCIR		0xF0
-#define SB_LOCAL	0x10		/* RR0_SYNC */
 #define DTMF_STAR	(0x80 | 0xB << 3)	/* StD and '*' as the decoder latches it */
 #define SILENCE		4		/* timer 1 count for the gaps (~1 MHz) */
 
@@ -39,21 +36,20 @@ enum { ST_BOOT_NEW, ST_BOOT, ST_IDLE, ST_OPENING, ST_BEEP_TOO_LONG, ST_OPEN,
 	ST_ACTIVE, ST_CLOSING, ST_REOPENING, ST_LOCKOUT, STAY = 0xFF };
 
 /* written by interrupts (squelch, decoders, timers) or by the menu */
-extern volatile uint8_t squelch_open, pioa_data, dtmf_prevdata, ccir_tonetime,
-	sio_bctrl_mirror, repeater_req, repeater_timer_BLIP_state, ad_tp4, ad_rpm,
-	cfg_repeater_suspended;
-extern uint8_t repeater_state, repeater_timer_BLIP, repeater_ptt_seen,
-	repeater_cw_sendit_all, repeater_is_suspended, repeater_sig, sio_bctrl_local,
-	squelch_tightening, txpwr_increment, txon, last_sqtail, ctcss_is_on,
-	ctcss_custom_flag, nosir, cw_slot_ticks, cfg_function,
-	cfg_repeater_cmd_9_hidden, cfg_ctcss_output_when, cfg_gpio1_state,
-	cfg_gpio2_state, cfg_cw_pitch_blip, cfg_cw_pitch_blip_link,
-	cfg_cw_pitch_blip_gpio, cfg_rssi_S1, cfg_rssi_S9, cfg_temperature_limit_hot,
-	cfg_temperature_limit_cold, cfg_rpm_limit, repeater_cfg_sqincr,
-	repeater_cfg_txincr, repeater_cfg_rssi_bongos, repeater_cfg_access_method,
-	repeater_cfg_afsrc, repeater_cfg_musical_blips, repeater_cfg_mprs_id,
-	repeater_cfg_TBLIP, repeater_cfg_rssi_A, repeater_cfg_rssi_B,
-	repeater_cfg_rssi_C;
+extern volatile uint8_t dtmf_prevdata, ccir_tonetime, repeater_req,
+	repeater_timer_BLIP_state, ad_tp4, ad_rpm, cfg_repeater_suspended;
+extern uint8_t repeater_state, repeater_timer_BLIP, repeater_cw_sendit_all,
+	repeater_is_suspended, repeater_sig, sio_bctrl_local,
+	squelch_tightening, txpwr_increment, ctcss_is_on, ctcss_custom_flag,
+	nosir, cw_slot_ticks, cfg_repeater_cmd_9_hidden,
+	cfg_ctcss_output_when, cfg_cw_pitch_blip, cfg_cw_pitch_blip_link,
+	cfg_cw_pitch_blip_gpio, cfg_rssi_S1, cfg_rssi_S9,
+	cfg_temperature_limit_hot, cfg_temperature_limit_cold,
+	cfg_rpm_limit, repeater_cfg_sqincr, repeater_cfg_txincr,
+	repeater_cfg_rssi_bongos, repeater_cfg_access_method,
+	repeater_cfg_afsrc, repeater_cfg_musical_blips,
+	repeater_cfg_mprs_id, repeater_cfg_TBLIP, repeater_cfg_rssi_A,
+	repeater_cfg_rssi_B, repeater_cfg_rssi_C;
 extern uint16_t cw_pitch_cnt, repeater_cfg_TOPEN, repeater_cfg_TID,
 	repeater_cfg_THOG, repeater_cfg_TCLS, repeater_cfg_TDEAD,
 	repeater_cfg_TBEEPMAX;
@@ -68,15 +64,11 @@ extern const uint8_t repeater_cfg_id_greet1[], repeater_cfg_id_greet2[],
 	repeater_cfg_blip_rssi_C[];
 
 /* firmware routines (assembler) */
-extern void repeater_init(void), tx_on(void), tx_off(void), force_redraw(void),
-	ctcss_maybe(void), ctcss_off(void), ctcss_off_nohang(void), mic_on(void),
-	mic_off(void), ccir_on(void), ccir_off(void), silence_timer1(void),
-	update_txpwr_if_tx(void), cw_calc_delays(void);
-extern uint8_t is_ptt_pressed(void);		/* A != 0: pressed */
+extern void repeater_init(void), tx_on(void), ctcss_off_nohang(void),
+	silence_timer1(void), update_txpwr_if_tx(void),
+	cw_calc_delays(void);
 extern uint8_t b0_cw_wait_tone(void);		/* A != 0: pre-empted */
 extern void b0_ccir_tx_timer_wait(uint8_t ticks);
-/* c/fsk.c */
-extern void send_mprs_report_packet_1(void);
 /* r58.s shims */
 extern void rptr_tone(uint8_t ticks, uint16_t count);	/* start_marker_tone */
 extern void rptr_calc_blip(uint8_t pitch);		/* cw_calc_blip (C) */

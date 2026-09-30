@@ -20,42 +20,21 @@
  */
 #pragma bank 2
 
-#include <stdint.h>
+#include "r58.h"
 
-#define EOS		0xFF
-#define SIZE_STR	8
 #define SHORT_PACLEN	8
-#define LONG_PACLEN	15
 
-extern uint8_t packet_good, digidx, display_buffer_time, txon, rfc, ad_rssi,
-	cfg_squelch_level, cfg_squelch_BIG, cfg_keyup_mprs, cfg_report_type,
-	cfg_mprs_ssid, cfg_mprs_symbol, gps_speed, gps_reported_speed;
-extern uint8_t fsk_history[256], outpacket[16], digbuf[16],
-	remote_display_buffer[10], cfg_mycall_1[5], cfg_remote_passwd[SIZE_STR],
-	cfg_mprs_callsign[SIZE_STR], cfg_gps_latitude[8], cfg_gps_longitude[8];
-extern uint16_t cfg_remote_id, mprs_report_timer;
+extern uint8_t cfg_keyup_mprs, gps_reported_speed;
+extern uint8_t cfg_mycall_1[5];
+extern uint16_t cfg_remote_id;
 extern const uint8_t version[8];
-/* compared as addresses only (bank 1 routines) */
-extern void menu_rfc_change(uint8_t d), menu_sql_change(uint8_t d),
-	menu_sqB_change(uint8_t d);
 
 /* firmware routines (assembler) */
-extern void redraw(void), cu_lights_on(void), cu_call_on(void), ding(void),
-	mic_off_ccir_off(void), tx_error(void), tx_off(void), mdm_delay(void),
-	waitkey(void), clear_buffer(void), start_call_timer(uint8_t on),
-	far_leaved_setup(void),
-	append_short_packet_crc(void), append_long_packet_crc(void),
-	append_secret_packet_crc(void);
-extern uint8_t read_squelcher_value(void);
+extern void cu_lights_on(void), cu_call_on(void), mdm_delay(void),
+	start_call_timer(uint8_t on), far_leaved_setup(void);
 
-/* c/aprs.c */
-extern void handle_mprs_packets(uint8_t at), send_aprs_report_packet(void);
 /* r58.s shims */
-extern void fsk_putchar(uint8_t c);		/* MBUS putchar (C) */
-extern void fsk_send(uint8_t len);		/* send_packet_buffer (B) */
-extern uint8_t fsk_tx_on_failed(void);		/* tx_on: carry */
-extern uint8_t fsk_mprs_not_yet(void);		/* check_for_mprs_timer: carry */
-extern uint16_t fsk_menu_ptr(void);		/* far_load_menu_ptr, IX = menu_ptr */
+extern uint16_t fsk_menu_ptr(void);		/* menu_value_ptr (bank 1): DE */
 extern void fsk_remote_config_execute(uint16_t ptr, const uint8_t *data);
 
 static const uint8_t onesies[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };

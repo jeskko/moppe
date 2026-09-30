@@ -15,15 +15,8 @@
  * The routines called here do not preserve IX, so no stack frames.
  * Mainline only.
  */
-#include <stdint.h>
+#include "r58.h"
 
-#define DPX_SIMPLEX	0
-#define DPX_DUPLEX	1
-#define DPX_REVERSE	2
-#define DPX_SPLIT	3
-
-#define NUM_BANDRECS	6		/* asserted in r58.s */
-#define SIZE_BANDREC	14
 #define BR_START	0
 #define BR_END		3
 #define BR_DUPLEX	6
@@ -34,24 +27,19 @@
 
 #define MASK24		0xFFFFFFUL
 
-extern uint8_t rx_freq[3], tx_freq[3], duplex_shift[3], rx_freq_previous[3],
-	last_qsy_kHz[3];
-extern const uint8_t cfg_band1_start[], cfg_other_duplex[3],
-	cfg_tx_band_start[3], cfg_tx_band_end[3], cfg_tx_oob_0[3],
-	cfg_tx_oob_1[3], cfg_tx_oob_2[3], cfg_tx_oob_3[3], cfg_tx_oob_4[3],
-	cfg_rx_vco_center[3], cfg_tx_vco_center[3], cfg_scan_large_qsy[3];
-extern uint8_t duplex_state, band, band_step, band_sctail, band_sclisten,
-	band_autoreject, tx_is_legal, local_mode, synth_ctrl,
-	scan_settling_time, cfg_scan_rate_kvik, cfg_scan_rate_slow;
+extern uint8_t rx_freq_previous[3], last_qsy_kHz[3];
+extern const uint8_t cfg_tx_band_end[3], cfg_tx_oob_0[3], cfg_tx_oob_1[3],
+	cfg_tx_oob_2[3], cfg_tx_oob_3[3], cfg_tx_oob_4[3],
+	cfg_scan_large_qsy[3];
+extern uint8_t band, tx_is_legal, local_mode, synth_ctrl,
+	cfg_scan_rate_kvik, cfg_scan_rate_slow;
 extern uint16_t band_step_hz;
 
 /* firmware routines (assembler) */
-extern void close_squelch(void), lookup_rfc(void), determine_rx_div(void),
-	load_rxsynth(void), determine_tx_div_split(void), set_channel_step(void);
+extern void lookup_rfc(void), determine_rx_div(void), load_rxsynth(void);
 extern uint16_t channel_step_parms(uint8_t step);	/* user step, in DE */
 
 /* the RFC table (below) */
-extern uint8_t rfctab[100];
 void rfc_fill_blanks(void);
 
 /* ---- 24-bit values */

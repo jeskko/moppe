@@ -17,14 +17,8 @@
  * Mainline only; the scan timers it waits on are counted in interrupts.
  * The routines called here do not preserve IX: no stack frames.
  */
-#include <stdint.h>
+#include "r58.h"
 
-#define MEM_SIZE	12		/* asserted in r58.s */
-#define MEM_FLAGS	6
-#define MEM_VALID	0x01
-#define MEM_SCANNABLE	0x04
-#define NUM_BANDRECS	6
-#define SIZE_BANDREC	14
 #define NUM_TMP_REJECTS	20
 #define MDM_DCD		0x04
 
@@ -38,23 +32,18 @@
 
 __sfr __at(0xA3) mdm_ctrl;			/* MDM + MDMCTRL */
 
-extern uint8_t scan_on, scan_paused, scan_slicecnt, mem_flags, mem_idx, digidx,
-	cfg_unreject_mins, cfg_scan_skip_fsk_channels, cfg_squelch_level,
-	band_autoreject, band_sctail, band_sclisten, scan_settling_time, vip_idx,
+extern uint8_t scan_slicecnt, cfg_unreject_mins, cfg_scan_skip_fsk_channels,
 	reject_idx;
-extern volatile uint8_t scan_timer, scan_timer_secs, scan_patience, squelch_open,
-	squelch_forced;
-extern uint16_t scan_mask, scanner_state;
-extern uint8_t scan_slices[NUM_BANDRECS * 6], digbuf[16], rx_freq[3], vip_freq[3],
-	tmp_rejects[NUM_TMP_REJECTS * 4], memories[];
-extern const uint8_t cfg_band1_start[], cfg_reject_0[30], cfg_reject_10[30];
+extern volatile uint8_t scan_timer, scan_timer_secs;
+extern uint16_t scanner_state;
+extern uint8_t scan_slices[NUM_BANDRECS * 6],
+	tmp_rejects[NUM_TMP_REJECTS * 4];
+extern const uint8_t cfg_reject_0[30], cfg_reject_10[30];
 
-/* firmware routines (assembler, c/freq.c) */
-extern void unforce_squelch(void), draw_scanner_icon(void), clear_scanner_icon(void),
-	clear_buffer(void), redraw(void), mute_squelch_scanner(void),
-	restore_squelch_scanner(void), leave_memories(void), changed_frequency(void),
-	step_channel_up(void), go_mem_a(uint8_t m), remember_vip(void), next_vip(void);
-extern uint8_t read_squelcher_value(void), load_num_tmp_rejects(void);
+/* firmware routines (assembler) */
+extern void draw_scanner_icon(void), clear_scanner_icon(void),
+	mute_squelch_scanner(void), restore_squelch_scanner(void);
+extern uint8_t load_num_tmp_rejects(void);
 
 static uint8_t *sl, *p, *q;
 static const uint8_t *s;

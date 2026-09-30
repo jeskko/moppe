@@ -14,33 +14,18 @@
  *
  * The routines called here do not preserve IX, so no stack frames.
  */
-#include <stdint.h>
+#include "r58.h"
 
-#define SB_LOCAL	0x10		/* sio_bctrl_mirror; asserted in r58.s */
-
-extern uint8_t repeater_ptt_seen, cfg_function, menu_active, digidx,
-	cfg_aprs_tx, cfg_idlefn_delay, cfg_aprs_tx_freq[3], tx_freq[3],
-	tx_divisor[3], txon, squelch_open;
+extern uint8_t cfg_aprs_tx, cfg_aprs_tx_freq[3], tx_divisor[3];
 extern uint16_t cfg_txtune_hz, tx_refdiv, tx_bstep_cfg;
-extern uint8_t *menu_ptr;
-extern uint8_t tune_tone_position[];		/* bank 1: compared only */
-extern volatile uint8_t ad_batt, idle_timer, sio_bctrl_mirror, key;
+extern const struct rec tune_tone_position;	/* bank 1: compared only */
 
-extern uint8_t is_ptt_pressed(void);		/* A != 0: pressed */
-extern uint8_t is_key_down(void);		/* A = keydown */
-extern uint8_t fsk_tx_on_failed(void);		/* tx_on: carry -> 0xFF */
-extern uint8_t fsk_mprs_not_yet(void);		/* check_for_mprs_timer */
-extern void open_selective(void), cu_manipulated(void), ctcss_maybe(void),
-	ptt_ccir_xmit(void), mic_on(void), mic_off(void), battcheck(void),
-	redraw(void), stop_dtmf_tone(void), ctcss_off(void),
-	change_to_signalling_deviation(void), far_send_remote_config_packets(void),
-	far_send_mprs_report_packet_maybe(void), far_send_mprs_report_packet(void),
-	tx_off(void), remember_vip(void), far_repeater_operator_ptt(void),
-	waitkey(void), mic_off_ccir_off(void), ccir_on(void), ccir_off(void),
-	update_tx_vco_band(void), determine_tx_div_split(void),
-	close_squelch(void), tx_on_legal_or_not(void);
-extern void handle_key_during_tx(uint8_t k);
-extern void marker_300hz_1s(void);		/* 300 Hz marker, 1 s */
+extern void cu_manipulated(void), ptt_ccir_xmit(void), stop_dtmf_tone(void),
+	change_to_signalling_deviation(void),
+	far_send_remote_config_packets(void),
+	far_send_mprs_report_packet_maybe(void),
+	far_send_mprs_report_packet(void), far_repeater_operator_ptt(void),
+	tx_on_legal_or_not(void);
 extern void ptt_tone_count(uint16_t count);	/* 8254 counter 1 */
 extern void ptt_1750_tone(void);
 extern void ptt_tx_band_step(void);		/* tx_refdiv, tx_bstep_cfg */
@@ -137,7 +122,7 @@ void beep1750(void)
 /* in the menu at "t tunE": a tuning tone of cfg_txtune_hz (0 = none) */
 void tx_tune_tone_maybe(void)
 {
-	if (!menu_active || menu_ptr != tune_tone_position || !cfg_txtune_hz)
+	if (!menu_active || menu_ptr != &tune_tone_position || !cfg_txtune_hz)
 		return;
 	/* the asm counted subtractions: 4032000 / Hz, 16 bits kept */
 	ptt_tone_count((uint16_t)(4032000UL / cfg_txtune_hz));

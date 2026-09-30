@@ -10,36 +10,24 @@
  * (--reserve-regs-iy); IX would only be used as a frame pointer, so these
  * functions have no stack locals or parameters.  Nothing here owns RAM.
  */
-#include <stdint.h>
+#include "r58.h"
 
 /* firmware variables (r58.s) */
-extern volatile uint8_t seconds, ad_batt;
-extern uint8_t gps_valid_seconds, gps_speed, txon, pioa_data,
-	repeater_sitters_special, alert_timer, scan_on, scan_patience, keydown,
-	lights_timer, dtmf_idletime, cfg_dtmf_holdtime, cfg_function,
-	display_buffer_time, locator_dpyed, redraw_req, call_dpyed,
-	call_timer_sec, call_timer_min, call_timer_hour, cfg_tx_tot_minutes,
-	tx_tot_timer, squelch_open, key, digidx, menu_active, idle_timer,
-	cfg_idlefn_delay, idlefn_flag, cfg_ign_apo_hours, ign_apo_timer,
-	txtail_timer;
-extern uint16_t mprs_report_timer, transmitter_hours_second_counter;
+extern volatile uint8_t seconds;
+extern uint8_t repeater_sitters_special, alert_timer, dtmf_idletime,
+	cfg_dtmf_holdtime, cfg_tx_tot_minutes, tx_tot_timer,
+	cfg_ign_apo_hours, ign_apo_timer, txtail_timer;
+extern uint16_t transmitter_hours_second_counter;
 extern uint8_t transmitter_hours[3];
 
 /* firmware routines (assembler) */
-extern void powerdown_now(void);		/* does not return */
-extern void audioc_off(void);
 extern void dtmf_decoder_timeout(void);
 extern void repeater_step_1sec(void);
-extern uint8_t is_ptt_pressed(void);		/* A != 0: pressed */
 extern void unreject_timer(void);
 extern void re_enable_modem(void);
 extern void feedback_lobatt(void);
-extern void force_redraw(void);
 extern void clear_clock_icon(void);
 extern void draw_clock_icon(void);
-extern void no_feedback(void);
-extern void redraw(void);
-extern void marker_300hz_1s(void);	/* 300 Hz for 1 s (r58.s shim) */
 
 #define PA_HOOK		0x02
 #define PB_EXIN2	0x04			/* aka /IGN */
