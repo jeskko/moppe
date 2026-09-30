@@ -3614,6 +3614,7 @@ far_send_mprs_report_packet:	call bank2_call
 	.dw _send_mprs_report_packet
 far_send_call_packet:	call bank2_call
 	.dw _send_call_packet
+	ASSERT_EQ(SHORT_PACLEN, 8)
 
 ;  c/fsk.c shims: register interfaces as --sdcccall 1 passes them
 fsk_putchar:			; A: MBUS putchar takes C

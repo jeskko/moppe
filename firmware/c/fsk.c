@@ -4,7 +4,7 @@
  * send_mprs_report_packet_1 and from map_special_ptrs to
  * build_call_packet_buffer (the assembler originals are in git tag
  * asm-final).  packet_callsign_unpack and mprs_degmin_pack are in
- * c/aprs.c (mprs_degmin_pack also here).
+ * c/aprs.c.
  *
  * Fixed code enters through the far_* stubs (bank2_call): receive
  * dispatch packet_for_whom, send_remote_config_packets,
@@ -39,13 +39,14 @@ extern void fsk_remote_config_execute(uint16_t ptr, const uint8_t *data);
 
 static const uint8_t onesies[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-static uint8_t at, i, n, b, c;
+uint8_t at;			/* shared with c/aprs.c: nibbles() */
+static uint8_t i, n, b, c;
 static uint16_t ptr;
 static uint8_t *d;
 static const uint8_t *s, *from;
 
 /* the byte from the nibbles at fsk_history[at], [at + 1] */
-static uint8_t nibbles(void)
+uint8_t nibbles(void)
 {
 	uint8_t v = fsk_history[at++] << 4;
 	return v | fsk_history[at++];
@@ -55,7 +56,7 @@ static uint8_t nibbles(void)
 
 static void handle_relay_packets(void)
 {
-	/* the 12 nibbles from the tag on (v3_Z did not wrap in the ring) */
+	/* the 12 nibbles from the tag on, wraps in the ring; v3_Z did not */
 	at = packet_good;
 	for (i = 0; i < 12; i++)
 		fsk_putchar(fsk_history[at++]);
@@ -65,7 +66,7 @@ static void send_display_config_packet(void);
 
 static void handle_config_packets(void)
 {
-	b = c;				/* ask or enter */
+	/* c still holds the tag ('A' ask / 'E' enter) from packet_for_whom */
 	at = packet_good + 1;
 	if (fsk_history[at++] != 0xC)	/* AC/EC ii DD ptr PTR possible data */
 		return;
@@ -81,7 +82,7 @@ static void handle_config_packets(void)
 	if (ptr <= (uint16_t)(cfg_remote_passwd + SIZE_STR - 1)
 	    && ptr > (uint16_t)(cfg_remote_passwd - SIZE_STR))
 		return;
-	if (b == 0xE) {
+	if (c == 0xE) {
 		fsk_remote_config_execute(ptr, &fsk_history[at]);
 		far_leaved_setup();
 	}
@@ -180,11 +181,9 @@ static void fill_enter_config_packet(void)
 {
 	fill_ptr();
 	c = digidx;			/* depending on number of characters: */
-	if (c < 8) {
-		COPY(digbuf, c);	/* less than 8, padding */
+	if (c <= 8) {
+		COPY(digbuf, c);	/* up to 8, padded (COPY(onesies, 0) at 8) */
 		COPY(onesies, 8 - c);
-	} else if (c == 8) {
-		COPY(digbuf, 8);
 	} else {
 		COPY(onesies, 8);	/* 9 or more -> 0 characters (silly) */
 	}
@@ -297,16 +296,6 @@ static void packet_callsign_pack(void)
 	}
 }
 
-/* deg[3] min[2] decimal_min[2] unpacked BCD and N/S/E/W at s, 3 bytes at d */
-static void mprs_degmin_pack(void)
-{
-	d[0] = (s[0] ? 100 : 0) + s[1] * 10 + s[2];	/* degrees 0..180 */
-	d[1] = s[3] * 10 + s[4];			/* minutes */
-	d[2] = s[5] * 10 + s[6];			/* decimal minutes */
-	if (s[7] == 'W')			/* only West is 'negative' */
-		d[2] |= 0x80;
-}
-
 void send_mprs_report_packet_1(void)
 {
 	gps_reported_speed = gps_speed;	/* the speed during report */
@@ -322,12 +311,8 @@ void send_mprs_report_packet_1(void)
 	/* SSID in the top nibble after the 6 packed characters */
 	outpacket[5] = (outpacket[5] & 0x0F) | cfg_mprs_ssid << 4;
 	outpacket[6] = 0;		/* routing/digipeating reserved */
-	s = cfg_gps_latitude;
-	d = &outpacket[7];
-	mprs_degmin_pack();
-	s = cfg_gps_longitude;
-	d = &outpacket[10];
-	mprs_degmin_pack();
+	mprs_degmin_pack(cfg_gps_latitude, &outpacket[7]);
+	mprs_degmin_pack(cfg_gps_longitude, &outpacket[10]);
 	outpacket[8] |= (cfg_mprs_symbol << 4) & 0xC0;	/* hibits of symbol */
 	outpacket[11] |= cfg_mprs_symbol << 6;		/* lobits */
 	append_long_packet_crc();
@@ -361,24 +346,21 @@ static void build_call_packet_buffer(void)
 	outpacket[1] = cfg_mycall_1[1] << 4 | cfg_mycall_1[2];
 	outpacket[2] = cfg_mycall_1[3] << 4 | cfg_mycall_1[4];
 	/* digits two per byte, a lone one padded with 0xF, into
-	 * outpacket[3..5]; unused bytes 0xFF */
+	 * outpacket[3..5]; unused bytes 0xFF.  (digidx == 0 wraps b past 0,
+	 * so this always runs all 3 iterations; v3_Z did too.) */
 	s = digbuf;
-	n = 3;
-	c = 3;
+	d = &outpacket[3];
 	for (;;) {
-		c++;
 		i = *s++ << 4 | 0x0F;
-		outpacket[n++] = i;
+		*d++ = i;
 		if (!--b)
 			break;
-		outpacket[n - 1] = (i & 0xF0) | *s++;
-		if (!--b || c == 6)
+		d[-1] = (i & 0xF0) | *s++;
+		if (!--b || d == &outpacket[6])
 			break;
 	}
-	while (c != 6) {
-		outpacket[n++] = 0xFF;
-		c++;
-	}
+	while (d != &outpacket[6])
+		*d++ = 0xFF;
 }
 
 void send_call_packet(void)
