@@ -14,6 +14,8 @@ checked on hardware.
 | `reference/tmx1/tmf1/` | Mirror of https://oh3tr.fi/~ftp/modifications/nokia/tmf1/ (2026-10-01). `.../tmn1/` was byte-identical and is not kept. Radio v3.9 (2000) `tmx1v39.zip` (source, `as7810` binary + `as7810.tar.Z` source, handset sources), `archive/` back to v0.7 with sources, HSN2 v1.4 / HSF2 v0.2 handset firmware, `license.txt`, `usage.txt`, MB1501 and MB87006A datasheets, mod photos and notes (`modification/`), board photos (`kuvat/`) |
 | `reference/md5x/oh3nwq-moppe/` | github.com/oh3nwq/moppe: `tmx1.asm` and `tmx1_v50.zip` **v5.0 (2006)**, the newest |
 | `reference/tmx1/f5soh/` | F5SOH (France, Radiocom 2000 version): logic replaced by a PIC16F84 driving the MB1501s; PA and PLL/TX board pinouts |
+| `reference/datasheets/` | NEC uPD7810/7811/78C10/C11/C14 data sheets (1989 databook extract, 81 pp.), uPD78C10/C11/C14 preliminary (26 pp.), **uPD78C10A/11A/12A (1995, 66 pp.: instruction table with state counts, 1 state = 3 clocks)**, uPD7225 LCD controller application note (no uPD7228 sheet found). No separate 7810 user's manual found. Check the 7810 (NMOS) state counts against the 78C10A table |
+| `reference/huolto-ohjeet/TMF1XS_Huolto-ohje.pdf` | TMF-1 service manual, 214 pages, scanned; OCR in `*.ocr.txt` next to it |
 | `reference/tmx1/tmf1.shtml` | Moppeakatemia page. Links: OH4MS/OH8LRB TMN-1 page (mju.dy.fi, 404 in 2026-10), OK2UCX's PC-controlled packet firmware v0.93 (qsl.net/ok0ns, 404) |
 
 Licence: OH3NWQ's "Binary And Source Code License Agreement"

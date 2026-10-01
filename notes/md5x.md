@@ -15,6 +15,7 @@ hardware or against the service manual yet.
 | `titanix/` | Mirror of https://titanix.net/DMR/md50/ (OH1E): `MD50p1/p2`, `MD50_H1/H2` = OH3NWQ **v3.182 (2014-12)** split images (newest OH3NWQ build seen); `md50bis/` = OH1E's own rewrite **#42 (2013, txt to 2017)**: `md50.asm` source, md50/md59/me59 binaries, Finnish user guide `md50.txt`, synth-board scan PDF, mod photos (`kuvei/`: CTCSS DAC, RSSI ADC) |
 | `oh3nwq-moppe/` | Clone of https://github.com/oh3nwq/moppe (Vesa Tervo OH3NWQ, 2016-2021): `mx5x.asm` **v3.183** (2016, newest), v3.18 zips (source + `as06` binary + `1806.tar.gz` assembler source, Norway variants), and `tmx1.asm` v5.0 + `tmx1_v50.zip` for **Talkman 520/620 (TMF-1/TMN-1)**, see below |
 | `talkman.shtml` | Moppeakatemia Talkman page |
+| `reference/datasheets/` | CDP1802A/AC/BC (Intersil, 27 pp., instruction cycles and timing waveforms), CDP1805AC/1806AC (Harris 1991 databook extract, 15 pp., extended instructions and counter/timer), RCA MPM-201A CDP1802 user manual (1976, 117 pp.), MC145152-2 (4-page excerpt). Not found: MAS7205/7825, MC145156/MC145146, 93C06 |
 
 No original Nokia NMT firmware dumps were found, only ham firmware.
 
