@@ -69,7 +69,7 @@ Outputs: PB7 power relay off, PB6 EXAL, PB4 /RXON (GPIO).
 | Watchdog on P8E | same as P8N (0.52 s) | P8N only in manual |
 | MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled | real radio |
 | CU58AF keypad row 6: manual says PCF8574 P7 (P6 unused), firmware decodes '+ S R' from P6 | follow firmware | real handset |
-| The RS window and EPROM1 banking on real hardware (P8E from schematic, P8N from manual) | modelled, unverified | the bench test ROM: `make -C firmware banktest`, see notes/hybrid-plan.md Phase 3 |
+| The RS window and EPROM1 banking on real hardware (P8E from schematic, P8N from manual) | modelled, unverified. **Corroborated (2026-10-01)** by OH5NXO's own SDCC firmware for the R58 (`reference/oh5nxo/mods/R58bis/R58/`, 2007-2014): `iomap_P8x.h` has OUT2 bit 0 ROMA14, bit 1 ROMA15, bit 2 ROM0 ("2 banks from ROM0, if '1'"), bit 3 SMEM ("ROMA16 on P8E"), the same bits as ours; `boot.s` sets OUT2 = SMEM\|ROM0 "for contiguous 48 kB ROM" on P8E and P8N (= our bank 2, chip 0x8000), and README2 has his P8E timing measurements. Not a bench test of the RA14=1 page | the bench test ROM: `make -C firmware banktest`, see notes/hybrid-plan.md Phase 3 |
 | P8E: EPROM0 pin 1 (A15) = CPU A15? | assumed (then the window pages are chip 0x8000 and 0xC000, like the P8N) | P8E schematic; the bench ROM checks both pages (`b1b2 PASS`) |
 
 **P8E memory decode as traced by the user (schematic, 2026-09-28).**
