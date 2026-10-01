@@ -1,9 +1,13 @@
-# Talkman MD50 / MD59 / ME59 (next emulator target)
+# Talkman MD50 / MD59 / ME59
 
 Mobira/Nokia NMT-450 (MD50, MD59) and NMT-900 (ME59) car/portable phones,
 converted to 70 cm (MD5x) and 23/33 cm (ME59) ham use. Facts below are
 from the firmware sources unless marked otherwise; nothing is checked on
-hardware or against the service manual yet.
+hardware.
+
+**Emulated since 2026-10-02** (moppe-emu `cdp1802.c`, `md5x.c`; design,
+model table and limits in `emu/notes/md5x.md`): both firmware lineages
+boot and run on all three models. Narrative: [md5x-history.md](md5x-history.md).
 
 ## Sources (all under `reference/md5x/`, gitignored)
 
@@ -15,6 +19,7 @@ hardware or against the service manual yet.
 | `titanix/` | Mirror of https://titanix.net/DMR/md50/ (OH1E): `MD50p1/p2`, `MD50_H1/H2` = OH3NWQ **v3.182 (2014-12)** split images (newest OH3NWQ build seen); `md50bis/` = OH1E's own rewrite **#42 (2013, txt to 2017)**: `md50.asm` source, md50/md59/me59 binaries, Finnish user guide `md50.txt`, synth-board scan PDF, mod photos (`kuvei/`: CTCSS DAC, RSSI ADC) |
 | `oh3nwq-moppe/` | Clone of https://github.com/oh3nwq/moppe (Vesa Tervo OH3NWQ, 2016-2021): `mx5x.asm` **v3.183** (2016, newest), v3.18 zips (source + `as06` binary + `1806.tar.gz` assembler source, Norway variants), and `tmx1.asm` v5.0 + `tmx1_v50.zip` for **Talkman 520/620 (TMF-1/TMN-1)**, see below |
 | `talkman.shtml` | Moppeakatemia Talkman page |
+| `../oh5nxo/mods/MD50bis/sch/` | Nokia service texts: `Prosessorimod_PE2_ja_PE2A.pdf` (18 pp., MD50 processor module text + schematics), `Prosessorimod_PE1A.pdf` (schematic, layout), `AudioProcessor_AP1.pdf` (8 pp.), ME59 NR schematics; `*.ocr.txt` (2026-10-02). `md59schemas/` GIFs of the MD59 boards |
 | `reference/datasheets/` | CDP1802A/AC/BC (Intersil, 27 pp., instruction cycles and timing waveforms), CDP1805AC/1806AC (Harris 1991 databook extract, 15 pp., extended instructions and counter/timer), RCA MPM-201A CDP1802 user manual (1976, 117 pp.), MC145152-2 (4-page excerpt). Not found: MAS7205/7825, MC145156/MC145146, 93C06 |
 
 No original Nokia NMT firmware dumps were found, only ham firmware.
@@ -64,19 +69,39 @@ Confirms the sources and adds the decode:
 - **Reset:** RESET when +VB < 7.5 V or +5 V fails; CLR* resets CPU, modem, watchdog and output latches, delayed until a RAM access in progress ends.
 - **Power:** latching relay; OFF1 (CPU, rising edge), OFF2 (ASA, ~3 s after PW* off if the CPU did nothing), OFF3 (watchdog).
 
+## MD50 processor module PE2/PE2A and AP1 (service text)
+
+From the OCR of `Prosessorimod_PE2_ja_PE2A.pdf` (prose pp. 1-8,
+schematics pp. 15-18) and `AudioProcessor_AP1.pdf`; the schematic pages
+were read from the images, so pin-level details are a best reading.
+
+- **Clock** 3.6864 MHz; TPA/TPB = clock/8.
+- **Decode:** a 74C374 latches A8-A15 at TPA; A14/A15 select EPROM IC10 (0000-3FFF), EPROM IC11 (4000-7FFF), RAM (8000-83FF, 2 x 1Kx4, IC12 = D0-D3, IC13 = D4-D7), ID PROM (C000-C0FF, 74S287 256x4 on AP1). The parts list says the EPROMs are 8 KB 27C64s in 16 KB windows (would mirror; the ham firmware images are 2 x 16 KB, so 27128s in practice).
+- **PROM:** A0-A3 from the bus, A4-A7 from output latches beforehand; powered by PPC* = 0. OH1E puts a CTCSS DAC in this socket.
+- **N lines** one each: N0 = WAIT trigger (cleared by the next /INT or reset; "only used on the call channel"), N1 = modem CS, N2 & TPB = output latch enable.
+- **Outputs:** four 4099 addressable latches, one data bit each (IC7 on PE2A: D0; AP1 IC11-13: D1-D3); address A1-A3. IC7 holds SE, TXA, TXB (10/01 = 15 W, 00 = 150 mW), VCS, XM, OFF1, WDR, SWE. **SWE = 1 gates D7 and MWR onto SD and SCLK** (synth data and clock).
+- **Flags:** /EF1 DCU, /EF2 1 = normal / 0 = production test (LK1), /EF3 = 4021 Q8, /EF4 production test only (the ham mods use it as /PTT); /INT from the modem.
+- **4021** (AP1 IC15): PSC 1 = parallel load, 0 = shift; clock = CPU Q; nine inputs: DA, PW*, RF OFF, HK*, VC, PC, LOCAL*, POR, POT (serial in). Polarities: PW 1 = power cut, RF OFF 0 = output above 100 mW, HK 1 = lifted, VC 0 = above threshold, PC 0 = 15 W / 1 = 1.5 W, LOCAL* 1 = normal, POR 1 = portable, DA 1 = key, POT 1 = off over 2 s. The firmware reads them in the order DA, PW, RF OFF, HK, VC, PC, LOCAL, POR, POT, which the emulator uses (the pin-number reading of the drawing suggested another order).
+- **Modem MAS 7205** (H5): 1200 baud FFSK, C/D* = A5, /INT 100 Hz while idle, every 8 bits during a frame; SQ (level detector, 1 = above the limit) and FFSKC in the status register.
+- **Watchdog** 4020 at 19.2 kHz from the modem: restart 106 ms after the last WDR, OFF3 at 213 ms (the stage names Q12/Q13 suggest twice those); LK2 disables it. Normal Nokia firmware pulses WDR every 10 ms.
+- **Power:** OFF1 rising edge cuts the supply; RAM has lithium backup.
+- **PE1A vs PE2 vs PE2A:** PE1A has one 28-pin RAM with an 8k/2k jumper (LK4); PE2 and PE2A have 2 x 1Kx4. PE2 and PE2A differ only in the reset / RAM-protect circuit (PE2: 6.2 V zener, 4013; PE2A: 7.5 V zener, BCW32s, 4093).
+
 ## Related: Talkman 520/620 (TMF-1 / TMN-1)
 
 uPD7810-based, MBUS handsets; see [tmx1.md](tmx1.md).
 
-## Emulator implications
+## Emulator
 
-- New CPU core: CDP1802 plus the 1804/1805/1806 extensions (counter/timer, `RLDI`, `SCAL`, `DBNZ`…). OH3NWQ code uses only 1802 instructions; OH1E uses the counter on 1806 models.
-- Chips: MAS7205 (no datasheet in hand; register bits are from the sources' comments, partly guessed by OH5NXO), 4021 input chain, output latches, 93C06, i8253 (reuse `pit.c`), ADC/DAC, CU53/CU59.
-- Test fixtures: `mx5x.asm` builds with `as06` (in the zips, as a Linux binary, and its source in the `Sorsat` devkit); OH1E's binaries come with source. Both are fine as boot targets.
+- CPU core `cdp1802.c`: CDP1802 and the 1804/5/6 extensions. OH3NWQ code uses only 1802 instructions (and no interrupts: its `int` handler just disables them); OH1E runs on the modem's 100 Hz interrupt and uses STPC/LDC/STM/CIE/CID on 1806 models.
+- Board `md5x.c`: see `emu/notes/md5x.md` for the model table, evidence and limits (modem at byte level, no 93C06, 8253 gates high).
+- **Firmware builds** (`emu/tests/md5x/roms.py`): the shipped i386 `as06` (from the v3.18 zips) runs here and rebuilds the v3.18 release binaries byte-identically; it also builds OH1E's `md50.asm` identical to his published binaries except the `__DATE__` string. The `1806.tar.gz` assembler source builds with `gcc -m32` after one fix (`(intext ? textdot : datadot) = ...` is not valid C any more); a 64-bit build crashes (pointers kept in `unsigned` YYSTYPE and casts).
+- Using the firmware: mx5x frequency entry is 5 digits with the 100 MHz (1 GHz on ME59) digit implied ("33500" = 433.500). OH1E: digits then `#`; on a CU59 the first key after a cold start goes to handset-type detection; zeroed RAM has `tx_start = tx_end = 0`, which refuses all TX until set up.
 
 ## Open questions
 
-- MD50/MD59 manuals (only the ME59 one is in hand): their memory decode, modem part (7205 vs 7825), clocks.
-- MAS7205/7825 datasheet: none found yet; register bits come from source comments and OH5NXO's `MAS.registers` (reference/oh5nxo/mods/), which says the map is valid for both parts, so one model can cover both.
-- MD50 PE1 vs PE2 processor boards: differences ("PE2 blocks RAM until first write", MD50 PE1 /EF4 caveat in OH1E).
+- MD59 manual (only MD50 PE2A/AP1 and ME59 are in hand): its RAM decode (2/8 KB mirroring assumed), modem part, watchdog time.
+- MAS7205/7825 datasheet: none found yet; register bits come from source comments and OH5NXO's `MAS.registers` (reference/oh5nxo/mods/), which says the map is valid for both parts, so one model covers both.
+- Watchdog times: PE2A text 106/213 ms vs its Q12/Q13 stage names (213/427 ms, as in the ME59 manual).
+- CDP1805/1806 68xx cycle counts: the Harris extract has no instruction table; the core uses the CDP1805 user manual's counts as known, unverified against a document here.
 - Licence of OH1E's `md50.asm` before anything derived is published.
