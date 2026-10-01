@@ -315,6 +315,44 @@ class ReceivedLocator(RadioTest):
                                                         hundredths(*lon, neg=w))[:6])
 
 
+class PositionRange(RadioTest):
+    """A received position out of range (latitude 90 degrees or more,
+    longitude 180 or more, minutes 60, hundredths 100) is no position: the
+    call is shown, no locator, distance or MBUS position (v3_Z computed
+    garbage from it; since 2026-10-01)."""
+
+    def rx(self, lat, lon):
+        r = self.boot()
+        r.poke("cfg_remote_dpy_secs", 5)
+        r.poke("cfg_mbus_mprs", 1)
+        r.poke("locator_display_buffer", b"------\xff\xff")
+        r.poke("distance_bearing", b"\x01\x02\x03.\x00 N\xff")
+        r.take_events()
+        r.modem_rx(mprs_position("OH3XYZ", lat, lon))
+        r.run(0.8)
+        mbus = bytes(e[2] for e in r.take_events("MBUS_TX"))
+        return (bytes(r.peek("remote_display_buffer", 6)), bytes(r.peek("locator_display_buffer", 6)),
+                bytes(r.peek("distance_bearing", 8)), mbus)
+
+    def test_out_of_range(self):
+        for lat, lon in (((90, 0, 0), (23, 45, 0)), ((61, 60, 0), (23, 45, 0)),
+                         ((61, 30, 100), (23, 45, 0)), ((61, 30, 0), (180, 0, 0)),
+                         ((61, 30, 0), (23, 45, 100))):
+            with self.subTest(lat=lat, lon=lon):
+                call, loc, dist, mbus = self.rx(lat, lon)
+                self.assertEqual(call, b"OH3XYZ")
+                self.assertEqual(loc, b"------")
+                self.assertEqual(dist, b"\x01\x02\x03.\x00 N\xff")
+                self.assertEqual(mbus, b"")
+
+    def test_last_in_range(self):
+        from test_signalling import maidenhead8_exact, hundredths
+        call, loc, dist, mbus = self.rx((89, 59, 99 | 0x80), (179, 59, 99 | 0x80))
+        self.assertEqual(loc, maidenhead8_exact(hundredths(89, 59, 99, True),
+                                                hundredths(179, 59, 99, True))[:6])
+        self.assertIn(b"8959.99S/17959.99W", mbus)
+
+
 class Qrb(RadioTest):
     """Distance and bearing of a received MPRS position (mprs_qrb). v3_Z's
     east-west metres (centiminutes_to_meters) were wrong: hundredths of a
@@ -342,6 +380,19 @@ class Qrb(RadioTest):
             with self.subTest(his=his):
                 want = qrb_model(self.OWN, his)
                 self.assertEqual(self.qrb(his)[:len(want)], want)       # up to EOS
+
+
+    def test_far_is_too_far(self):
+        """152 degrees of longitude at the equator, 16 890 km (more than 2^24
+        m east-west): too far, nothing shown."""
+        r = self.boot()
+        r.poke("cfg_remote_dpy_secs", 5)
+        r.poke("cfg_gps_latitude", bytes([0, 0, 0, 0, 0, 0, 0, ord("N")]))
+        r.poke("cfg_gps_longitude", bytes([0, 0, 0, 0, 0, 0, 0, ord("E")]))
+        r.poke("distance_bearing", b"\x01\x02\x03.\x00 N\xff")
+        r.modem_rx(mprs_position("OH3XYZ", (0, 0, 0), (152, 0, 0)))
+        r.run(0.8)
+        self.assertEqual(bytes(r.peek("distance_bearing", 8)), b"\x01\x02\x03.\x00 N\xff")
 
 
 class FskTx(RadioTest):

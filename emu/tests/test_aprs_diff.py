@@ -3,8 +3,8 @@ MPRS receive and APRS sending (bank 1 asm: handle_mprs_packets ...
 stuffed_8bits): differential fuzz scenarios for the C port, asm build vs
 C build, with a fixed seed.
 
-Receive: random MPRS packets (callsigns, SSIDs, positions in and out of
-range, the reserved bit, symbol bits) against random own positions, in
+Receive: random MPRS packets (callsigns, SSIDs, positions in range, the
+reserved bit, symbol bits) against random own positions, in
 every MBUS output format (cfg_mbus_mprs 0..4) and GPS waypoint upload
 (cfg_gps_upload 0..2).  Compared: the remote display, locator and
 distance/bearing strings, the packed packet, the MBUS and GPS bytes
@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from difftest import builds, DiffCase  # noqa: E402
 from helpers import with_crc, nmea  # noqa: E402
 from r58emu import P8N  # noqa: E402
+from test_fsk import M_PER_MIN  # noqa: E402
 
 REF, CAND = builds("APRS")
 
@@ -34,10 +35,36 @@ EOS = 0xFF
 CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
 
 
+def qrb_exact_in_ref(r):
+    """The reference computed metres in 24-bit arithmetic (the C build
+    uses 32 bits since 2026-10-01): distance and direction are compared
+    only for axes below 2^24 m (16 777 km), the direction (mprs_qrb_dir_bits) only with a distance
+    shown (below 1000 km on both axes): without one the reference left
+    its bits half set.  Returns (distance comparable, direction too)."""
+    pk = r.peek("mprs_packed_packet", 12)
+    lat, lon = r.peek("cfg_gps_latitude", 8), r.peek("cfg_gps_longitude", 8)
+
+    def own(d):
+        v = ((d[0] * 100 + d[1] * 10 + d[2]) * 60 + d[3] * 10 + d[4]) * 100 + d[5] * 10 + d[6]
+        return -v if d[7] in b"SW" else v
+
+    def his(b):
+        v = ((b[0] & 0x7F) * 60 + (b[1] & 0x3F)) * 100 + (b[2] & 0x7F)
+        return -v if b[2] & 0x80 else v
+    dlat = abs(his(pk[6:9]) - own(lat))
+    dlon = abs(his(pk[9:12]) - own(lon))
+    dlon = min(dlon, 360 * 6000 - dlon)
+    m_per_min = M_PER_MIN[min(lat[0] * 100 + lat[1] * 10 + lat[2], 89)]
+    north, east = dlat * 1852 // 100, dlon * m_per_min // 100
+    exact = north < 1 << 24 and east < 1 << 24
+    return exact, exact and max(north, east) < 1000000
+
+
 def rx_state(r):
+    exact, shown = qrb_exact_in_ref(r)
     return (r.peek("remote_display_buffer", 16), r.peek("locator_display_buffer", 8),
-            r.peek("distance_bearing", 8), r.peek("mprs_packed_packet", 12),
-            r.peek("mprs_qrb_dir_bits"), r.peek("my_coord_tmp_6bytes", 6), r.peek("display_buffer_time") > 0,
+            r.peek("distance_bearing", 8) if exact else None, r.peek("mprs_packed_packet", 12),
+            r.peek("mprs_qrb_dir_bits") if shown else None, r.peek("display_buffer_time") > 0,
             r.peek("locator_dpyed") > 0, r.peek("cfg_gps_locator", 8))
 
 
@@ -78,12 +105,9 @@ def mprs_packet(rnd, own=None):
     p[5] = rnd.choice((0, 0, rnd.randrange(256)))           # reserved
     if own and rnd.random() < 0.7:
         lat, lon = near(rnd, *own)
-    elif rnd.random() < 0.8:
-        lat = [rnd.randrange(91), rnd.randrange(60), rnd.randrange(100)]
-        lon = [rnd.randrange(181), rnd.randrange(60), rnd.randrange(100)]
-    else:                                                   # out of range
-        lat = [rnd.randrange(128), rnd.randrange(64), rnd.randrange(128)]
-        lon = [rnd.randrange(256), rnd.randrange(64), rnd.randrange(128)]
+    else:                                                   # in range (out of
+        lat = [rnd.randrange(90), rnd.randrange(60), rnd.randrange(100)]   # range: no position,
+        lon = [rnd.randrange(180), rnd.randrange(60), rnd.randrange(100)]  # test_fsk)
     lat[1] |= rnd.randrange(4) << 6                         # symbol bits
     lon[1] |= rnd.randrange(4) << 6
     if not own and rnd.random() < 0.3:

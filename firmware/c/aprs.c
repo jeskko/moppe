@@ -7,17 +7,18 @@
  * the report when cfg_report_type is set) and c/gps.c
  * (gps_own_locator).
  *
- * Arithmetic follows the assembler exactly, test_aprs_diff.py compares
- * them: 24-bit values (AHL) wrap at 24 bits (mod24), digits are stored as
- * values 0..9 in distance_bearing, the out-of-range inputs of a packet go
- * through the same loops.  Deliberate difference: the metres-per-minute
- * table is indexed by the own latitude degrees; the assembler read past its
- * 90 entries for invalid latitudes (90 and up), C uses the 89 degree entry.
+ * Positions are signed hundredths of a minute, the locator and the
+ * distance plain integer arithmetic (since 2026-10-01; before, the C
+ * followed the assembler's 24-bit arithmetic bit for bit, garbage of an
+ * out-of-range packet included).  A packet with an out-of-range position
+ * is taken as one without a position.  distance_bearing holds digits as
+ * values 0..9, as the display code expects.
  *
  * The assembler routines called here do not preserve IX: no stack frame
- * in a function that calls them, state is static.  mprs_degmin_pack is a
- * C-only leaf (no asm calls) and may have one: SDCC spills its two
- * pointer parameters there.  Mainline only.
+ * in a function that calls them, state is static.  mprs_degmin_pack,
+ * position_from_packed and mprs_qrb call no firmware assembler (C and the
+ * SDCC library only) and may have one: SDCC keeps parameters and 32-bit
+ * temporaries there.  Mainline only.
  */
 #pragma bank 2
 
@@ -40,8 +41,6 @@ extern void emit_ax25_packet(const uint8_t *bits);	/* HL, fixed ROM */
 /* r58.s shims */
 extern uint16_t aprs_crc(uint8_t len, const uint8_t *p);	/* calc_ax25_crc: A | C << 8 */
 extern void gps_upload_start(const uint8_t *msg);	/* gps_upload_ptr, '$' out */
-
-#define MOD24(x)	((x) & 0xFFFFFFUL)
 
 /* primary symbols: 15 by MPRS symbol, then 16 by SSID (symbol 15) */
 static const uint8_t symbols[31] = {
@@ -72,64 +71,37 @@ static const uint16_t minutes_to_meters[90] = {
 
 static const uint8_t mic_e_DC_tab[10] = { ' ', '*', '4', '>', 'H', 'R', 0x5C, 'f', 'p', 'z' };
 
-static uint8_t a, b, c, i, n, ones, last, h, l, rem;
-static uint16_t w, q;
-static uint32_t v, t, his, north, east;
-static uint32_t *major, *minor;
+static uint8_t a, b, c, i, n, ones, last, h, l;
+static uint16_t w;
 static const uint8_t *s;
 static uint8_t *d;
 
 /* ---- small helpers */
 
-/* how many times n subtracts from a before it goes below n (the
- * assembler's repeated-subtraction division), leaving the remainder in a */
-static uint8_t count_down(uint8_t n)
+/* x (below 100) as two digits at d */
+static void two_digits(uint8_t x)
 {
-	uint8_t cnt = 0, done;
-	do {
-		cnt++;
-		done = a < n;
-		a -= n;
-	} while (!done);
-	return cnt;
+	*d++ = '0' + x / 10;
+	*d++ = '0' + x % 10;
 }
 
-/* a as two digits: tens (maybe above '9' when a >= 100), ones */
-static void dekavalue_format(void)
-{
-	c = '0' - 1 + count_down(10);
-	*d++ = c;
-	*d++ = a + 10 + '0';
-}
-
-/* ddmm.hh of a packed latitude at s (reserved and symbol bits masked) */
+/* ddmm.hh of a packed latitude at s (flag and symbol bits masked) */
 static void mprs_lat_format(void)
 {
-	a = s[0] & 0x7F;
-	dekavalue_format();
-	a = s[1] & 0x3F;
-	dekavalue_format();
+	two_digits(s[0] & 0x7F);
+	two_digits(s[1] & 0x3F);
 	*d++ = '.';
-	a = s[2] & 0x7F;
-	dekavalue_format();
+	two_digits(s[2] & 0x7F);
 }
 
 /* dddmm.hh of a packed longitude at s */
 static void mprs_lon_format(void)
 {
-	a = s[0];
-	if (a >= 100) {
-		a -= 100;
-		*d++ = '1';
-	} else {
-		*d++ = '0';
-	}
-	dekavalue_format();
-	a = s[1] & 0x3F;
-	dekavalue_format();
+	*d++ = s[0] >= 100 ? '1' : '0';
+	two_digits(s[0] % 100);
+	two_digits(s[1] & 0x3F);
 	*d++ = '.';
-	a = s[2] & 0x7F;
-	dekavalue_format();
+	two_digits(s[2] & 0x7F);
 }
 
 static void out_string(const uint8_t *p)
@@ -185,197 +157,86 @@ void mprs_degmin_pack(const uint8_t *s, uint8_t *d)
 		d[2] |= 0x80;
 }
 
-/* flip p[0], p[2], p[4], p[6] for the southern/western half of the locator */
-static void mirror(uint8_t *p)
-{
-	p[0] = 'I' - p[0] + 'J';
-	p[2] = '9' - p[2] + '0';
-	p[4] = 'L' - p[4] + 'M';
-	p[6] = '9' - p[6] + '0';
-}
+/* A packed position (3 bytes latitude, 3 longitude: degrees, minutes,
+ * hundredths | 0x80 for S or W; the bits above are flags and symbol bits)
+ * at s into lat, lon: signed hundredths of a minute.  0 when out of range
+ * (latitude 90 degrees or more, longitude 180 or more, minutes 60 or
+ * more, hundredths 100 or more): such a packet has no usable position. */
+static int32_t lat, lon;
 
-/* one hundredth of a minute less of the southern/western deg, min,
- * hundredths | sign at p, so the mirrored locator puts a point exactly on
- * a cell edge in the upper cell, as Maidenhead does (v3_Z mirrored the
- * value itself: one low in the last character; fixed 2026-10-01); 0.00
- * S/W becomes 0.00 N/E */
-static void edge_step(uint8_t *p)
+static uint8_t position_from_packed(void)
 {
-	if (!(p[2] & 0x80))
-		return;
-	if (p[2] != 0x80) {
-		p[2]--;
-		return;
-	}
-	p[2] = (uint8_t)(0x80 + 99);
-	if (p[1]) {
-		p[1]--;
-	} else if (p[0]) {
-		p[0]--;
-		p[1] = 59;
-	} else {
-		p[2] = 0;
-	}
-}
-
-static uint8_t ll[6];
-static const uint8_t *src;
-
-/* the 8-character locator of the packed lat/lon at s into d */
-static void packed_latlon_to_locator(void)
-{
-	src = s;
-	ll[0] = s[0] & 0x7F;
-	ll[1] = s[1] & 0x3F;
-	ll[2] = s[2];
-	ll[3] = s[3];
-	ll[4] = s[4] & 0x3F;
-	ll[5] = s[5];
-	edge_step(ll);
-	edge_step(ll + 3);
-	s = ll;
-	/* latitude: field letter from 'J', square digit */
 	a = s[0] & 0x7F;
-	c = 'J' - 1 + count_down(10);
-	d[1] = c;
-	d[3] = a + 10 + '0';
-	/* subsquare: half minutes (one more from .50 on).  The fractions
-	 * leave out the sign bit, and .50 is in the upper half as in the
-	 * last digit: v3_Z counted the sign bit as above .50 and took .50
-	 * as below, so southern and western locators, and any at exactly
-	 * .50, came out half a minute off (fixed 2026-09-30) */
-	b = s[2] & 0x7F;
-	a = (s[1] << 1 | (50 <= b)) & 0x7F;
-	c = 'A' - 1 + count_down(5);
-	d[5] = c;
-	c = (a + 5) << 1;
-	a = b;
-	if (a >= 50)
-		a -= 50;
-	if (a >= 25)
-		c++;
-	d[7] = c + '0';
-	if (s[2] & 0x80)			/* south */
-		mirror(d + 1);
-	/* longitude: 20 degrees per letter, 2 per digit */
+	b = s[1] & 0x3F;
+	c = s[2] & 0x7F;
+	if (a >= 90 || b >= 60 || c >= 100)
+		return 0;
+	lat = (int32_t)((uint16_t)a * 60 + b) * 100 + c;
+	if (s[2] & 0x80)
+		lat = -lat;
 	a = s[3];
-	c = 'J' - 1 + count_down(20);
-	a += 20;
-	b = a & 1;				/* odd degree */
-	d[0] = c;
-	d[2] = (a >> 1) + '0';
-	a = s[4] & 0x3F;
-	if (b)
-		a += 60;
-	c = 'A' - 1 + count_down(5);
-	d[4] = c;
-	d[6] = ((uint8_t)((a + 5) << 1) | (50 <= (s[5] & 0x7F))) + '0';
-	if (s[5] & 0x80)			/* west */
-		mirror(d);
-	s = src;
+	b = s[4] & 0x3F;
+	c = s[5] & 0x7F;
+	if (a >= 180 || b >= 60 || c >= 100)
+		return 0;
+	lon = (int32_t)((uint16_t)a * 60 + b) * 100 + c;
+	if (s[5] & 0x80)
+		lon = -lon;
+	return 1;
 }
 
-/* the own locator from cfg_gps_latitude / longitude into cfg_gps_locator */
-void gps_own_locator(void)
+/* the 8-character Maidenhead locator of lat, lon at d: fields of 20 x 10
+ * degrees, squares of 2 x 1, subsquares of 5' x 2.5', and their tenths
+ * (30" x 15"); counted from 180 W, 90 S, so a point on an edge is in the
+ * upper cell (the v3_Z code mirrored the northern/eastern locator for
+ * S/W, one low on an edge: fixed 2026-09-30/10-01) */
+static uint32_t ul;
+static uint16_t uw, deg;
+
+static void locator_of_position(void)
+{
+	ul = lon + 180L * 6000;			/* 0 .. 2159999 */
+	deg = ul / 6000;			/* 0 .. 359 */
+	uw = (uint16_t)ul - deg * 6000;		/* hundredths of a minute */
+	d[0] = 'A' + deg / 20;
+	d[2] = '0' + deg % 20 / 2;
+	if (deg & 1)
+		uw += 6000;			/* the odd degree of a square */
+	d[4] = 'A' + uw / 500;
+	d[6] = '0' + uw % 500 / 50;
+	ul = lat + 90L * 6000;			/* 0 .. 1079999 */
+	deg = ul / 6000;			/* 0 .. 179 */
+	uw = (uint16_t)ul - deg * 6000;
+	d[1] = 'A' + deg / 10;
+	d[3] = '0' + deg % 10;
+	d[5] = 'A' + uw / 250;
+	d[7] = '0' + uw % 250 / 25;
+}
+
+/* the own position (cfg_gps_latitude / longitude digits) into lat, lon;
+ * 0 if out of range */
+static uint8_t own_position(void)
 {
 	mprs_degmin_pack(cfg_gps_latitude, gps_latlon_tmp);
 	mprs_degmin_pack(cfg_gps_longitude, gps_latlon_tmp + 3);
 	s = gps_latlon_tmp;
+	return position_from_packed();
+}
+
+/* the own locator into cfg_gps_locator (left as it was when the GPS
+ * position is out of range) */
+void gps_own_locator(void)
+{
+	if (!own_position())
+		return;
 	d = cfg_gps_locator;
-	packed_latlon_to_locator();
+	locator_of_position();
 }
 
 /* ---- distance and bearing (flat model) */
 
-/* s: degrees, minutes, hundredths (and sign, symbol bits) -> centiminutes */
-static uint32_t degmin_to_centiminutes(void)
-{
-	w = (uint16_t)(s[0] & 0x7F) * 60 + (s[1] & 0x3F);
-	v = w;
-	v *= 100;
-	return v + (s[2] & 0x7F);
-}
-
-static uint32_t from_south_pole(void)
-{
-	v = degmin_to_centiminutes();
-	if (s[2] & 0x80)
-		v = MOD24(-v);
-	return MOD24(v + 90UL * 60 * 100);
-}
-
-static uint32_t from_meridian(void)
-{
-	v = degmin_to_centiminutes();
-	if (s[2] & 0x80)
-		v = MOD24(-v);
-	return v;
-}
-
-/* the assembler's div248, bit for bit: v (AHL) / dv -> 16-bit quotient,
- * remainder in rem; a true division only while A < dv and dv < 128, which
- * the wrapped values of an out-of-range packet break */
-static uint16_t quot;
-static uint8_t k, cy;
-
-static uint16_t div248_v(uint8_t dv)		/* v / dv */
-{
-	rem = v >> 16;
-	quot = v;
-	for (k = 0; k < 16; k++) {
-		cy = quot >> 15;
-		quot <<= 1;
-		rem = rem << 1 | cy;		/* (the carry out of A is lost) */
-		if (rem >= dv) {
-			rem -= dv;
-			quot |= 1;
-		}
-	}
-	return quot;
-}
-
-/* 24-bit centiminutes of latitude (v) into metres */
-static uint32_t centiminutes_to_1852_meters(void)
-{
-	q = div248_v(100);			/* full minutes */
-	v = rem;				/* hundredths */
-	v *= 1852;
-	t = div248_v(100);			/* their metres */
-	v = q;
-	v *= 1852;
-	return MOD24(v + t);
-}
-
-/* 24-bit centiminutes of longitude (v) into metres, w metres per minute
- * (the QRB bugs - v3_Z added hundredths * 655 m, and from 256 minutes on
- * garbage - are fixed here; notes/hybrid-plan.md "Firmware behaviour") */
-static uint32_t centiminutes_to_meters(void)
-{
-	q = div248_v(100);			/* full minutes */
-	t = 0;
-	if (rem) {				/* hundredths */
-		v = rem;
-		v *= w;
-		t = div248_v(100);
-	}
-	v = q;
-	v *= w;
-	return MOD24(v + t);
-}
-
-/* into -180 .. +180 degrees */
-static void delta_longitude_fixup(void)
-{
-	if (!(v & 0x800000)) {
-		if (v >= 180UL * 60 * 100)
-			v = MOD24(v - 2 * 180UL * 60 * 100);
-	} else if (v + 180UL * 60 * 100 < 0x1000000) {	/* below -180 */
-		v = MOD24(v + 2 * 180UL * 60 * 100);
-	}
-}
-
 /* distance_bearing: 3 significant digits (values 0..9), '.', the unit
- * digit, ' ', N/S/E/W and EOS */
+ * digit, ' ', N/S/E/W and EOS; w the digits, b the trailing zeroes */
 static void mprs_qrb_present(void)
 {
 	d = distance_bearing;
@@ -400,89 +261,63 @@ static void mprs_qrb_present(void)
 	d[1] = EOS;
 }
 
-/* 24 bits of t at d */
-static void put24(void)
-{
-	d[0] = t;
-	d[1] = t >> 8;
-	d[2] = t >> 16;
-}
-
-/* major and minor axis of north and east (left in my_coord_tmp_6bytes, the
- * distance over the major one later, as the assembler did) */
-static void pick_axes(void)
-{
-	t = north;
-	d = my_coord_tmp_6bytes;
-	put24();
-	t = east;
-	d = my_coord_tmp_6bytes + 3;
-	put24();
-	if (east < north) {			/* both below 2^24 */
-		major = &north;
-		minor = &east;
-	} else {
-		major = &east;
-		minor = &north;
-		mprs_qrb_dir_bits |= 4;			/* the major axis is E/W */
-	}
-}
+/* Distance and main direction from the own position to his_lat, his_lon:
+ * north-south 1852 m a minute, east-west by the own latitude's metres per
+ * minute, distance = major + minor * 83 / 256 (< 5 % error, 7 % at 45
+ * degrees); nothing beyond 999 km, or without an own position. */
+static int32_t his_lat, his_lon, dl;
+static uint32_t north, east;
 
 static void mprs_qrb(void)
 {
-	mprs_degmin_pack(cfg_gps_latitude, my_coord_tmp_6bytes);
-	mprs_degmin_pack(cfg_gps_longitude, my_coord_tmp_6bytes + 3);
+	if (!own_position())
+		return;
 	mprs_qrb_dir_bits = 0;
 
-	/* north-south */
-	s = mprs_packed_packet + 6;
-	his = from_south_pole();
-	s = my_coord_tmp_6bytes;
-	t = from_south_pole();			/* mine */
-	if (t < his) {
-		v = his - t;
-		mprs_qrb_dir_bits |= 1;			/* he/she is north from me */
+	dl = his_lat - lat;
+	if (dl > 0)
+		mprs_qrb_dir_bits |= 1;		/* he/she is north from me */
+	else
+		dl = -dl;
+	north = (uint32_t)dl * 1852 / 100;
+
+	dl = his_lon - lon;			/* into -180 .. +180 degrees */
+	if (dl > 180L * 6000)
+		dl -= 360L * 6000;
+	else if (dl <= -180L * 6000)
+		dl += 360L * 6000;
+	if (dl > 0)
+		mprs_qrb_dir_bits |= 2;		/* he/she is east from me */
+	else
+		dl = -dl;
+	a = (lat < 0 ? -lat : lat) / 6000;	/* own latitude degrees */
+	east = (uint32_t)dl * minutes_to_meters[a] / 100;
+
+	if (east < north) {
+		ul = north;
+		dl = east;
 	} else {
-		v = t - his;
+		ul = east;
+		dl = north;
+		mprs_qrb_dir_bits |= 4;		/* the major axis is E/W */
 	}
-	north = centiminutes_to_1852_meters();
-
-	/* east-west */
-	s = mprs_packed_packet + 9;
-	his = from_meridian();
-	s = my_coord_tmp_6bytes + 3;
-	v = MOD24(from_meridian() - his);
-	delta_longitude_fixup();
-	if (v & 0x800000) {
-		v = MOD24(-v);
-		mprs_qrb_dir_bits |= 2;			/* he/she is east from me */
-	}
-	w = minutes_to_meters[(my_coord_tmp_6bytes[0] & 0x7F) < 90 ? (my_coord_tmp_6bytes[0] & 0x7F) : 89];
-	east = centiminutes_to_meters();
-
-	/* distance = major + minor * 83 / 256 (< 5 % error, 7 % at 45 deg) */
-	pick_axes();
-	t = *minor;
-	t *= 83;
-	t >>= 8;
-	v = MOD24(*major + t);
-	t = v;
-	d = major == &north ? my_coord_tmp_6bytes : my_coord_tmp_6bytes + 3;
-	put24();
+	if (ul >= 1000000)
+		return;				/* too far */
+	ul += (uint32_t)dl * 83 >> 8;
 
 	/* 3 significant digits and b trailing zeroes (metres) */
-	if (v < 1000) {
+	if (ul < 1000) {
 		b = 0;
-		w = v;
-	} else if (v < 10000) {
+		w = ul;
+	} else if (ul < 10000) {
 		b = 1;
-		w = v / 10;
-	} else if (v < 100000) {
+		w = ul / 10;
+	} else if (ul < 100000) {
 		b = 2;
-		w = v / 100;
-	} else if (v < 1000000) {
+		w = ul / 100;
+	} else if (ul < 1000000) {
 		b = 3;
-		w = (uint16_t)(v / 100) / 10;
+		w = ul / 1000;
 	} else {
 		return;				/* too far */
 	}
@@ -690,10 +525,12 @@ void handle_mprs_packets(uint8_t start)
 		*d = EOS;
 	}
 
-	if (!(mprs_packed_packet[6] & 0x80)) {	/* a position */
-		s = mprs_packed_packet + 6;
+	s = mprs_packed_packet + 6;
+	if (!(mprs_packed_packet[6] & 0x80) && position_from_packed()) {	/* a position */
+		his_lat = lat;
+		his_lon = lon;
 		d = locator_display_buffer;
-		packed_latlon_to_locator();
+		locator_of_position();
 		locator_display_buffer[6] = EOS;
 		locator_display_buffer[7] = EOS;
 		if (cfg_mbus_mprs)

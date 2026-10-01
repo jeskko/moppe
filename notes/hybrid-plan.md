@@ -19,9 +19,9 @@ last commit with the assembler alternatives is git tag **`asm-final`**;
 module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
 differs from the release by the bug fixes and the removed Aisin Seiki
 GPS path. `make verify` still rebuilds the release from `r58.asm`.
-Sizes (2026-10-01): fixed ROM ends at 0x4E83 incl. the C code (12.7 KB
-free), bank 1 7328 bytes free, bank 2 5528 bytes free; C statics 219 of
-the 256-byte `c_bss`. **316 tests** pass.
+Sizes (2026-10-01, after the simplifications): fixed ROM ends at 0x4E4B
+incl. the C code (12.7 KB free), bank 1 7328 bytes free, bank 2 5794
+bytes free; C statics 217 of the 256-byte `c_bss`. **320 tests** pass.
 
 The 2026-09-29 code review is applied (details in the commits): one
 shared header `c/r58.h` (163 symbols had been declared in several modules,
@@ -395,6 +395,25 @@ notes/open-bugs.md):
   other band's grid there are not visited (a true union would cost a
   24-bit division per band per step). `test_scan_rptr.Scanner.
   test_overlapping_bands_*`; `test_scan_diff` scenarios have no overlaps.
+- **Simplified 2026-10-01** (user: the C need not match the assembler
+  1:1; understandable code and the overall function matter more, and
+  exact assembler timing only where it matters). MPRS positions
+  (`c/aprs.c`) are signed hundredths of a minute: the locator is computed
+  directly (no mirror and edge step; one 32-bit division per axis) and
+  the distance/bearing in plain 32-bit arithmetic (no bit-exact `div248`,
+  24-bit wrapping or scratch writes to `my_coord_tmp_6bytes`). A packet
+  with an out-of-range position (latitude 90 or more, longitude 180 or
+  more, minutes 60, hundredths 100) is taken as one without a position:
+  call shown, no locator, distance, MBUS or GPS-upload position (v3_Z
+  computed garbage from it); `test_fsk.PositionRange`. NMEA number fields
+  reject every non-digit (v3_Z only those below '0', storing a letter as
+  its value minus '0'), and a two-digit piece is written only when both
+  are digits; `test_signalling.GpsNumbers`. `test_aprs_diff` keeps to
+  in-range positions and compares the distance only below 2^24 m per axis
+  and the direction bits only with a distance shown (the reference left
+  them half set otherwise); `test_gps_diff` has no non-digit cases.
+  Locators checked against the integer model on 600 random own and
+  received positions. Bank 2 -266 bytes.
 - Scanner busy-channel settling time never doubles (`squelch_open` is
   always 0 right after a frequency change): kept, the timing users know
   (user, 2026-10-01).

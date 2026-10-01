@@ -128,6 +128,32 @@ class OwnLocator(RadioTest):
                 self.assertEqual(self.locator("%s%s.%s" % lat, ns, "%s%s.%s" % lon, ew), want)
 
 
+class GpsNumbers(RadioTest):
+    """A GPRMC sentence with a non-digit in a number field changes nothing
+    from that field on (v3_Z rejected only characters below '0' and
+    stored a letter or ':' as its value minus '0'; since 2026-10-01)."""
+
+    def test_non_digits_rejected(self):
+        good = "GPRMC,123519,A,6130.12,N,02345.67,E,012.5,054.7,280926,,"
+        for bad, field in (("GPRMC,12351X,A,6130.12,N,02345.67,E,012.5,054.7,280926,,", "gps_utc"),
+                           ("GPRMC,000001,A,61:0.12,N,02345.67,E,1,2,010100,,", "cfg_gps_latitude"),
+                           ("GPRMC,000001,A,6130.12,N,02345.67,E,1A.0,3,010100,,", "gps_knots"),
+                           ("GPRMC,000001,A,6130.12,N,02345.67,E,1,2,01x100,,", "gps_date")):
+            with self.subTest(bad=bad):
+                r = self.boot()
+                r.serial_rx(0, nmea(good))
+                r.run(0.5)
+                before = bytes(r.peek(field, 8))
+                r.serial_rx(0, nmea(bad))
+                r.run(0.5)
+                after = bytes(r.peek(field, 8))
+                if field != "gps_knots":        # digit fields: no letter as a digit
+                    self.assertTrue(all(x <= 9 or x == 0xFF for x in after[:6]), after)
+                if field != "gps_date":         # (its pairs before the bad one are updated)
+                    self.assertEqual(after, before)
+                self.assertEqual(r.peek("cfg_gps_locator", 8), maidenhead8(61 + 30.12 / 60, 23 + 45.67 / 60))
+
+
 class GpsConfig(RadioTest):
     """PH:GPSCFG without the Aisin Seiki entry (dropped 2026-10-01): Std,
     SirF, SirFt, 9600Std; an NV from before, with 9600Std as 4, comes up

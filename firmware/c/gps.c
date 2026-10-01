@@ -9,10 +9,12 @@
  * The byte gatherer gps_check stays fixed (it runs on every mainloop
  * pass); it calls these once per complete sentence through far_* stubs.
  *
- * Kept from the assembler on purpose (test_gps_diff.py pins them):
- * number fields only reject characters below '0' (a letter is stored as
- * its value minus '0'); a field that fails leaves the fields before it
- * updated; speed and course wrap at 16 bits.
+ * A number field with a character other than 0..9 (or its '.') makes
+ * the sentence bad (v3_Z rejected only characters below '0' and stored a
+ * letter as its value minus '0'; since 2026-10-01).  Kept: a field that
+ * fails leaves the fields before it updated (the checksum has passed, so
+ * that takes a receiver sending nonsense); speed and course wrap at 16
+ * bits.
  *
  * The routines called here do not preserve IX: no stack frames, state is
  * static.  Mainline only.
@@ -74,6 +76,12 @@ static uint8_t gps_checksum_ok(uint8_t len)
 	return (d << 4 | a) == e;
 }
 
+/* a (the character just read) is not 0..9: the field is bad */
+static uint8_t not_digit(void)
+{
+	return (uint8_t)(a - '0') > 9;
+}
+
 /* DDDMM.mm[m..],H into dst[0..7]; 0 on a bad character.  Digits before the
  * point go through a shift register b c d e (and dst[0]), so only the last
  * five count and short fields are zero-filled on the left. */
@@ -81,7 +89,7 @@ static uint8_t latlon_field(void)
 {
 	b = c = d = e = 0;
 	while ((a = *p++) != '.') {
-		if (a < '0')
+		if (not_digit())
 			return 0;
 		dst[0] = b;
 		b = c;
@@ -96,15 +104,15 @@ static uint8_t latlon_field(void)
 	/* two decimals of minutes, the rest ignored */
 	d = e = 0;
 	if ((a = *p++) != ',') {
-		if (a < '0')
+		if (not_digit())
 			return 0;
 		d = a - '0';
 		if ((a = *p++) != ',') {
-			if (a < '0')
+			if (not_digit())
 				return 0;
 			e = a - '0';
 			while ((a = *p++) != ',')
-				if (a < '0')
+				if (not_digit())
 					return 0;
 		}
 	}
@@ -125,7 +133,7 @@ static uint8_t number_field(void)
 			return 1;
 		if (a == '.')
 			break;
-		if (a < '0')
+		if (not_digit())
 			return 0;
 		num = num * 10 + (uint8_t)(a - '0');
 	}
@@ -135,20 +143,23 @@ static uint8_t number_field(void)
 	if (a >= '5')
 		num++;			/* round up */
 	while ((a = *p++) != ',')
-		if (a < '0')
+		if (not_digit())
 			return 0;
 	return 1;
 }
 
-/* two characters at p as digits into dst[at], dst[at + 1]; 0 on a bad one */
+/* two characters at p as digits into dst[at], dst[at + 1]; 0 (and dst
+ * unchanged) unless both are digits */
 static uint8_t digits(uint8_t at)
 {
-	for (i = 0; i < 2; i++) {
-		a = *p++;
-		if (a < '0')
-			return 0;
-		dst[at + i] = a - '0';
-	}
+	a = p[0];
+	if (not_digit())
+		return 0;
+	a = p[1];
+	if (not_digit())
+		return 0;
+	dst[at] = *p++ - '0';
+	dst[at + 1] = *p++ - '0';
 	return 1;
 }
 

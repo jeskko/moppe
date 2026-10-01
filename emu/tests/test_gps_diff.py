@@ -35,6 +35,9 @@ def sentence(label, data, probe=gps_state):
 
 
 RMC = "GPRMC,123519,A,6130.12,N,02345.67,E,012.5,054.7,280926,020.3,E"
+# Characters above '9' in a number field (letters, ':') make the sentence
+# bad since 2026-10-01 (v3_Z stored them as digits):
+# test_signalling.GpsNumbers.
 GPRMC_CASES = [
     ("plain", nmea_raw(RMC)),
     ("lowercase checksum", nmea_raw(RMC, "%02x" % int(nmea_raw(RMC)[-4:-2], 16))),
@@ -49,13 +52,11 @@ GPRMC_CASES = [
     ("decimal seconds", nmea_raw("GPRMC,123519.25,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("status V", nmea_raw("GPRMC,123519,V,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("short utc", nmea_raw("GPRMC,1235,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
-    ("letter in utc", nmea_raw("GPRMC,12351X,A,6130.12,N,02345.67,E,012.5,054.7,280926,,")),
     ("3 decimals, N/E", nmea_raw("GPRMC,000001,A,3352.083,N,15112.345,E,000.0,359.9,010100,,")),   # S/W: test_signalling.OwnLocator
     ("1 decimal", nmea_raw("GPRMC,000001,A,6130.1,N,02345.6,E,0.0,0.0,010100,,")),
     ("no decimals", nmea_raw("GPRMC,000001,A,6130.,N,02345.,E,5,7,010100,,")),
     ("long degrees", nmea_raw("GPRMC,000001,A,0006130.12,N,1002345.67,E,1,2,010100,,")),
     ("short degrees", nmea_raw("GPRMC,000001,A,130.12,N,5.67,E,1,2,010100,,")),
-    ("letter in latitude", nmea_raw("GPRMC,000001,A,61:0.12,N,02345.67,E,1,2,010100,,")),
     ("below-0 in latitude", nmea_raw("GPRMC,000001,A,61/0.12,N,02345.67,E,1,2,010100,,")),
     ("speed round up", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,12.5,10.49,010100,,")),
     ("speed round down", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,12.4,10.51,010100,,")),
@@ -64,9 +65,7 @@ GPRMC_CASES = [
     ("137 knots", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,137,0,010100,,")),
     ("huge speed wraps", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,70000,0,010100,,")),
     ("slash in speed", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1/2,3,010100,,")),
-    ("letter in speed", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1A.0,3,010100,,")),
     ("empty speed/course", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,,,010100,,")),
-    ("bad date", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1,2,01x100,,")),
     ("no comma after date", nmea_raw("GPRMC,000001,A,6130.12,N,02345.67,E,1,2,010100")),
     ("missing comma after N", nmea_raw("GPRMC,000001,A,6130.12,N;02345.67,E,1,2,010100,,")),
     ("GPGGA ignored", nmea_raw("GPGGA,123519,6130.12,N,02345.67,E,1,08,0.9,545.4,M,46.9,M,,")),
