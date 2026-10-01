@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_radio import make_sane_nv, ROM, LST  # noqa: E402
 from r58emu import Radio, P8E, P8N  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 REF = (os.path.join(ROOT, "firmware", "build-release", "r58.bin"),
        os.path.join(ROOT, "firmware", "build-release", "r58.map"))
 

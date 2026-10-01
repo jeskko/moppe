@@ -4,10 +4,10 @@ scanner, repeater function, and repeater CW identification. These areas
 were listed as untested gaps before porting them to C.
 
 Expected values are derived from firmware/r58.asm (line numbers cited in
-each test), the same way as emu/tests/test_radio.py, not from emulator
+each test), the same way as tests/test_radio.py, not from emulator
 runs. Run from the repository root:
 
-    make -C firmware && make -C emu && python3 -m unittest discover -s emu/tests -v
+    make -C firmware && make -C emu && python3 -m unittest discover -s tests -v
 """
 import os
 import sys

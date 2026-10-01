@@ -1,7 +1,7 @@
 """
 Phase 0 safety-net tests (notes/hybrid-plan.md): setup-menu record-type
 editing, low-battery/TOT power-down, typematic key timing, and CU58AF
-handset depth -- areas the existing emu/tests/test_radio.py does not
+handset depth -- areas the existing tests/test_radio.py does not
 cover yet.
 
 Expected values are derived from firmware/r58.asm (line numbers cited in
@@ -11,7 +11,7 @@ project's "verify claims ... before recording them as confirmed" rule.
 
 Run:
     make -C firmware && make -C emu
-    python3 -m unittest discover -s emu/tests -v
+    python3 -m unittest discover -s tests -v
 """
 import os
 import sys
@@ -247,7 +247,7 @@ class MenuDyn(RadioTest):
     (REC L17821). NOTE: reset_menurec (L17684-17709) does not handle
     CFG_DYN, so SAnE never resets this field -- it stays at its zeroed-bss
     value (0), not the REC "def" column (127); see
-    emu/tests/test_radio.py's Squelch class for the same observation."""
+    tests/test_radio.py's Squelch class for the same observation."""
 
     def test_edit_dyn_record(self):
         r = self.boot()

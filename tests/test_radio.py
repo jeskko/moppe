@@ -2,18 +2,18 @@
 Firmware-level scenario tests for the R58 emulator.
 
 Run from the repository root:
-    make -C firmware && make -C emu && python3 -m unittest discover -s emu/tests -v
+    make -C firmware && make -C emu && python3 -m unittest discover -s tests -v
 
 Expected values (synth R/N/A, display strings) were derived independently
 from the firmware source (notes/reference/firmware-rf-ui.md), not from emulator runs.
 Each test starts from an NV image produced by running the firmware's own
-SAnE defaults procedure, cached in emu/tests/.cache/.
+SAnE defaults procedure, cached in tests/.cache/.
 """
 import os
 import sys
 import unittest
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "emu", "python"))
 
 from r58emu import Radio, P8E, P8N, CU53AN, CU58AF, AD_SQL  # noqa: E402

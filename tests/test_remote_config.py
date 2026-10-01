@@ -19,7 +19,7 @@ from test_radio import RadioTest, make_sane_nv, ROM, LST  # noqa: E402
 from r58emu import Radio, P8E, P8N  # noqa: E402
 from rflink import Link  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RELEASE = (os.path.join(ROOT, "firmware", "build-release", "r58.bin"),
            os.path.join(ROOT, "firmware", "build-release", "r58.map"))
 ID = bytes([0x34, 0x12])

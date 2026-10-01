@@ -4,10 +4,10 @@ Run the emulator test suite one module per process, N at a time (default:
 the CPU count), and print each module's result as it finishes; the output
 of a failing module in full at the end.  Exit status 1 if any failed.
 
-    python3 tools/ci/runtests.py            # all of emu/tests/test_*.py
+    python3 tools/ci/runtests.py            # all of tests/test_*.py
     python3 tools/ci/runtests.py -j 4 test_fsk test_scan_diff
 
-The same tests as `python3 -m unittest discover -s emu/tests`; the SAnE NV
+The same tests as `python3 -m unittest discover -s tests`; the SAnE NV
 cache is written atomically, so parallel modules may share it.
 """
 import argparse
@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 
-TESTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "emu", "tests")
+TESTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tests")
 
 
 def run(module):

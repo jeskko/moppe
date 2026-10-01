@@ -7,7 +7,7 @@ import re
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "emu", "python"))
 sys.path.insert(0, os.path.dirname(__file__))
 from test_radio import RadioTest, ROM  # noqa: E402
 

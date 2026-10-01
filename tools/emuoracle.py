@@ -22,7 +22,7 @@ import os
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.join(ROOT, "emu", "tests"))
+sys.path.insert(0, os.path.join(ROOT, "tests"))
 from test_radio import make_sane_nv, ROM, LST  # noqa: E402
 from r58emu import Radio, P8E, P8N, AD_SQL  # noqa: E402
 

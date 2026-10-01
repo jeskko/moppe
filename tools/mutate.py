@@ -62,7 +62,7 @@ def run_mutant(i, old, new, rel, orig, tests):
             env[p + "_ROM"] = os.path.join(fw, BUILD, "r58.bin")
             env[p + "_LST"] = os.path.join(fw, BUILD, "r58.map")
         t = subprocess.run([sys.executable, "-m", "unittest"] + tests,
-                           cwd=os.path.join(ROOT, "emu", "tests"), env=env,
+                           cwd=os.path.join(ROOT, "tests"), env=env,
                            capture_output=True, text=True)
         fails = sorted({l.split("(")[0].split(":")[1].strip()
                         for l in t.stderr.splitlines() if l.startswith(("FAIL:", "ERROR:"))})
@@ -77,7 +77,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("module", help="C source, e.g. firmware/c/aprs.c")
     ap.add_argument("mutants", help="python file defining MUTANTS")
-    ap.add_argument("tests", nargs="+", help="unittest names (run in emu/tests)")
+    ap.add_argument("tests", nargs="+", help="unittest names (run in tests)")
     ap.add_argument("--only", type=int, nargs="*", help="mutant indexes to run")
     ap.add_argument("--jobs", type=int, default=1, help="mutants run at once")
     a = ap.parse_args()

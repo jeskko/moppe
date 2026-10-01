@@ -9,7 +9,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "python"))
+sys.path.insert(0, os.path.join(HERE, "..", "emu", "python"))
 
 import afsk  # noqa: E402
 
@@ -84,7 +84,7 @@ def mprs_packet():
 
 # ----------------------------------------------------------- menu records
 
-FW = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "firmware"))
+FW = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "firmware"))
 SIZE_REC = 16
 
 

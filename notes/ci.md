@@ -13,7 +13,7 @@ repositories get unlimited minutes on 4-vCPU runners.
 | File | What |
 |---|---|
 | `.github/workflows/ci.yml` | on push (master/main, `v*` tags), pull request, manual: job `check` runs the pipeline and uploads `dist/` as the `firmware` artifact (30 days); job `publish` makes a GitHub release for a `v*` tag, and for a push to master replaces the `nightly` pre-release (tag moved to the commit) |
-| `tools/ci/check.sh` | the pipeline: emulator (+ its unit test), `make` firmware, `make verify ref`, `make banktest`, the test suite; prints each step's seconds |
+| `tools/ci/check.sh` | the pipeline: emulator (the `emu/` submodule; + its unit test), `make` firmware, `make verify ref`, `make banktest`, the test suite; prints each step's seconds |
 | `tools/ci/install-sdcc.sh` | the pinned SDCC: the official 4.6.0 amd64 binary tarball from SourceForge, SHA-256 checked, into `~/.cache/sdcc-4.6.0` (cached by the workflow) |
 | `tools/ci/sdcc-cached.sh` | `SDCC=` for make (check.sh sets it): C objects cached by compiler version, flags, source and headers in `~/.cache/r58-sdcc-objs` (a workflow cache; check.sh prunes entries unused for 60 days). Outputs are byte-identical (sdcc writes nothing path-dependent) |
 | `tools/ci/runtests.py` | the test suite one module per process, `-j` CPU count: 62 s on 16 cores, ~4 min serial (2026-10-01, after the emulator speed-up) |

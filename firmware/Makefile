@@ -11,7 +11,7 @@
 #   make ref      - build-ref/: the assembler build of git tag $(REF_TAG)
 #                   (the last one with the asm alternative to the C
 #                   modules, with the bug fixes), the reference for the
-#                   module differential tests (emu/tests/test_*_diff.py)
+#                   module differential tests (tests/test_*_diff.py)
 
 SDCC   ?= sdcc
 SDAS   ?= sdasz80

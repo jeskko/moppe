@@ -9,8 +9,8 @@ without burning an EPROM for every change.
 | Area | State |
 |---|---|
 | Toolchain | SDCC's **sdasz80 + sdldz80** (with cpp and a small preprocessor). The source was converted from the original as80 dialect and rebuilds **byte-identical** to the released ALs binary (`make -C firmware verify`, which also checks the as80 build of the old source). |
-| Emulator | Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. |
-| Tests | 322 tests. Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK packets sent and received (call, remote display/config, relay, MPRS), remote configuration between two emulated radios over a simulated RF link, MBUS config dump/load (CFGSnd/CFGGEt); scanner, repeater access and CW ID, every menu record type (and the whole menu, asm vs C), low battery, TOT, typematic; ROM-window decode and code running from bank 1. **Differential tests** (`emu/tests/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
+| Emulator | Separate repo **moppe-emu**, here as the `emu/` submodule. Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. |
+| Tests | 322 tests. Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK packets sent and received (call, remote display/config, relay, MPRS), remote configuration between two emulated radios over a simulated RF link, MBUS config dump/load (CFGSnd/CFGGEt); scanner, repeater access and CW ID, every menu record type (and the whole menu, asm vs C), low battery, TOT, typematic; ROM-window decode and code running from bank 1. **Differential tests** (`tests/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
 | C in firmware | The firmware is C plus assembler: `make` links the C modules (squelch, packet CRCs, systick timers, battery check, key dispatch and handlers, memories and VIP list, PTT/TX flow, the mainloop, display composition, frequency/band/duplex logic, scanner; banked: FSK packets, repeater/CW, GPS, MPRS/APRS, the setup menu engine) with r58.s as normal SDCC objects. Assembler is left only for interrupt code, hardware sequencing, the frequency kernel and display primitives. The differential tests show no behaviour difference to the last assembler build (git tag `asm-final`, `make ref`), which differs from the release by bug fixes and the removed Aisin Seiki GPS path. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
 
@@ -18,19 +18,24 @@ without burning an EPROM for every change.
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md) (none since 2026-10-01; decided ones in [notes/open-bugs-history.md](notes/open-bugs-history.md)).
-Emulator design, fidelity and limits: [notes/emulator.md](notes/emulator.md).
+Emulator design, fidelity and limits: `emu/notes/emulator.md` (in the emulator repo).
 
 ## Quick start
 
 Needs a C compiler, GNU `cpp`, Python 3 (numpy optional, speeds up audio
 decoding), SDCC 4.x (sdasz80, sdldz80; tested with 4.6.0).
 
+The emulator is a submodule: clone with `--recurse-submodules`, or run
+`git submodule update --init` after cloning. While the emulator repo has no
+remote, its URL `../moppe-emu` is a local path next to this repo, and git
+needs `-c protocol.file.allow=always` for the submodule commands.
+
 ```sh
 make -C firmware              # firmware/build/r58.bin (r58.s + the C modules)
 make -C firmware verify ref   # release rebuilt byte-identical; the asm reference
 make -C emu                   # emulator (r58emu, libr58.so)
 
-python3 -m unittest discover -s emu/tests      # test suite, ~4 min
+python3 -m unittest discover -s tests          # test suite, ~4 min
 python3 tools/ci/runtests.py                   # the same, one process per module (~1 min)
 tools/ci/docker.sh                             # the CI pipeline in a clean Ubuntu container
 
@@ -72,9 +77,8 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `tools/setupmap.py` | The setup map `build/r58.setup`: every menu record with its number (digits + ENT), built by `make` |
 | `tools/as80tosdas.py` | One-shot as80 → sdasz80 source converter |
 | `tools/as80/` | The original assembler (patched), for reference builds |
-| `emu/` | Emulator in C: `z80.c` core, `pio/sio/pit/daisy.c` Zilog/Intel chips, `cu53an.c`, `cu58af.c` handsets, `r58.c` board, `api.c` flat API |
-| `emu/python/` | `r58emu.py` harness, `r58tui.py` terminal UI, `afsk.py` AX.25 decoder |
-| `emu/tests/` | Scenario tests; `zex/` Z80 exerciser harness |
+| `emu/` | Submodule: the emulator repo (moppe-emu). C emulator (`z80.c` core, `pio/sio/pit/daisy.c` chips, `cu53an.c`, `cu58af.c` handsets, `r58.c` board, `api.c` flat API), `python/` (`r58emu.py` harness, `r58tui.py` TUI, `afsk.py` AX.25 decoder), its own unit and Z80 exerciser tests |
+| `tests/` | Firmware scenario and differential tests (`difftest.py` framework, `rflink.py` simulated RF link) |
 | `experiments/c-density/` | C vs assembler code size measurement |
 | `notes/` | Findings; `notes/reference/` has the detailed interface specs |
 | `reference/` | Source material (not in git): manuals, original sources and binaries |
@@ -82,11 +86,11 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 ## License
 
 The work of this project is under the MIT license ([LICENSE](LICENSE)):
-the emulator, the tests, the tools, the notes and our changes to the
-firmware. Not covered, because it is not ours to license:
+the tests, the tools, the notes and our changes to the
+firmware. The emulator (`emu/`) is its own repo, also MIT. Not covered,
+because it is not ours to license:
 
 | Path | Origin |
 |---|---|
 | `firmware/r58.asm`, the original code in `firmware/r58.s` | The R58 community ham firmware (OH5NXO et al.; archive at OH3TR); the v3_Z ALs version (OH1E and OH5NXO, 2018, decimal CTCSS tones) is published at <https://titanix.net/DMR/r58/> without a license, so its authors' terms apply. `firmware/c/` ports parts of it to C, so the same applies to the logic carried over. |
 | `tools/as80/` | The "jas" assembler (1996-97) from the old R58 development kit, patched to build on modern systems (notes/toolchain.md). |
-| `emu/tests/zex/zexdoc.com`, `zexall.com` | Frank D. Cringle's Z80 instruction exercisers (GPL). |

@@ -5,7 +5,7 @@ and check the emulator agrees on every observable at each checkpoint.
 
 Run from the repository root:
     make -C firmware && make -C firmware verify ref && make -C emu
-    python3 -m unittest discover -s emu/tests -v
+    python3 -m unittest discover -s tests -v
 
 The reference is the released v3_Z ALs firmware as built by `make -C
 firmware verify` (`firmware/build-release/`, byte-identical to the
@@ -25,7 +25,7 @@ import os
 import sys
 import unittest
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "emu", "python"))
 
 from r58emu import P8E, P8N, CU53AN, CU58AF, AD_SQL  # noqa: E402

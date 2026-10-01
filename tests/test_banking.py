@@ -14,7 +14,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "emu", "python"))
 from r58emu import Radio, P8E, P8N, CU53AN, CU58AF  # noqa: E402
 
 RA14, RA15, RS, BIT3 = 0x01, 0x02, 0x04, 0x08
@@ -79,7 +79,7 @@ class Window(unittest.TestCase):
             self.assertEqual(self.window(r, page | BIT3)[0], 0x40 + page)
 
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FW = os.path.join(ROOT, "firmware", "build")
 
 # Test routines, put in the unused tops of bank 1 (window 0xBF00 = EPROM0
@@ -401,7 +401,7 @@ class BankDuty(unittest.TestCase):
 
     def test_nothing_in_banks_reachable_from_interrupts(self):
         import subprocess
-        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         for first, after in (("bank1_start", "bank1_end"), ("bank2_start", "bank2_end")):
             res = subprocess.run([sys.executable, os.path.join(root, "tools", "isrreach.py"),
                                   os.path.join(root, "firmware", "r58.s"), first, after],

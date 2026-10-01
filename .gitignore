@@ -2,12 +2,8 @@
 build/
 tools/as80/as80
 *.o
-emu/r58emu
-emu/libr58.so
-emu/tests/unit/test_pit
-emu/tests/zex/cpm
 __pycache__/
-emu/tests/.cache/
+tests/.cache/
 firmware/build-c/
 firmware/build-as80/
 firmware/build-release/
