@@ -337,8 +337,7 @@ class HookScripts(RadioTest):
     def test_lift_runs_offhook_script(self):
         """GE:oFFHoo runs when the handset is lifted, GE:onHoo when it is
         put back (PA1 = 1 lifted: assumed, see notes/hardware.md).
-        Volume keys as the scripts: digits in a script do not enter a
-        frequency (v3_Z behaviour, kept)."""
+        Scripts hold key codes (digits as 0-9, not ASCII)."""
         r = self.boot()
         r.poke("cfg_offhook_script", b"++" + b"\xff" * 6)
         r.poke("cfg_onhook_script", b"-" + b"\xff" * 7)
