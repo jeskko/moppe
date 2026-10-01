@@ -34,11 +34,28 @@ permission.
 - **i8253:** CLK0 "455 kHz", CLK1 921600 Hz; CLK2 originally 7200 Hz, 921600 Hz after a documented mod (from a 4040 divider); OUT2 used for tones/CTCSS.
 - **PLLs:** MB1501 or MB87006 (dual-modulus 128/129 prescaler), serial-loaded.
 - **Audio:** MAS7845 LFU; MC144111 6-bit DAC.
+- **From the service manual** (TMF1XS 8-4..8-6, read from the OCR): 0000-7FFF EPROM, 8000-BFFF EPROM page selected by PC3 PAGE (1 = C000-FFFF of the EPROM), C000-C3FF MENA (modem N440), C400-C7FF TENA (timer N450), C800-CBFF SISE, D400-D7FF AMU/LE (audio latch D340), E000-FFFF RAM (the top 256 bytes overlap the CPU's internal RAM; MM selects); D000-DFFF also gated by WR. Pin table: PC0 TXD, PC1 RXD, PC2 I2DA, PC3 PAGE, PC4 DAEN, PC5 FREE (MBUS free detection), PC6 WDC ("2 us pulse every 100 ms"), PC7 PWROFF; INT1 from the modem, NMI from the watchdog; AN7 TIMEOUT. The manual has PB5 TSON "on 0"; the firmware drives it 1 for on.
+- **Watchdog** (manual 8-6): NMI 400 ms after the last WDC pulse; if the CPU has not recovered 12 s after the NMI, power off. Power on/off logic: the handset's power key switches the unit on; the unit stays on until the radio CPU raises PWROFF (the handset reports the key over MBUS).
+- **MBUS** (manual 8-2): TX data drives transistor V30 onto the one bidirectional line, RX data also goes to PC5 for net-free detection; the handset side is an open collector (HSF-2 text), so the line is a wired AND that every unit also hears itself on.
+- **HSF-2 handset** (manual 15-4, 15-5, NL3C module): uPD78C10, 64 KB EPROM 27C512, 8 KB RAM, 74HC373 latch; 0000-DFFF EPROM (latch on write), E000-FFFF RAM, the HSIC audio chip (four registers; hsf2.asm writes them at 0400-0700); NMI on a key, hook change or MBUS message, masked by NMIMASK; a 250 kHz clock for the LCD drivers; STOP-mode logic.
 - **Handsets** HSN-2 / HSF-2 on **MBUS** (serial, packets such as `0 "ANY1" "HSN2" "M" "." \4` per key). The handsets are uPD7810 machines too (uPD7228 LCD controller, PCD3312 DTMF). HSN-2 runs from an ordinary EPROM; HSF-2 has an SMD PROM. Their ham firmware is `hsn2.asm` / `hsf2.asm`.
 
-## Emulator implications
+## Emulator
 
-- uPD7810 core with its on-chip timers (INTT0/1), timer/event counter, serial port and A/D: much more on-chip peripheral work than the 1802 or Z80.
-- A full TMx-1 run means two 7810s (radio + handset) linked by MBUS, or the handset modelled at MBUS packet level.
-- `pit.c` (8254) covers the i8253 modes used here.
-- The licence limits test fixtures: keep the binaries local (like `reference/`), or ask OH3NWQ.
+Emulated since 2026-10-02 in moppe-emu (`emu/upd7810.c`, `emu/tmx1.c`,
+`emu/tmx1hs.c`; details and evidence in `emu/notes/tmx1.md`): the radio
+unit and an HSN-2 or HSF-2 handset, each running its own firmware on its
+own uPD7810, linked by a bit-level MBUS. Runs tmx1.asm v5.0 (TMF-1 and
+TMN-1) with HSN-2 v1.6 / HSF-2 v0.2; the test builds come from
+`tmx1_v50.zip` with its as7810 and are byte-identical to the released
+binaries (the licence keeps them out of the repos).
+
+Open questions, all modelled from the firmware's own comments and to be
+checked on hardware or a uPD7810 user's manual:
+
+- Mode-register bit layouts (TMM, SML/SMH, ETMM, ANM, MKL/MKH): no
+  register tables in the data sheets in hand; the firmware's values and
+  comments fix the bits it uses.
+- uPD7228 command set (inferred from both handsets' use); no data sheet.
+- HSN-2 keypad wiring polarity (falling edge on AN4-7 when a closed key's
+  rail drops) and the HSF-2 LCD cell positions (from its cursor code).
