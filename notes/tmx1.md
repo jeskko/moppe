@@ -28,7 +28,8 @@ permission.
 ## Hardware (from `tmx1.asm` v5.0)
 
 - **CPU uPD7810** (NMOS, ROM-less; the uPD78C10 is the CMOS version). Interrupt vectors at 0x0000 reset, 0x0004 NMI (restart), 0x0008 INTT1 (112 Hz tick, INTT0 unused), 0x0010 INT1/INT2, 0x0018 INTE0 (timer/event counter, NETFREE), 0x0020 INTEIN/INTAD (on-chip A/D used), 0x0028 serial (MBUS), 0x0060 SOFTI.
-- Clock: the code assumes 1 NOP ≈ 1 µs ("xtal/3 = state, 4 states"), i.e. a crystal of about 12 MHz. INFERRED, not stated.
+- Clock: **11.0592 MHz** (TMF1XS service manual 8-1; 1 state = 3 clocks, so a 4-state NOP is 1.085 µs, matching the source's "1 nop about 1usec"). The manual names the CPU **uPD78C10** (CMOS); the source says uPD7810. Use the 78C10A state table.
+- From the manual (processor module NPSA, 8-1..8-3): 64 KB EPROM, 8 KB SRAM with write protection, address latch, addressable output latch, watchdog and power logic; MODE0/MODE1 pulled up (external memory, 64 KB); ID EEPROM 128x8 on I²C (data PC2, clock PA0, powered via EEON); MBUS from the on-chip serial port through one bidirectional transistor stage, RX data also on PC5 (counter input) for net-free detection; on-chip A/D reads temperature (6 diodes), battery voltage/current/temperature, RSSI, FSKL; TX power by an MC144111 (four 6-bit DACs, two summed 1:64 for 12 bits); timer N450 (the i8253) does AFC timing and frame interrupts, MINT = modem INT or timer output to INT2.
 - **Memory map:** 0xC000/0xC001 MAS7825 NMT modem (data, CSR); 0xC400-0xC403 i8253; 0xC800 SISE (unwired chip select to the audio card); 0xD400 74259 AMU/LE deviation latch; external RAM 8 KB at 0xE000 (2 KB used for config and memories).
 - **i8253:** CLK0 "455 kHz", CLK1 921600 Hz; CLK2 originally 7200 Hz, 921600 Hz after a documented mod (from a 4040 divider); OUT2 used for tones/CTCSS.
 - **PLLs:** MB1501 or MB87006 (dual-modulus 128/129 prescaler), serial-loaded.
