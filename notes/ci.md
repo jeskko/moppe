@@ -4,7 +4,8 @@ Prepared locally 2026-10-01; **not on GitHub yet**: the repository has no
 remote, and publishing waits for the original authors' reply (the user
 asked OH1E on 2026-10-01; OH5NXO's address is not known). A private
 GitHub repository works meanwhile: the Free plan's 2000 minutes a month
-on 2-vCPU runners is about 100-150 runs of this pipeline; public
+on 2-vCPU runners is several hundred runs of this pipeline (a warm
+run ~2 min on 4 CPUs, one that changes C code up to ~9 min); public
 repositories get unlimited minutes on 4-vCPU runners.
 
 ## Files
@@ -54,6 +55,8 @@ actionlint (with shellcheck): clean.
 |---|---|---|---|
 | 2026-10-01 | docker.sh, 16 CPUs | 316 OK, verify OK | tests 178 s |
 | 2026-10-01 | docker.sh, `CPUS=4` | 316 OK, verify OK | 1119 s total: two cold C builds ~440 s (scan.c), tests 224 s; before the object cache and the emulator speed-up |
+| 2026-10-01 | docker.sh, `CPUS=4`, cold (no SDCC, no objects) | 316 OK, verify OK | 520 s: firmware 395 s (scan.c), bank test 0 s, tests 93 s |
+| 2026-10-01 | docker.sh, `CPUS=4`, warm object cache | 316 OK, verify OK | 114 s: builds ~2 s, tests 90 s |
 
 ## Open
 
