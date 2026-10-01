@@ -12,9 +12,10 @@ repositories get unlimited minutes on 4-vCPU runners.
 | File | What |
 |---|---|
 | `.github/workflows/ci.yml` | on push (master/main, `v*` tags), pull request, manual: job `check` runs the pipeline and uploads `dist/` as the `firmware` artifact (30 days); job `publish` makes a GitHub release for a `v*` tag, and for a push to master replaces the `nightly` pre-release (tag moved to the commit) |
-| `tools/ci/check.sh` | the pipeline: emulator (+ its unit test), `make` firmware, `make verify ref banktest`, the test suite |
+| `tools/ci/check.sh` | the pipeline: emulator (+ its unit test), `make` firmware, `make verify ref`, `make banktest`, the test suite; prints each step's seconds |
 | `tools/ci/install-sdcc.sh` | the pinned SDCC: the official 4.6.0 amd64 binary tarball from SourceForge, SHA-256 checked, into `~/.cache/sdcc-4.6.0` (cached by the workflow) |
-| `tools/ci/runtests.py` | the test suite one module per process, `-j` CPU count: 178 s on 16 cores (bound by `test_menu_diff`), 9 min serial |
+| `tools/ci/sdcc-cached.sh` | `SDCC=` for make (check.sh sets it): C objects cached by compiler version, flags, source and headers in `~/.cache/r58-sdcc-objs` (a workflow cache; check.sh prunes entries unused for 60 days). Outputs are byte-identical (sdcc writes nothing path-dependent) |
+| `tools/ci/runtests.py` | the test suite one module per process, `-j` CPU count: 62 s on 16 cores, ~4 min serial (2026-10-01, after the emulator speed-up) |
 | `tools/ci/package.sh VERSION` | `dist/`: `r58-VERSION.bin` (64 KB EPROM0), `.map`, `.setup`, `r58-banktest-VERSION.bin`, `SHA256SUMS` |
 | `tools/ci/docker.sh` | the pipeline in a clean `ubuntu:24.04` container (the runner's OS) from the working tree and `.git`; `CPUS=4` limits it like a runner; `dist/` comes back |
 
@@ -35,12 +36,24 @@ actionlint (with shellcheck): clean.
   binary itself is not needed (`reference/` is git-ignored).
 - The emulator needs only a C compiler; numpy (optional) speeds up audio
   decoding and is installed in CI.
+- **The pinned SDCC needs ~200 s for `c/scan.c`** (Arch's build of the
+  same version: 9 s; the pre-2026-10-01 scan.c too, so not the slice
+  merge): a register-allocation search in that build. Every other
+  module compiles in about the same time with both. A cold firmware
+  build in CI is therefore ~3.5 min; the object cache makes the bank
+  test build (the same C modules) and later runs without C changes take
+  seconds. Lowering `--max-allocs-per-node` for scan.c would also fix it
+  but changes the image (not done).
+- Emulator speed: 20-29x real time before 2026-10-01, ~2x that after
+  the lazy 8254 clocking (notes/emulator.md); all test time is
+  emulation (Python-side comparison < 1 %).
 - Full container run (fresh apt, SDCC cached in a volume): see the table
   below.
 
 | Run | Where | Result | Time |
 |---|---|---|---|
 | 2026-10-01 | docker.sh, 16 CPUs | 316 OK, verify OK | tests 178 s |
+| 2026-10-01 | docker.sh, `CPUS=4` | 316 OK, verify OK | 1119 s total: two cold C builds ~440 s (scan.c), tests 224 s; before the object cache and the emulator speed-up |
 
 ## Open
 

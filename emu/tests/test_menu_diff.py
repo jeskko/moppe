@@ -119,6 +119,19 @@ def walk(seed, gap=0.1):
     return steps
 
 
+def other_defaults():
+    steps = [("boot", 2.5)] + seeded_pokes(11) + [("keys", "433525"), ("press", "#"), ("run", 0.3)]
+    steps += goto(RECS[0])
+    for i, r in enumerate(RECS):
+        if i:
+            steps += [("press", "#", 0.12, 0.1)] + at("at %d" % i)
+        if r["type"] in ("RST",) or r["tag"] in ("PH", "Fn", "dF"):
+            continue
+        steps += keys("*", "default %d %s:%s" % (i, r["tag"], r["title"]))
+    steps += keys("E", "left")
+    return steps
+
+
 class MenuDiff(DiffCase):
     REF = REF
     CAND = CAND
@@ -257,15 +270,10 @@ class MenuDiff(DiffCase):
 
     def test_other_defaults(self):
         """'*' on every record that has a default (BYTE, TAB, cSEC, WORD,
-        STR reset; FREQ, DPX copy; DYN, RST nothing)"""
-        steps = [("boot", 2.5)] + seeded_pokes(11) + [("keys", "433525"), ("press", "#"), ("run", 0.3)]
-        steps += goto(RECS[0])
-        for i, r in enumerate(RECS):
-            if r["type"] in ("RST",) or r["tag"] in ("PH", "Fn", "dF"):
-                continue
-            steps += goto(r, "at %d" % i) + keys("*", "default %d %s:%s" % (i, r["tag"], r["title"]))
-        steps += keys("E", "left")
-        self.diff(steps)
+        STR reset; FREQ, DPX copy; DYN, RST nothing).  Walks with '#'
+        (test_setupmap reaches every record by its number; typing each
+        here cost 60 % of the test)"""
+        self.diff(other_defaults())
 
     # ---- positioning and walking
 

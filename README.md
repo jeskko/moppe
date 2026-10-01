@@ -30,8 +30,8 @@ make -C firmware              # firmware/build/r58.bin (r58.s + the C modules)
 make -C firmware verify ref   # release rebuilt byte-identical; the asm reference
 make -C emu                   # emulator (r58emu, libr58.so)
 
-python3 -m unittest discover -s emu/tests      # test suite, ~9 min
-python3 tools/ci/runtests.py                   # the same, one process per module (~3 min)
+python3 -m unittest discover -s emu/tests      # test suite, ~4 min
+python3 tools/ci/runtests.py                   # the same, one process per module (~1 min)
 tools/ci/docker.sh                             # the CI pipeline in a clean Ubuntu container
 
 python3 emu/python/r58tui.py --nv my.nv        # interactive radio in the terminal

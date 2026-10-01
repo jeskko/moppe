@@ -8,8 +8,16 @@
 set -eu
 
 sdcc --version | head -1
-make -C emu -j"$(nproc)"
-make -C emu test
-make -C firmware -j"$(nproc)"
-make -C firmware -j"$(nproc)" verify ref banktest
-python3 tools/ci/runtests.py
+# C objects from the cache (tools/ci/sdcc-cached.sh); entries unused for
+# 60 days go
+SDCC=$PWD/tools/ci/sdcc-cached.sh
+export SDCC
+cache=${R58_SDCC_CACHE:-$HOME/.cache/r58-sdcc-objs}
+[ -d "$cache" ] && find "$cache" -mindepth 1 -maxdepth 1 -mtime +60 -exec rm -rf {} +
+step() { t=$(date +%s); "$@"; echo "== $(( $(date +%s) - t )) s: $*"; }
+step make -C emu -j"$(nproc)"
+step make -C emu test
+step make -C firmware -j"$(nproc)"
+step make -C firmware -j"$(nproc)" verify ref
+step make -C firmware -j"$(nproc)" banktest
+step python3 tools/ci/runtests.py

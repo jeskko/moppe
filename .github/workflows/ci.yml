@@ -32,6 +32,13 @@ jobs:
           path: ~/.cache/sdcc-4.6.0
           key: sdcc-4.6.0-${{ hashFiles('tools/ci/install-sdcc.sh') }}
 
+      - name: Cache C objects
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/r58-sdcc-objs
+          key: r58-objs-${{ github.sha }}
+          restore-keys: r58-objs-
+
       - name: SDCC
         run: tools/ci/install-sdcc.sh >> "$GITHUB_PATH"
 
