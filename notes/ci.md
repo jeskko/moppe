@@ -46,7 +46,7 @@ actionlint (with shellcheck): clean.
   build and unchanged runs. `tools/sdccprof.py` profiles compile time per
   function (stub one at a time) to find the next such function.
 - Emulator speed: 20-29x real time before 2026-10-01, ~2x that after
-  the lazy 8254 clocking (notes/emulator.md); all test time is
+  the lazy 8254 clocking (emu/notes/r58.md); all test time is
   emulation (Python-side comparison < 1 %).
 - Full container run (fresh apt, SDCC cached in a volume): see the table
   below.

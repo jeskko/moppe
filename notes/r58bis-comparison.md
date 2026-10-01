@@ -109,7 +109,7 @@ our notes or assumptions.
 | 1 | N, resolves | FX429 CLK = IC3 pin 9 = 74HC4040 Q1 = **4.032 MHz** (P8E) | `bis/zzz/IC:4-7` | hardware.md:94 (IC3 type unknown) |
 | 2 | N, resolves | IC27 = **74HC21**; IC17/18 = 74HC107, IC28 74HC109, IC29 74HC74, IC14 74HC4059, IC8 82S129, IC9 SRM20256, IC16 HN27C101; IC10 '08, IC11 '32, IC12 '00, IC5 '139, IC6 '154 match our trace | `bis/zzz/IC:34-58` | hardware.md:75-94 |
 | 3 | X (small) | SIO clock = 4.032 MHz / 26 = **155 077 Hz** (74HC4059 mode 8); MBUS 9692 baud, GPS 4846 baud (+0.96 %). "4.032 MHz / 26.25 would be exact" | `bis/zzz/IC:101-124` | hardware.md:17 "153.6 kHz" |
-| 4 | N | **P8E wait states on M1 and on ADC, DAC1/2 and modem chip selects** | `README2:56-58` | hardware.md:13, emu/notes/emulator.md:14 (M1 only) |
+| 4 | N | **P8E wait states on M1 and on ADC, DAC1/2 and modem chip selects** | `README2:56-58` | hardware.md:13, emu/notes/r58.md (timing paragraph; M1 only) |
 | 5 | C | P8E watchdog: second 74HC4040 on 1968.75 Hz, reset by /CSWD or /LOCAL, Q11 = WD out, Q12 = OFF | `bis/zzz/IC:19-33` | hardware.md:69 (P8E assumed same), :145 |
 | 6 | C/X | Watchdog causes **NMI** with PA_WDR set ("RESET pulse from watchdog (doesn't create /RESET)"); NMI handler checks WDR first | `r58bis.c:1580-1590`, `boot.s:336-351` | service-manual-p8n.md:139 (p85 NMI vs p86 RESET conflict); firmware-system.md:184 assumes /RESET |
 | 7 | N | NMI sources: watchdog, supply loss (CPU /RESET about 1 ms later), ON/OFF to off, which **bounces sometimes**; he saves on supply loss only after 3 s uptime | `r58bis.c:1578-1603` | firmware-system.md:126-139 |

@@ -15,7 +15,7 @@ Scenarios: boot, frequency entry, TX with CTCSS and DTMF (audio
 captured), an APRS report (audio), a 60 s idle, a repeater CW ID with
 tone polling, the scanner with and without a signal, a power cycle (the
 clock jump of an unpowered run).  It caught a missing 8254 sync in the
-lazy-clocking change of 2026-10-01 (notes/emulator.md).
+lazy-clocking change of 2026-10-01 (emu/notes/r58.md).
 """
 import hashlib
 import os
