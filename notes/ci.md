@@ -43,7 +43,8 @@ actionlint (with shellcheck): clean.
   **Fixed 2026-10-01**: the blocks between its labels are functions
   driven by a table (same work per mainloop pass); 6 s now, a cold
   firmware build 44 s at -j4 (measured). The object cache still saves the bank test
-  build and unchanged runs.
+  build and unchanged runs. `tools/sdccprof.py` profiles compile time per
+  function (stub one at a time) to find the next such function.
 - Emulator speed: 20-29x real time before 2026-10-01, ~2x that after
   the lazy 8254 clocking (notes/emulator.md); all test time is
   emulation (Python-side comparison < 1 %).

@@ -11,6 +11,12 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 ## Start here (next session, written 2026-10-01)
 
+**Waiting (user, 2026-10-01):** the original authors' reply on usage and
+licence (OH1E asked; OH5NXO's address unknown). Publishing to GitHub and
+the first real CI run (notes/ci.md) come after it; nothing is pushed yet
+(no remote). Check the reply's terms against `LICENSE` and the README's
+licence section first.
+
 **State (2026-09-30).** Phase 4 is done as far as the plan's rule goes
 ("assembler only for what is timing critical or awkward in C"), and the
 **C modules are the only build**: `make` links r58.s with `c/*.c`. The
