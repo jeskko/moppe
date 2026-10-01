@@ -8,7 +8,8 @@
  * OUT1, TX power, synth load, the PLL delay in halts; the result in carry
  * for their asm callers), ptt_ccir_xmit and the CCIR/marker tone routines
  * (OUT0 and 8254 writes with interrupts off), check_for_mprs_timer (carry),
- * locate_tx_band (IX).  Shims in r58.s: marker_300hz_1s, ptt_tone_count,
+ * locate_tx_band (IX).  make_sintab builds the tone tables those
+ * players use (for r58.s calculate_sintab).  Shims in r58.s: marker_300hz_1s, ptt_tone_count,
  * ptt_1750_tone, ptt_tx_band_step; tx_on_failed/mprs_timer_not_yet turn
  * carry into A.
  *
@@ -200,4 +201,37 @@ void aprs_ptt_check(void)
 	while (sio_bctrl_mirror & SB_LOCAL)
 		;				/* watch /LOCAL */
 	back_from_aprs_freq();
+}
+
+/* The tone table the cycle-counted players read (CTCSS DDS, DTMF and
+ * AX.25 PWM): sinetab (-127..127) times gain / 128, rounded half up,
+ * around sintab_center, into the page sintab_page.  Gain 0 means 127, and
+ * it is limited so that both peaks fit in a byte.  sinetab is a
+ * quarter-wave symmetric sine (s[128 - i] = s[i], s[128 + i] = -s[i]), so
+ * 65 products fill it.  The same table as v3_Z's repeated-addition loop
+ * (except for a centre of 0, where that loop's gain 0 ran 256 times and
+ * wrapped: now flat), 5-6 times faster: 11 ms for an AX.25 table on a
+ * P8E (20 ms on a P8N) instead of 58 (110) ms (2026-10-01). */
+extern const uint8_t sinetab[256];
+uint8_t sintab_page, sintab_gain, sintab_center;
+static uint8_t si, hi, lo, *stab;
+static uint16_t sp16;
+
+void make_sintab(void)
+{
+	if (!sintab_gain)
+		sintab_gain = 127;
+	si = sintab_center < 128 ? sintab_center : (uint8_t)-sintab_center;
+	if (si < sintab_gain)
+		sintab_gain = si;
+	stab = (uint8_t *)((uint16_t)sintab_page << 8);
+	for (si = 0; si <= 64; si++) {
+		sp16 = (uint16_t)sinetab[si] * sintab_gain;	/* 0 .. 127 * 127 */
+		hi = sintab_center + (uint8_t)((uint16_t)(sp16 + 64) >> 7);
+		lo = sintab_center + (uint8_t)((uint16_t)(64 - sp16) >> 7);
+		stab[si] = hi;
+		stab[(uint8_t)(128 - si)] = hi;
+		stab[(uint8_t)(128 + si)] = lo;
+		stab[(uint8_t)(0 - si)] = lo;
+	}
 }

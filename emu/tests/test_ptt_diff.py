@@ -141,7 +141,10 @@ class PttDiff(DiffCase):
     # ---- the watch loop
 
     def test_keys_during_tx(self):
-        s = BOOT + enter("433500") + [("ptt", True), ("run", 0.4)]
+        # the DTMF tone table is built before each tone: at gain 12 the
+        # reference's repeated addition takes about as long as the C build
+        # (test_aprs_diff TX_GAIN)
+        s = BOOT + [("poke", "cfg_dtmf_gain", 12)] + enter("433500") + [("ptt", True), ("run", 0.4)]
         s += key("+", label="power up") + key("+") + key("-", label="power down")
         for k in "5#*0":
             s += [("key_down", k), ("tones", "dtmf %s" % k, 0.3), ("key_up",), ("run", 0.2)]

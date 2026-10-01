@@ -128,6 +128,70 @@ class OwnLocator(RadioTest):
                 self.assertEqual(self.locator("%s%s.%s" % lat, ns, "%s%s.%s" % lon, ew), want)
 
 
+def sintab_model(sine, gain, center):
+    """calculate_sintab: sine * gain / 128 rounded half up around center,
+    gain 0 meaning 127 and limited so both peaks fit in a byte"""
+    gain = gain or 127
+    gain = min(gain, center if center < 128 else 256 - center)
+    return bytes((center + ((s * gain + 64) >> 7)) & 0xFF for s in sine)
+
+
+class ToneTables(RadioTest):
+    """The tone tables of the CTCSS DDS, the DTMF and the AX.25 players
+    (c/ptt.c make_sintab since 2026-10-01): the formula, and built in a
+    few ms (v3_Z multiplied by repeated addition: up to 220 ms of silence
+    before a tone or packet on a P8N)."""
+
+    def sine(self, r):
+        return [b - 256 if b > 127 else b for b in r.peek("sinetab", 256)]
+
+    def build(self, card, gain, rfc=100):
+        self.card = card
+        r = self.boot()
+        r.poke("cfg_ctcss_generator_gain", gain)
+        r.poke("cfg_ax25_gain", gain)
+        r.poke("cfg_ctcss_tx_hz", 5)
+        r.poke("cfg_ctcss_output_method", 1)        # the RFC DAC generator
+        r.poke("cfg_report_type", 1)
+        r.poke("cfg_keyup_mprs", 1)
+        r.poke("cfg_mprs_callsign", b"OH3XYZ\xff\xff")
+        self.enter("433500")
+        r.poke("rfc", rfc)
+        entry = r.sym["calculate_sintab"]
+        r.breakpoint(entry)
+        times = []
+        r.ptt(True)
+        r.run(0.3)
+        r.ptt(False)
+        end = r.time + 2.0
+        while r.time < end and r.run(end - r.time) == "break":
+            t0, ret = r.time, r.peek16(r.cpu()["sp"])
+            r.breakpoint(entry, False)
+            r.breakpoint(ret)
+            r.run(0.5)
+            r.breakpoint(ret, False)
+            times.append(r.time - t0)
+            r.breakpoint(entry)
+        r.breakpoint(entry, False)
+        return r, times
+
+    def test_tables(self):
+        for gain, rfc in ((0, 100), (1, 100), (63, 100), (127, 40), (127, 200), (127, 0)):
+            with self.subTest(gain=gain, rfc=rfc):
+                r, _ = self.build(P8E, gain, rfc)
+                sine = self.sine(r)
+                c = 168 // 2 if r.peek("cpu_is_P8E") == 0 else 140 // 2
+                self.assertEqual(bytes(r.peek("ctcss_sintab", 256)), sintab_model(sine, gain, rfc))
+                self.assertEqual(bytes(r.peek("ax25_sintab", 256)), sintab_model(sine, gain, c))
+
+    def test_fast(self):
+        for card in (P8E, P8N):
+            with self.subTest(card=card):
+                _, times = self.build(card, 127)
+                self.assertEqual(len(times), 2, times)        # CTCSS at key-up, the APRS packet
+                self.assertLess(max(times), 0.025, times)
+
+
 class GpsNumbers(RadioTest):
     """A GPRMC sentence with a non-digit in a number field changes nothing
     from that field on (v3_Z rejected only characters below '0' and

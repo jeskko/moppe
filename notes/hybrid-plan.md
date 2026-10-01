@@ -19,9 +19,11 @@ last commit with the assembler alternatives is git tag **`asm-final`**;
 module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
 differs from the release by the bug fixes and the removed Aisin Seiki
 GPS path. `make verify` still rebuilds the release from `r58.asm`.
-Sizes (2026-10-01, after the simplifications): fixed ROM ends at 0x4E4B
-incl. the C code (12.7 KB free), bank 1 7328 bytes free, bank 2 5794
-bytes free; C statics 217 of the 256-byte `c_bss`. **320 tests** pass.
+Sizes (2026-10-01, after the simplifications and the tone tables):
+fixed ROM ends at 0x4EFB incl. the C code (12.5 KB free), bank 1 7328
+bytes free, bank 2 5794 bytes free; C statics 227 of the 256-byte
+`c_bss` (getting tight: grow C_BSS_SIZE or share statics before the next
+large C module). **322 tests** pass.
 
 The 2026-09-29 code review is applied (details in the commits): one
 shared header `c/r58.h` (163 symbols had been declared in several modules,
@@ -48,13 +50,13 @@ same race exists in the asm). Change a setting, run a little, then the
 edge.
 
 **What stays assembler** (`python3 tools/asmleft.py` after `make`:
-fixed-ROM asm 0x0100-0x2BD5, ~10.7 KB: data 1826, reachable from
-interrupts 3146, mainline hardware 2365, mainline plain 3627):
+fixed-ROM asm 0x0100-0x2BBA, ~10.7 KB: data 1826, reachable from
+interrupts 3146, mainline hardware 2365, mainline plain 3600):
 | Part | Why |
 |---|---|
 | Interrupt handlers, systick, keypad/SIO/modem capture, the CCIR/DTMF decoders, series matching and commands, the CTCSS DDS/DSP entries (`ctcss_enc/dec_entry`: reached through RAM jump addresses, which `isrreach` cannot follow, so asmleft lists them as mainline) | interrupt context |
 | TX keying `tx_on`/`tx_off`, CCIR/DTMF sending, CTCSS set-up (8254, FX465, DAC), OUT0/8254 writers, NV copy loops, bit-banged buses | hardware sequencing with DI, cycle counts |
-| CTCSS maths (`calculate_sintab`, `ctcss_hz_to_phase_inc`, `ctcss_dec_start(stop)`) | **decided 2026-09-29**: `calculate_sintab` also builds the DTMF and AX.25 tables for cycle-counted asm (register interface), and a C version would move three tone starts; ~110 bytes |
+| CTCSS maths (`ctcss_hz_to_phase_inc`, `ctcss_dec_start(stop)`) | ~60 bytes, register interface (A in, HL out) for asm callers; the slow multiply is ~1.5 ms. `calculate_sintab` is a shim to C `make_sintab` since 2026-10-01 |
 | RFC lookup (`get_rfc_hl`, `lookup_rfc`, `save_rfc`) | every frequency change; C cost 1.2 ms per scanner step |
 | Frequency kernel (`determine_rx_div`, `freq2div`, `channel_step_parms`, `locate_tx_band`, `div248`) | carry semantics, register results |
 | Display primitives (`draw_word`, `dpydig`, `draw_long`, `dpyval*`, strings), icon setters, `redraw` | register cursor, atomic DPYSIR, many asm callers |
@@ -414,6 +416,18 @@ notes/open-bugs.md):
   them half set otherwise); `test_gps_diff` has no non-digit cases.
   Locators checked against the integer model on 600 random own and
   received positions. Bank 2 -266 bytes.
+- Tone tables (`calculate_sintab`: the CTCSS DDS, DTMF and AX.25 sine
+  tables, built before each CTCSS start, manual DTMF tone and APRS packet)
+  multiplied by repeated addition: 31-220 ms of silence each time (58 ms
+  before every APRS packet at the default gain on a P8E, 110 on a P8N).
+  **In C since 2026-10-01** (user: assembler kept for timing only where
+  the timing matters): `c/ptt.c make_sintab` with a quarter-wave
+  symmetric loop, 11 ms (20 ms on a P8N) whatever the gain; the same
+  tables byte for byte (checked over gains, centres and both cards)
+  except for a centre of 0, where the old loop's gain 0 ran 256 times and
+  wrapped (now flat; RFC 0 does not happen on a tuned radio).
+  `test_signalling.ToneTables`; the TX differential scenarios pin the
+  AX.25/DTMF gain at 12, where both builds take about as long.
 - Scanner busy-channel settling time never doubles (`squelch_open` is
   always 0 right after a frequency change): kept, the timing users know
   (user, 2026-10-01).

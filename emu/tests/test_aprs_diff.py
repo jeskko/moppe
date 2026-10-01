@@ -216,10 +216,18 @@ def tx_case(rnd):
     return pokes
 
 
+# The tone table is built before each packet: by repeated addition in the
+# reference (time growing with the gain, 58 ms at the default 63 on a
+# P8E), in about constant time in the C build since 2026-10-01 (c/ptt.c
+# make_sintab; test_signalling.ToneTables).  At gain 12 both take about as
+# long, so the TX timing stays comparable.
+TX_GAIN = [("poke", "cfg_ax25_gain", 12)]
+
+
 def tx_scenario(seed, n):
     rnd = random.Random(seed)
     steps = [("boot", 2.5), ("poke", "cfg_keyup_mprs", 1), ("keys", "433500"),
-             ("press", "#"), ("run", 0.3)]
+             ("press", "#"), ("run", 0.3)] + TX_GAIN
     for i in range(n):
         steps += [("poke", k, v) for k, v in tx_case(rnd).items()]
         steps += [("poke", "aprs_packet_out", bytes(124)), ("poke", "aprs_bits_out", bytes(189)),
@@ -235,7 +243,7 @@ def tx_scenario(seed, n):
 def tx_boundaries():
     """every speed and course boundary in both report formats"""
     steps = [("boot", 2.5), ("poke", "cfg_keyup_mprs", 1), ("keys", "433500"),
-             ("press", "#"), ("run", 0.3)]
+             ("press", "#"), ("run", 0.3)] + TX_GAIN
     k = 0
     for rtype in (1, 2):
         for knots, course in ((0, 5), (1, 5), (2, 0), (3, 1), (99, 99), (100, 100),

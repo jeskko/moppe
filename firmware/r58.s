@@ -7284,61 +7284,24 @@ ctcss_hz_to_phase_inc:
 
 
 ;
-;  H points to aligned page
-;  A has gain, max 127, peak value of sine
-;  C has DC component to center the result
-;  gain is limited so that result fits in unsigned byte
+;  H points to aligned page, A has gain (max 127, the sine's peak), C the
+;  DC centre: the tone table for the cycle-counted players, built by
+;  c/ptt.c make_sintab (v3_Z multiplied by repeated addition here, 5-6
+;  times slower: up to 220 ms before a DTMF tone, APRS packet or CTCSS
+;  start; 2026-10-01).
+;  Keeps BC and DE.
 
 calculate_sintab:
-
-	; first some dancing
-
-	or a                      ; zero gain ?
-	jr nz, 1f
-	ld a, #127                 ; XXX 0 means default, try max amplitude
-1:
-	ld b, a                   ; requested gain, sine peak
-
-	ld a, c                   ; how it is centered ?
-	cp #128                    ; positive and negative peaks must fit
-	jr c, 1f                  ; limited below DC, if DC less than 128
-	neg                       ; limited above DC else
-1:
-	cp b                      ; possible - requested
-	jr nc, 1f                 ; no carry if possible, B is ok
-	ld b, a                   ; limit it
-1:
-
-	; gain has been checked, do translate the sine
-
-	ld l, #0                   ; index in sin tables, both aligned
-2:
-	push hl                   ; remember destination page
-	ld h, #HI(sinetab)         ; values in sinetab are -127...+127
-	ld e, (hl)                ; signed bytes, never -128
-
-	ld a, e                   ; sign extend E to DE
-	rla                       ; hibit to carry
-	sbc a, a                     ; FF if negative value, 0 if positive or 0
-	ld d, a                   ; 16 bit signed value -127...+127 in DE
-
-	ld hl, #0                  ; multiply accumulator
-	ld a, b                   ; remember multiplier between rounds
-1:
-	add hl, de
-	djnz 1b                   ; *= gain
-	add hl, hl                ; /= 128 rescale, result in H
-	rl l                      ; rounding to carry
-
-	ld b, a                   ; reset the multiplier for next round
-	ld a, c                   ; DC centering
-	adc a, h                     ; add AC component (with rounding from CY)
-
-	pop hl                    ; get back destination page
-	ld (hl), a
-	inc l
-	jr nz, 2b                 ; do them all until index wraps at 256
-
+	push bc
+	push de
+	ld (_sintab_gain), a
+	ld a, c
+	ld (_sintab_center), a
+	ld a, h
+	ld (_sintab_page), a
+	call _make_sintab
+	pop de
+	pop bc
 	ret
 
 ctcss_revector:
