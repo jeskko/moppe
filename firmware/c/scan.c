@@ -190,45 +190,35 @@ static uint8_t memory_from(uint8_t k)
  * scanner visits every frequency of the bands once per round. */
 static void build_scan_slicetab(void)
 {
+	/* c: the bands left out (not in the mask, or empty: start 0) */
+	c = 0;
+	for (i = 0, v = 1, s = cfg_band1_start; i < NUM_BANDRECS; i++, v <<= 1, s += SIZE_BANDREC)
+		if (!((uint8_t)scan_mask & v) || !(s[0] | s[1] | s[2]))
+			c |= v;
+	/* the lowest start left next (of equal starts the lower band); it
+	 * extends the last slice when it starts inside it */
 	n = 0;
-	sl = scan_slices;
-	s = cfg_band1_start;
-	for (c = 1, i = 0; i < NUM_BANDRECS; i++, s += SIZE_BANDREC, c <<= 1) {
-		if (!((uint8_t)scan_mask & c))
+	for (;;) {
+		q = 0;
+		for (i = 0, v = 1, p = cfg_band1_start; i < NUM_BANDRECS; i++, v <<= 1, p += SIZE_BANDREC)
+			if (!(c & v) && (!q || lt24(p, q))) {
+				q = p;
+				m = v;
+			}
+		if (!q)
+			break;
+		c |= m;
+		if (n && lt24(q, sl + SL_END)) {
+			if (lt24(sl + SL_END, q + SL_END))
+				copy3(sl + SL_END, q + SL_END);
 			continue;
-		if (!(s[0] | s[1] | s[2]))
-			continue;		/* empty band */
+		}
+		sl = n ? sl + SLICE : scan_slices;
 		for (j = 0; j < SLICE; j++)
-			sl[j] = s[j];		/* start, end */
-		sl += SLICE;
+			sl[j] = q[j];		/* start, end */
 		n++;
 	}
 	scan_slicecnt = n;
-	if (n < 2)
-		return;
-	for (i = n - 1; i; i--)			/* bubble sort */
-		for (j = 0, sl = scan_slices; j < i; j++, sl += SLICE)
-			if (lt24(sl + SLICE, sl))
-				for (m = 0; m < SLICE; m++) {
-					v = sl[m];
-					sl[m] = sl[m + SLICE];
-					sl[m + SLICE] = v;
-				}
-	/* p: the last kept slice; sl: the next one, which starts at or
-	 * above p's start */
-	p = scan_slices;
-	for (m = 1, sl = scan_slices + SLICE; --n; sl += SLICE) {
-		if (lt24(sl, p + SL_END)) {		/* starts inside p */
-			if (lt24(p + SL_END, sl + SL_END))
-				copy3(p + SL_END, sl + SL_END);
-			continue;
-		}
-		p += SLICE;
-		for (j = 0; j < SLICE; j++)
-			p[j] = sl[j];
-		m++;
-	}
-	scan_slicecnt = m;
 }
 
 void scanner_start(void)

@@ -14,9 +14,9 @@ MUTANTS = [
     ('return 0x2000 << (d - 7);', 'return 0x1000 << (d - 7);'),
     ('return 0x1FC0;', 'return 0x0FC0;'),
     ('if (d <= 9)\n\t\tscan_mask ^= 0x40 << d;', 'if (d <= 8)\n\t\tscan_mask ^= 0x40 << d;'),
-    ('if (!(s[0] | s[1] | s[2]))', 'if (!(s[0] | s[1]))'),
-    ('for (i = n - 1; i; i--)', 'for (i = n - 2; i; i--)'),
-    ('if (lt24(sl + SLICE, sl))', 'if (lt24(sl + SLICE + 3, sl + 3))'),
+    ('|| !(s[0] | s[1] | s[2]))', '|| !(s[0] | s[1]))'),
+    ('for (i = 0, v = 1, p = cfg_band1_start; i < NUM_BANDRECS;', 'for (i = 0, v = 1, p = cfg_band1_start; i < NUM_BANDRECS - 1;'),
+    ('(!q || lt24(p, q))', '(!q || lt24(p + SL_END, q + SL_END))'),
     ('\t\tw = 0x0003;', '\t\tw = 0x0001;'),
     ('\tvip_idx = 0;', ''),
     ('\tnext_vip();\n', ''),
@@ -48,4 +48,5 @@ MUTANTS = [
     ('\tif (is_freq_rejected_temp())\n\t\treturn YIELD(S_STEP);', '\tif (is_freq_rejected_temp())\n\t\treturn B_STEP;'),
     ('\tscanner_state = S_STEP;\n\tw = scan_mask;', '\tw = scan_mask;'),
     ('#define FIRST_FREQUENCY\tYIELD(S_FIRST_FREQ)', '#define FIRST_FREQUENCY\tB_FIRST_FREQ_ON'),
+    ('\t\t\tif (lt24(sl + SL_END, q + SL_END))\n\t\t\t\tcopy3(sl + SL_END, q + SL_END);', ''),
 ]
