@@ -359,6 +359,35 @@ class P8NBoot(RadioTest):
         self.enter("7")
         self.assertLower(" 7  433525")
 
+    def test_nmi_inside_save_keeps_first_nv_byte(self):
+        """Switch-off NMI while save_nvdata has the battery RAM mapped in
+        (between its two OUT2 writes): the NMI's own copy must still save
+        nvstart (audio_dst) from work RAM, not copy the old battery byte
+        onto itself."""
+        r = self.boot()
+        a = r.addr("save_nvdata")
+        code = r.peek(a, 64)
+        k = code.find(bytes([0xED, 0x51, 0x77, 0xED, 0x59]))  # out (c),d; ld (hl),a; out (c),e
+        self.assertGreater(k, 0, "save_nvdata copy loop not found")
+        old = r.nv()[0]
+        new = 2 if old != 2 else 1
+        r.poke("audio_dst", new)
+        r.type("433525")
+        r.breakpoint(a + k + 2)
+        r.key_down("#")             # by hand: press() would run past the stop
+        stop = r.run(0.15)
+        if stop != "break":
+            r.key_up()
+            stop = r.run(1.0)
+        self.assertEqual(stop, "break")
+        self.assertEqual(r.cpu()["hl"], r.addr("nvstart"))
+        r.key_up()
+        r.breakpoint(a + k + 2, False)
+        r.power(False)
+        r.run(0.5)
+        self.assertFalse(r.powered)
+        self.assertEqual(r.nv()[0], new)
+
 
 class CU58AFBoot(RadioTest):
     cu = CU58AF

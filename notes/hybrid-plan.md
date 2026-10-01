@@ -261,6 +261,13 @@ typematic timings.
 **Firmware behaviour the tests pinned down** (keep it when porting unless
 decided otherwise; the bugs still in place are collected in
 notes/open-bugs.md):
+- P8N switch-off NMI inside `save_nvdata`'s SMEM=0 window (between its
+  two OUT2 writes; `di` does not mask NMI) made `save_nvmisc_and_restart`
+  copy the first NV byte (`audio_dst`, 0xC000) from battery RAM onto
+  itself, so its latest value was lost. Found by the R58bis comparison
+  (notes/r58bis-comparison.md). **Fixed 2026-10-01**: the NMI path writes
+  OUT2 with SMEM=1 before its copy loop
+  (`test_radio.P8NBoot.test_nmi_inside_save_keeps_first_nv_byte`).
 - TOT: v3_Z powered down at the (N+2)th minute boundary after TX on
   (N+1…N+2 minutes of TX; r58.asm L2451-2462/L13050). **Fixed 2026-09-28**
   (user decision): now N…N+1 minutes (the firmware clock ticks whole

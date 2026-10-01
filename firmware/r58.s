@@ -7831,6 +7831,7 @@ save_nvmisc_and_restart:
 	and #~O2_SMEM
 	ld d, a			; battery RAM: SMEM=0
 	ld c, #OUT2
+	out (c), e		; the NMI may have hit save_nvdata's SMEM=0 window
 1:
 	out (WD), a
 
