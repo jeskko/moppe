@@ -99,8 +99,9 @@ Next, options: the first GitHub run (private repository, or public
 after the authors' reply; later maybe a Markdown or richer setup map);
 the real-board bench test (EPROM programmer); new features in the
 free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
-open questions (IC27, EPROM0 pin 1 = CPU A15 assumed, modem CLK
-frequency). Earlier handoffs: notes/hybrid-plan-history.md.
+open questions (EPROM0 pin 1 = CPU A15 assumed, hook polarity
+vs R58bis, P8E I/O wait states; IC27 and the modem CLK settled on paper
+by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
 
 **Rules learned this session (details in Phase 3/4 below):**
 - Moving code to a bank: `tools/bankxref.py` (external users),

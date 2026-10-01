@@ -10,11 +10,11 @@ Detailed per-area specs are in `notes/reference/`.
 
 | | P8E ("/H" units) | P8N |
 |---|---|---|
-| CPU | Z84C0008, 8.064 MHz, **+1 wait state per M1** incl. prefix bytes (confirmed: P8E detection, DTMF/AX.25 loops) | Z80, 4.032 MHz, no waits (confirmed) |
+| CPU | Z84C0008, 8.064 MHz, **+1 wait state per M1** incl. prefix bytes (confirmed: P8E detection, DTMF/AX.25 loops). OH5NXO (R58bis `README2` "P8E waitstate from M1 _or_ adc or dac1/2 or modem chipselect"): also a wait on ADC, DAC1/DAC2 and FX429 I/O cycles. Not modelled; check the schematic (IC27?) | Z80, 4.032 MHz, no waits (confirmed) |
 | Crystal | 8.064 MHz (schematic) | same |
 | 8254 | CLK0/CLK1 4.032 MHz, CLK2 1968.75 Hz (confirmed) | same |
 | System tick | PIO A0 = 1968.75 Hz square, interrupt per falling edge; systick every 20th = 98.44 Hz (confirmed) | same |
-| SIO clock | 153.6 kHz → 9600 (×16, MBUS on B), 4800 (×32, GPS on A) (source; GPS RX confirmed) | same |
+| SIO clock | 153.6 kHz → 9600 (×16, MBUS on B), 4800 (×32, GPS on A) (source; GPS RX confirmed). OH5NXO's P8E chip list (`reference/oh5nxo/mods/R58bis/zzz/IC`): IC14 74HC4059 in mode 8 dividing 4.032 MHz by 26 = **155.08 kHz** → 9692 / 4846 baud, 1 % fast (the emulator uses 153.6 kHz) | 153.6 kHz assumed (not checked) |
 
 ## Memory
 
@@ -65,9 +65,9 @@ Outputs: PB7 power relay off, PB6 EXAL, PB4 /RXON (GPIO).
 
 | Question | Current assumption | Where to look |
 |---|---|---|
-| Hook polarity on PA1 after buffering | 1 = on cradle | manual: 0 = in holder *at the connector*; buffer polarity not shown |
+| Hook polarity on PA1 after buffering | 1 = on cradle | manual: 0 = in holder *at the connector*; buffer polarity not shown. **OH5NXO's R58bis says the opposite** (`iomap_P8x.h:91` `PA_OFFHOOK 0x02 /* state of HOOK pin, 0 onhook */`). Check on a radio: the hook scripts and the repeater-sitter check (`c/timers.c`) depend on it |
 | Watchdog on P8E | same as P8N (0.52 s) | P8N only in manual |
-| MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled | real radio |
+| MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled. R58bis (`boot.s:628-630`, `iomap_P8x.h:87` "Master ON pulse, a/c coupled") toggles MON on every tick only when its `stay_on` option ("#ON/OFF override") is set, i.e. MON pulses hold the power on against the switch; without them the switch decides | real radio |
 | CU58AF keypad row 6: manual says PCF8574 P7 (P6 unused), firmware decodes '+ S R' from P6 | follow firmware | real handset |
 | The RS window and EPROM1 banking on real hardware (P8E from schematic, P8N from manual) | modelled, unverified. **Corroborated (2026-10-01)** by OH5NXO's own SDCC firmware for the R58 (`reference/oh5nxo/mods/R58bis/R58/`, 2007-2014): `iomap_P8x.h` has OUT2 bit 0 ROMA14, bit 1 ROMA15, bit 2 ROM0 ("2 banks from ROM0, if '1'"), bit 3 SMEM ("ROMA16 on P8E"), the same bits as ours; `boot.s` sets OUT2 = SMEM\|ROM0 "for contiguous 48 kB ROM" on P8E and P8N (= our bank 2, chip 0x8000), and README2 has his P8E timing measurements. Not a bench test of the RA14=1 page | the bench test ROM: `make -C firmware banktest`, see notes/hybrid-plan.md Phase 3 |
 | P8E: EPROM0 pin 1 (A15) = CPU A15? | assumed (then the window pages are chip 0x8000 and 0xC000, like the P8N) | P8E schematic; the bench ROM checks both pages (`b1b2 PASS`) |
@@ -91,7 +91,7 @@ A14 = (A15 OR x) AND (NOT A15 OR RA14), which is **RA14 in the window**
 outside the window). **Settled: the P8E selects the EPROM0 window page by
 RA14 like the P8N**; the earlier "A14 forced high" reading was wrong. The
 emulator models both cards alike now.
-| FX429 modem socket | socketed; RX/TX audio pins carry "raw" RX and TX audio; bus pins /CS, R/W, /IRQ, A0, A1, D0-D7 and a CLK input. R/W = /WR; /CS = /CSMOD = IC6 pin 11, output /10 (Y10 = 0xA0-0xAF), consistent with the I/O map (user, 2026-09-28). **Provenance:** signal and pin readings are from the schematic (P8E); the part number 74HC154 is from the P8N parts list. Both give 0xA0, so the decode is assumed the same on both cards. CLK is the modem IC's own clock, not a bus clock (user). Mic/speaker would need extra wires | IC6 enables (user, 2026-09-28): /E0 (pin 19) = /IORQ, /E1 (pin 18) = /M1 through a gate of IC12 (presumably an inverter), so /CSMOD is active only for I/O cycles without M1: an interrupt acknowledge cannot select the modem. /CSMODEM also goes to IC27, with /M1 on another gate of IC27: what IC27 is and where its outputs go (a bus buffer enable? IRQ gating?). CPU pins as read: /IORQ 22, /M1 31 (not the 40-pin DIP numbering, /IORQ 20, /M1 27; which package?). CLK (P8E, user 2026-09-28): the 8.064 MHz crystal oscillator (a gate of IC2) clocks IC3's CP input; IC3 pin 9 goes to the modem's CLK. IC3's type is not recorded: if it is a 74HC74, pin 9 is 2Q and CLK is 8.064 / 2 = 4.032 MHz (like the 8254's CLK0/1). Check IC3's type or measure. P8N: assumed the same frequency at the modem pin (inferred: identical modem chip, which needs its rated clock; the P8N has the same 8.064 MHz crystal and a 4.032 MHz CPU, so only the divider differs). A free-running clock from the CPU oscillator: a replacement board does not need it, but a CPLD can clock its synchronizers from it. Matters for an ESP32 board in the modem socket (see below) |
+| FX429 modem socket | socketed; RX/TX audio pins carry "raw" RX and TX audio; bus pins /CS, R/W, /IRQ, A0, A1, D0-D7 and a CLK input. R/W = /WR; /CS = /CSMOD = IC6 pin 11, output /10 (Y10 = 0xA0-0xAF), consistent with the I/O map (user, 2026-09-28). **Provenance:** signal and pin readings are from the schematic (P8E); the part number 74HC154 is from the P8N parts list. Both give 0xA0, so the decode is assumed the same on both cards. CLK is the modem IC's own clock, not a bus clock (user). Mic/speaker would need extra wires | IC6 enables (user, 2026-09-28): /E0 (pin 19) = /IORQ, /E1 (pin 18) = /M1 through a gate of IC12 (presumably an inverter), so /CSMOD is active only for I/O cycles without M1: an interrupt acknowledge cannot select the modem. /CSMODEM also goes to IC27, with /M1 on another gate of IC27: what IC27 is and where its outputs go (a bus buffer enable? IRQ gating?). IC27 is a **74HC21** (dual 4-input AND, chip list); with OH5NXO's wait-state note (CPU row) it is probably the wait-state OR of the active-low selects; outputs not traced. CPU pins as read: /IORQ 22, /M1 31 (not the 40-pin DIP numbering, /IORQ 20, /M1 27; which package?). CLK (P8E, user 2026-09-28): the 8.064 MHz crystal oscillator (a gate of IC2) clocks IC3's CP input; IC3 pin 9 goes to the modem's CLK. **IC3 is a 74HC4040** (OH5NXO's chip list `R58bis/zzz/IC`: pin 9 = Q1 = 4.032 MHz, his "phi0"), so with the user's trace (IC3 pin 9 → modem CLK) **the FX429 CLK is 4.032 MHz** (paper, not measured). The same 4040 gives Q12 = 1968.75 Hz, the PIO A0 / 8254 CLK2 tick. P8N: assumed the same frequency at the modem pin (inferred: identical modem chip, which needs its rated clock; the P8N has the same 8.064 MHz crystal and a 4.032 MHz CPU, so only the divider differs). A free-running clock from the CPU oscillator: a replacement board does not need it, but a CPLD can clock its synchronizers from it. Matters for an ESP32 board in the modem socket (see below) |
 | Logic family on the CPU card bus | P8N: plenty of 74HC (user, 2026-09-28), so a board driving the data bus must give 5 V CMOS levels (74HC VIH = 3.5 V at 5 V) | schematic, per card |
 
 **Idea (2026-09-28): a "next generation" multiboard in the FX429 socket.**
@@ -143,7 +143,9 @@ Still to check: the FX429 bus pins and timing on the datasheet.
 See notes/reference/service-manual-p8n.md for page references.
 
 - Watchdog: 74HC4040 on 1968.75 Hz, cleared by any I/O to 0x90, disabled by
-  LOCAL; about 0.52 s to reset, then power-off about 0.5 s later. PA2 = WDR
+  LOCAL; about 0.52 s to reset, then power-off about 0.5 s later.
+  P8E the same (OH5NXO's chip list: IC4 74HC4040 on 1968.75 Hz, reset by
+  /CSWD or /LOCAL, WD out = Q11 (0.52 s), OFF = Q12). PA2 = WDR
   flags a watchdog reset. Emulator: `wd_timeout_s = 0.52`.
 - Daisy chain: PIO first, SIO second (as modelled).
 - SIO A DCD is a **shared** interrupt: hook change, 8254 OUT2, FX429 IRQ;
@@ -158,3 +160,17 @@ See notes/reference/service-manual-p8n.md for page references.
   D5 CCIRC (8254 OUT1 → TX filter), D6 MTC (OUT1 → speaker), D7 mic mute;
   8254 OUT0 clocks the MF6-100 TX low-pass filter at 100× cutoff.
 - OUT0/OUT1 latches float during reset (output enable tied to RESET).
+
+## OH5NXO's P8E chip list
+
+`reference/oh5nxo/mods/R58bis/zzz/IC` (2008; the board is not named, the
+parts are the P8E's: Z84C0008, 27C512, HN27C101, 32 KB SRAM). IC1 74HC132,
+IC2 74HC04, IC3/IC4 74HC4040 (clock dividers above), IC5 74HC139, IC6
+74HC154, IC7 Z84C0008, IC8 82S129 (PROM, /CSPROM at I/O 0xC0), IC9
+SRM20256, IC10/IC11/IC12 74HC08/32/00, IC13 82C54, IC14 74HC4059, IC15
+27C512 (EPROM0), IC16 HN27C101 (EPROM1), IC17/IC18 74HC107, IC19 74HC08,
+IC20 74HC32, IC21 Z84C4408 (SIO), IC22 FX429J, IC23 74HC374, IC24 Z84C2008
+(PIO), IC25 FX003QC, IC26 74HC08 (?), IC27 74HC21, IC28 74HC109, IC29
+74HC74. The file also has the EPROM1 socket pinout (O2_ROMA16 on pin 2,
+O2_ROMA15 pin 3, O2_ROMA14 pin 29; multiboard StD on D7, decoder data on
+D6..D3) and MT8888 and 82S129 pinouts.
