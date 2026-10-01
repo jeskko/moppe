@@ -65,7 +65,7 @@ Outputs: PB7 power relay off, PB6 EXAL, PB4 /RXON (GPIO).
 
 | Question | Current assumption | Where to look |
 |---|---|---|
-| Hook polarity on PA1 after buffering | 1 = on cradle | manual: 0 = in holder *at the connector*; buffer polarity not shown. **OH5NXO's R58bis says the opposite** (`iomap_P8x.h:91` `PA_OFFHOOK 0x02 /* state of HOOK pin, 0 onhook */`). Check on a radio: the hook scripts and the repeater-sitter check (`c/timers.c`) depend on it |
+| Hook polarity on PA1 after buffering | **1 = lifted** (assumed 2026-10-01, user: reverse if a radio disagrees; emulator `hook_offhook_level = 1`; was 1 = on cradle) | manual: 0 = in holder *at the connector*; buffer polarity not shown. **OH5NXO's R58bis says the opposite** (`iomap_P8x.h:91` `PA_OFFHOOK 0x02 /* state of HOOK pin, 0 onhook */`). Check on a radio: the hook scripts and the repeater-sitter check (`c/timers.c`) depend on it |
 | Watchdog on P8E | same as P8N (0.52 s) | P8N only in manual |
 | MON (SIO B DTR): manual says the radio powers off ~1 s after power-on unless MON is pulsed; firmware sets DTR once | not modelled. R58bis (`boot.s:628-630`, `iomap_P8x.h:87` "Master ON pulse, a/c coupled") toggles MON on every tick only when its `stay_on` option ("#ON/OFF override") is set, i.e. MON pulses hold the power on against the switch; without them the switch decides | real radio |
 | CU58AF keypad row 6: manual says PCF8574 P7 (P6 unused), firmware decodes '+ S R' from P6 | follow firmware | real handset |

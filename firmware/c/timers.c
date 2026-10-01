@@ -50,8 +50,9 @@ void once_per_second(void)
 			++transmitter_hours[2];
 	}
 
-	/* repeater sitting: counts up from -N while on the cradle */
-	if ((pioa_data & PA_HOOK) && repeater_sitters_special &&
+	/* repeater sitting: counts up from -N while on the cradle (PA1 = 0,
+	 * as the hook interrupt reads it; v3_Z tested PA1 = 1 here) */
+	if (!(pioa_data & PA_HOOK) && repeater_sitters_special &&
 	    !++repeater_sitters_special)
 		audioc_off();
 

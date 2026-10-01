@@ -333,6 +333,24 @@ class Squelch(RadioTest):
         self.assertFalse(r.latches()["out0"] & 0x10)
 
 
+class HookScripts(RadioTest):
+    def test_lift_runs_offhook_script(self):
+        """GE:oFFHoo runs when the handset is lifted, GE:onHoo when it is
+        put back (PA1 = 1 lifted: assumed, see notes/hardware.md).
+        Volume keys as the scripts: digits in a script do not enter a
+        frequency (v3_Z behaviour, kept)."""
+        r = self.boot()
+        r.poke("cfg_offhook_script", b"++" + b"\xff" * 6)
+        r.poke("cfg_onhook_script", b"-" + b"\xff" * 7)
+        v = r.peek("volume")
+        r.hook(True)
+        r.run(1.0)
+        self.assertEqual(r.peek("volume"), v + 2, "lifting ran oFFHoo")
+        r.hook(False)
+        r.run(1.0)
+        self.assertEqual(r.peek("volume"), v + 1, "putting back ran onHoo")
+
+
 class P8NBoot(RadioTest):
     card = P8N
 

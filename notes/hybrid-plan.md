@@ -262,6 +262,13 @@ typematic timings.
 **Firmware behaviour the tests pinned down** (keep it when porting unless
 decided otherwise; the bugs still in place are collected in
 notes/open-bugs.md):
+- Hook polarity: v3_Z read PIO A1 both ways, the hook interrupt (scripts)
+  as 1 = lifted, the repeater-sitter check as 1 = on cradle. **Decided
+  2026-10-01** (user): 1 = lifted (notes/hardware.md); the sitter check
+  now counts at PA1 = 0 (`c/timers.c`), the emulator default flipped.
+  Tests: `test_timers` sitters, `test_radio.HookScripts`. If a radio shows
+  the opposite, flip `hook_offhook_level` and the sitter test, and the hook
+  interrupt's script choice becomes the bug instead.
 - P8N switch-off NMI inside `save_nvdata`'s SMEM=0 window (between its
   two OUT2 writes; `di` does not mask NMI) made `save_nvmisc_and_restart`
   copy the first NV byte (`audio_dst`, 0xC000) from battery RAM onto
