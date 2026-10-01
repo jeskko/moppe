@@ -37,14 +37,13 @@ actionlint (with shellcheck): clean.
   binary itself is not needed (`reference/` is git-ignored).
 - The emulator needs only a C compiler; numpy (optional) speeds up audio
   decoding and is installed in CI.
-- **The pinned SDCC needs ~200 s for `c/scan.c`** (Arch's build of the
-  same version: 9 s; the pre-2026-10-01 scan.c too, so not the slice
-  merge): a register-allocation search in that build. Every other
-  module compiles in about the same time with both. A cold firmware
-  build in CI is therefore ~3.5 min; the object cache makes the bank
-  test build (the same C modules) and later runs without C changes take
-  seconds. Lowering `--max-allocs-per-node` for scan.c would also fix it
-  but changes the image (not done).
+- The pinned SDCC needed ~200 s for `c/scan.c` (Arch's build of the same
+  version: 9 s): `scanner_run` was one function with gotos and a switch
+  into its middle, and the register allocator's search blew up on it.
+  **Fixed 2026-10-01**: the blocks between its labels are functions
+  driven by a table (same work per mainloop pass); 6 s now, a cold
+  firmware build 44 s at -j4 (measured). The object cache still saves the bank test
+  build and unchanged runs.
 - Emulator speed: 20-29x real time before 2026-10-01, ~2x that after
   the lazy 8254 clocking (notes/emulator.md); all test time is
   emulation (Python-side comparison < 1 %).

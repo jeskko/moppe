@@ -898,7 +898,14 @@ first, port, differential test against stock, size check, commit.
   44 caught; not caught: 2 equivalent (the 9x block start, the dead
   doubling), 3 timing-only (a step one or two mainloop passes early:
   dropped yields, the ≥ 130 clamp), which the per-stay tolerance cannot
-  separate from the C build's pass-time spread.
+  separate from the C build's pass-time spread. **2026-10-01:**
+  `scanner_run` is a table of block functions (one per label stretch,
+  returning the next block or a yield) driven by a loop instead of one
+  function with gotos and a switch into it: the pinned SDCC took ~200 s
+  on the old shape (register allocation). Same work per pass, +61 bytes
+  fixed ROM; mutation run again: the same survivors plus the tail-255
+  check, equivalent since the tail-255 fix (survives on the old code
+  too).
   `test_aprs_diff`: tolerance 30 ms (TX_OFF of the C APRS path was 20.0 ms
   late, the known ~10 ms plus a systick, already at the 20 ms edge
   before the scanner port).

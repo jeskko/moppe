@@ -10,7 +10,8 @@
  * address in scanner_state, and each `call scanner_ret` stored its return
  * address there and returned to the mainloop.  Here scanner_state holds a
  * state number (its low byte) for each of those resume points, and the
- * code between them is the same straight line: every mainloop pass does
+ * code between the labels is split into block functions (scanner_run's
+ * table) that return the next block or a yield: every mainloop pass does
  * what the assembler did in that pass.  scanner_start, toggle_scan_mask
  * and add_reject restart it at S_STEP (scan_do_step).
  *
@@ -268,82 +269,98 @@ static uint8_t is_sql_over_level(void)
 	return read_squelcher_value() > cfg_squelch_level;
 }
 
-#define YIELD(st)	do { scanner_state = (st); return; } while (0)
+/* The scan as the blocks between the assembler coroutine's labels: each
+ * does what that block did and returns the next block, or YIELD(state):
+ * store the state, back to the mainloop.  The resume blocks are numbered
+ * as the states.  (As one function with gotos and a switch into its
+ * middle, SDCC's register allocator searched for minutes: 2026-10-01.) */
+#define YIELD(st)	(0x80 | (st))
+#define B_STEP		S_STEP		/* the resume points ... */
+#define B_FIRST_FREQ_ON	S_FIRST_FREQ
+#define B_FIRST_MEM_ON	S_FIRST_MEM
+#define B_WAIT_ON	S_WAIT
+#define B_LISTEN_ON	S_LISTEN
+#define B_TAIL_ON	S_TAIL
+#define B_NEXT_MEMORY	6		/* ... and the blocks between */
+#define B_MEMORY_FOUND	7
+#define B_DID_STEP_FREQ	8
+#define B_DID_STEP	9
+#define B_SIGNAL	10
+#define B_TAIL		11
+#define B_MAYBE_REJECT	12
 
-void scanner_run(void)
+#define FIRST_FREQUENCY	YIELD(S_FIRST_FREQ)	/* scan_first_frequency: */
+#define FIRST_MEMORY	YIELD(S_FIRST_MEM)	/* a way out for the keys */
+
+/* scan_do_step, scan_next_frequency: the slice we are in, then one
+ * channel up */
+static uint8_t b_step(void)
 {
-	if (!scan_on)
-		return;
-	switch ((uint8_t)scanner_state) {
-	case S_FIRST_FREQ:	goto first_frequency_on;
-	case S_FIRST_MEM:	goto first_memory_on;
-	case S_WAIT:		goto wait_on;
-	case S_LISTEN:		goto listen_on;
-	case S_TAIL:		goto tail_on;
-	}
-
-step:						/* scan_do_step */
 	scan_paused = 0;
 	redraw();
 	mute_squelch_scanner();
 	if (mem_flags)
-		goto next_memory;
-
-	/* scan_next_frequency: the slice we are in, then one channel up */
+		return B_NEXT_MEMORY;
 	if (!scan_slicecnt)
-		goto first_memory;
+		return FIRST_MEMORY;
 	for (n = scan_slicecnt, sl = scan_slices; !lt24(rx_freq, sl + SL_END); sl += SLICE)
 		if (!--n)
-			goto first_memory;	/* past all slices */
+			return FIRST_MEMORY;	/* past all slices */
 	if (lt24(rx_freq, sl)) {
 		copy3(rx_freq, sl);		/* below it: to its start */
 		changed_frequency();
-		goto did_step_freq;
+		return B_DID_STEP_FREQ;
 	}
 	step_channel_up();
 	if (lt24(rx_freq, sl + SL_END))
-		goto did_step_freq;		/* still in the slice */
+		return B_DID_STEP_FREQ;		/* still in the slice */
 	if (n == 1)
-		goto first_memory;		/* no slice left */
+		return FIRST_MEMORY;		/* no slice left */
 	sl += SLICE;
 	copy3(rx_freq, sl);
 	changed_frequency();
-	goto did_step_freq;
+	return B_DID_STEP_FREQ;
+}
 
-first_frequency:				/* scan_first_frequency */
-	YIELD(S_FIRST_FREQ);			/* a way out for the keys */
-first_frequency_on:
+static uint8_t b_first_freq_on(void)
+{
 	leave_memories();
 	if (!scan_slicecnt)
-		goto first_memory;
+		return FIRST_MEMORY;
 	copy3(rx_freq, scan_slices);
 	changed_frequency();
-	goto did_step_freq;
+	return B_DID_STEP_FREQ;
+}
 
-first_memory:					/* scan_first_memory */
-	YIELD(S_FIRST_MEM);
-first_memory_on:
+static uint8_t b_first_mem_on(void)
+{
 	if (!(scan_mask & 0xFFC0))
-		goto first_frequency;		/* no memory blocks scanned */
+		return FIRST_FREQUENCY;		/* no memory blocks scanned */
 	m = memory_from(0);
-	goto memory_found;
-next_memory:
+	return B_MEMORY_FOUND;
+}
+
+static uint8_t b_next_memory(void)
+{
 	m = mem_idx;
 	if (m >= 130)
 		m = 99;				/* point_ix_memory_a */
 	m = memory_from(m + 1);
-memory_found:
-	if (m >= 100)
-		goto first_frequency;		/* past memory 99: the bands */
-	go_mem_a(m);
-	goto did_step;
+	return B_MEMORY_FOUND;
+}
 
-did_step_freq:
-	if (is_freq_rejected_perm())
-		goto step_again;
-did_step:
+static uint8_t b_memory_found(void)
+{
+	if (m >= 100)
+		return FIRST_FREQUENCY;		/* past memory 99: the bands */
+	go_mem_a(m);
+	return B_DID_STEP;
+}
+
+static uint8_t b_did_step(void)
+{
 	if (is_freq_rejected_temp())
-		goto step_again;
+		return YIELD(S_STEP);		/* the next step on the next pass */
 	v = scan_settling_time;
 	if (squelch_open)			/* busy: twice as long */
 		v = v >= 128 ? 255 : v + v;
@@ -351,38 +368,48 @@ did_step:
 	scan_timer = v;				/* 10 ms ticks */
 	scan_timer_secs = 0;
 	__asm__("ei");
-wait:
-	YIELD(S_WAIT);
-wait_on:
-	if (scan_timer)
-		goto wait;
+	return YIELD(S_WAIT);
+}
 
-	/* after the settling wait, look around */
+/* after the settling wait, look around */
+static uint8_t b_wait_on(void)
+{
+	if (scan_timer)
+		return YIELD(S_WAIT);
 	if (squelch_forced)
-		goto signal;			/* forced open: as if a signal */
+		return B_SIGNAL;		/* forced open: as if a signal */
 	if (!is_sql_over_level())
-		goto step;			/* no signal: next */
+		return B_STEP;			/* no signal: next */
 	scan_paused = 1;			/* normal display */
-signal:
+	return B_SIGNAL;
+}
+
+static uint8_t b_signal(void)
+{
 	redraw();
 	if (band_sclisten != 255)
 		scan_patience = band_sclisten;	/* N seconds, signal or not */
 	if (cfg_scan_skip_fsk_channels && (mdm_ctrl & MDM_DCD))
-		goto step;
-listen:
-	YIELD(S_LISTEN);
-listen_on:
+		return B_STEP;
+	return YIELD(S_LISTEN);
+}
+
+static uint8_t b_listen_on(void)
+{
 	if (band_sclisten != 255 && !scan_patience)
-		goto maybe_reject;		/* lost patience: next */
+		return B_MAYBE_REJECT;		/* lost patience: next */
 	restore_squelch_scanner();		/* audio on */
 	if (squelch_forced)
-		goto signal;			/* forced: for ever, and then some */
+		return B_SIGNAL;		/* forced: for ever, and then some */
 	if (!squelch_open)
-		goto tail;
+		return B_TAIL;
 	remember_vip();
-	goto listen;				/* a signal: stay */
+	return YIELD(S_LISTEN);			/* a signal: stay */
+}
 
-tail:						/* N seconds without a signal */
+/* N seconds without a signal */
+static uint8_t b_tail(void)
+{
 	if (band_sctail != 255) {		/* 255: listen for ever */
 		v = band_sctail;
 		__asm__("di");
@@ -390,20 +417,50 @@ tail:						/* N seconds without a signal */
 		scan_timer = v ? 100 : 0;	/* seconds of 100 ticks */
 		__asm__("ei");
 	}
-tail_wait:
-	YIELD(S_TAIL);
-tail_on:
-	if (squelch_open)
-		goto listen;			/* a signal again */
-	if (scan_timer_secs || band_sctail == 255)
-		goto tail_wait;			/* (v3_Z: 255 stepped on at once) */
-	goto step;
+	return YIELD(S_TAIL);
+}
 
-maybe_reject:
+static uint8_t b_tail_on(void)
+{
+	if (squelch_open)
+		return YIELD(S_LISTEN);		/* a signal again */
+	if (scan_timer_secs || band_sctail == 255)
+		return YIELD(S_TAIL);		/* (v3_Z: 255 stepped on at once) */
+	return B_STEP;
+}
+
+static uint8_t b_did_step_freq(void)
+{
+	if (is_freq_rejected_perm())
+		return YIELD(S_STEP);		/* the next step on the next pass */
+	return B_DID_STEP;
+}
+
+static uint8_t b_maybe_reject(void)
+{
 	if (band_autoreject)
 		add_reject();
-	goto step;
+	return B_STEP;
+}
 
-step_again:
-	YIELD(S_STEP);				/* the next step on the next pass */
+/* by block number */
+static uint8_t (*const blocks[])(void) = {
+	b_step, b_first_freq_on, b_first_mem_on, b_wait_on, b_listen_on,
+	b_tail_on, b_next_memory, b_memory_found, b_did_step_freq,
+	b_did_step, b_signal, b_tail, b_maybe_reject,
+};
+
+static uint8_t blk;			/* the next block */
+
+void scanner_run(void)
+{
+	if (!scan_on)
+		return;
+	blk = (uint8_t)scanner_state;		/* a resume block */
+	if (blk > B_MAYBE_REJECT)
+		blk = B_STEP;			/* (any other state: a step) */
+	do
+		blk = blocks[blk]();
+	while (!(blk & 0x80));
+	scanner_state = blk & 0x7F;
 }
