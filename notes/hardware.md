@@ -138,7 +138,11 @@ linked by SPI or UART; it replaces the CPLD. BT headsets are a bonus, not
 required (user, 2026-10-02), so the plan is an **ESP32-S3-WROOM-1U** (newer
 chip, PSRAM variants for web UI / OTA / audio buffers), optionally with a
 second footprint for an ESP32-WROOM-32UE (the only common ESP32 with
-Classic BT) wired to the same few link pins.
+Classic BT) wired to the same few link pins. Chip-down alternative for the
+real-time side: RP2354B (RP2350B with 2 MB flash in the package, 48 GPIO,
+8 ADC inputs; needs PCB assembly, QFN-80). The radio stays a certified
+module: Raspberry Pi's RM2 (CYW43439, Classic BT, same SDK) has only a PCB
+antenna, useless in the shielded case.
 
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
