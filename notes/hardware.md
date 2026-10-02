@@ -126,7 +126,11 @@ R/W), preloaded 74HCT574s for the 0xA2/0xA3 reads, or one CPLD with SPI.
 Alternative front end: an RP2350 (PIO answers the bus directly; its digital
 GPIOs are 5 V tolerant). Open: the 7805's heatsinking and present load (an
 ESP32-S3 adds ~30-100 mA average, ~350 mA Wi-Fi TX peaks); which header pin
-carries 13.8 V; the antenna route out of the case.
+carries 13.8 V; the antenna route out of the case. Voice-grade audio (mic,
+speaker, Wi-Fi audio) would need an I²S codec (e.g. ES8311 mono, ES8388
+stereo; I²S + I²C ≈ 6-7 pins, so with a codec the CPLD/SPI front end is the
+one that fits the pin budget). The ESP32-S3 has BLE only, no Classic
+Bluetooth, so no A2DP/HFP headsets.
 
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
