@@ -113,6 +113,21 @@ fits better than a 3.3 V one (XC9572XL would need a 74HCT245 driver). If
 it keeps the FX429 register behaviour, the stock firmware works unchanged.
 Still to check: the FX429 bus pins and timing on the datasheet.
 
+**Module candidate and the radio around it (2026-10-02).** User facts: the
+5 V bus comes from a **7805CP (TO-220) on the audio board**; there is plenty
+of free board space next to the FX429 socket; the case is properly shielded,
+so a wireless module needs an external antenna; +13.8 V should be on one of
+the CPU-card/audio-card headers (not yet located). Candidate: XIAO
+ESP32-S3 Plus (20 GPIO incl. 9 rear castellations, Wi-Fi + BLE, U.FL
+antenna). Inferred: it cannot answer Z80 reads in software (~100 ns from
+/CS on the P8E, no /WAIT on the socket) and is not 5 V tolerant, so it needs
+a hardware mailbox in front: 74LVC574 at 3.3 V for writes (clock = /CS OR
+R/W), preloaded 74HCT574s for the 0xA2/0xA3 reads, or one CPLD with SPI.
+Alternative front end: an RP2350 (PIO answers the bus directly; its digital
+GPIOs are 5 V tolerant). Open: the 7805's heatsinking and present load (an
+ESP32-S3 adds ~30-100 mA average, ~350 mA Wi-Fi TX peaks); which header pin
+carries 13.8 V; the antenna route out of the case.
+
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
   and C31, both 47 nF, in parallel (94 nF), in series.
