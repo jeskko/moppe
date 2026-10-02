@@ -155,6 +155,12 @@ microcontrollers have no practical dongle drivers, so it means a Linux SoC
 (RV1103/1106, V3s, SAMA5D2 SiP) next to the RP2354B, with boot time,
 power-loss-safe storage, more current and a networked OS to maintain. If
 Linux is wanted, it fits better outside as the puck (e.g. a Pi Zero 2 W).
+**Chosen direction (user, 2026-10-02): RP2354B inside, USB-C bulkhead on the
+case**; a computer, phone or wireless puck plugs in there. This supersedes
+the ESP32-inside plan above (kept for the record). The radio is a
+self-powered USB device: VBUS only for detection, never tied to the radio's
+5 V; a puck therefore needs its own supply (open: or make the port a power
+source later). Connector shell bonded to the case all round.
 
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
