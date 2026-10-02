@@ -9,7 +9,7 @@ without burning an EPROM for every change.
 | Area | State |
 |---|---|
 | Toolchain | SDCC's **sdasz80 + sdldz80** (with cpp and a small preprocessor). The source was converted from the original as80 dialect and rebuilds **byte-identical** to the released ALs binary (`make -C firmware verify`, which also checks the as80 build of the old source). |
-| Emulator | Separate repo **moppe-emu**, here as the `emu/` submodule. Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. Since 2026-10-02 also the **Talkman MD50/MD59/ME59** (CDP1802/1806 core), running OH3NWQ's and OH1E's firmware ([notes/md5x.md](notes/md5x.md)), the **MC25 TVL/PTL** ([notes/mc25.md](notes/mc25.md)) and the **TMF-1/TMN-1** (uPD7810 core; radio and HSN-2/HSF-2 handset each on its own CPU, linked by MBUS) running OH5NXO/OH3NWQ's tmx1.asm v5.0 ([notes/tmx1.md](notes/tmx1.md)). |
+| Emulator | Separate public repo **[moppe-emu](https://github.com/jeskko/moppe-emu)**, here as the `emu/` submodule. Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. Since 2026-10-02 also the **Talkman MD50/MD59/ME59** (CDP1802/1806 core), running OH3NWQ's and OH1E's firmware ([notes/md5x.md](notes/md5x.md)), the **MC25 TVL/PTL** ([notes/mc25.md](notes/mc25.md)) and the **TMF-1/TMN-1** (uPD7810 core; radio and HSN-2/HSF-2 handset each on its own CPU, linked by MBUS) running OH5NXO/OH3NWQ's tmx1.asm v5.0 ([notes/tmx1.md](notes/tmx1.md)). |
 | Tests | 322 tests. Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK packets sent and received (call, remote display/config, relay, MPRS), remote configuration between two emulated radios over a simulated RF link, MBUS config dump/load (CFGSnd/CFGGEt); scanner, repeater access and CW ID, every menu record type (and the whole menu, asm vs C), low battery, TOT, typematic; ROM-window decode and code running from bank 1. **Differential tests** (`tests/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
 | C in firmware | The firmware is C plus assembler: `make` links the C modules (squelch, packet CRCs, systick timers, battery check, key dispatch and handlers, memories and VIP list, PTT/TX flow, the mainloop, display composition, frequency/band/duplex logic, scanner; banked: FSK packets, repeater/CW, GPS, MPRS/APRS, the setup menu engine) with r58.s as normal SDCC objects. Assembler is left only for interrupt code, hardware sequencing, the frequency kernel and display primitives. The differential tests show no behaviour difference to the last assembler build (git tag `asm-final`, `make ref`), which differs from the release by bug fixes and the removed Aisin Seiki GPS path. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
@@ -26,9 +26,8 @@ Needs a C compiler, GNU `cpp`, Python 3 (numpy optional, speeds up audio
 decoding), SDCC 4.x (sdasz80, sdldz80; tested with 4.6.0).
 
 The emulator is a submodule: clone with `--recurse-submodules`, or run
-`git submodule update --init` after cloning. While the emulator repo has no
-remote, its URL `../moppe-emu` is a local path next to this repo, and git
-needs `-c protocol.file.allow=always` for the submodule commands.
+`git submodule update --init --recursive` after cloning. The emulator is
+public at <https://github.com/jeskko/moppe-emu>.
 
 ```sh
 make -C firmware              # firmware/build/r58.bin (r58.s + the C modules)

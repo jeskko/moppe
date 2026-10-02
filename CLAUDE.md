@@ -4,7 +4,7 @@
 - Notes: `X.md` holds current state (facts, living tables, open questions). Session narrative goes in `X-history.md`; fold only the delta into `X.md`. Move text into the history file instead of deleting it.
 - Verify claims (your own or a subagent's) against listings or live runs before recording them as confirmed.
 - Commit validated progress without asking.
-- `emu/` is a submodule (the emulator repo, `../moppe-emu`): emulator changes are committed there first, then the submodule pointer here. See `notes/emulator.md`.
+- `emu/` is a submodule (the emulator repo, public at github.com/jeskko/moppe-emu): emulator changes are committed and pushed there first, then the submodule pointer here. See `notes/emulator.md`.
 
 ## Subagents
 Delegate trivial or mechanical work to cheaper models: `haiku` for searches, lookups, renames and bulk edits, `sonnet` for routine multi-step edits. Keep analysis and judgment in the main session. Give each agent its own files so parallel agents don't collide.
