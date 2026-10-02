@@ -142,7 +142,14 @@ Classic BT) wired to the same few link pins. Chip-down alternative for the
 real-time side: RP2354B (RP2350B with 2 MB flash in the package, 48 GPIO,
 8 ADC inputs; needs PCB assembly, QFN-80). The radio stays a certified
 module: Raspberry Pi's RM2 (CYW43439, Classic BT, same SDK) has only a PCB
-antenna, useless in the shielded case.
+antenna, useless in the shielded case. Variant (idea, 2026-10-02): only the
+RP2354B inside, its USB (device, CDC and maybe USB Audio) out through a
+filtered bulkhead; wireless becomes an optional external "puck" in a plastic
+box (e.g. a Pico 2 W or ESP32-S3 board as USB host; on-board antennas are
+fine outside, Pico 2 W adds Classic BT), or a PC/phone directly. No RF
+inside, UF2 updates from outside. Risk: a 12 Mbit/s cable leaving a VHF
+radio (birdies in, TX RF in, ESD): common-mode choke, TVS, shield bonded
+at the entry; test early. A slow UART link out is easier to filter.
 
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
