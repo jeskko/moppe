@@ -150,6 +150,11 @@ fine outside, Pico 2 W adds Classic BT), or a PC/phone directly. No RF
 inside, UF2 updates from outside. Risk: a 12 Mbit/s cable leaving a VHF
 radio (birdies in, TX RF in, ESD): common-mode choke, TVS, shield bonded
 at the entry; test early. A slow UART link out is easier to filter.
+USB Wi-Fi/BT dongles inside were considered and rejected (2026-10-02):
+microcontrollers have no practical dongle drivers, so it means a Linux SoC
+(RV1103/1106, V3s, SAMA5D2 SiP) next to the RP2354B, with boot time,
+power-loss-safe storage, more current and a networked OS to maintain. If
+Linux is wanted, it fits better outside as the puck (e.g. a Pi Zero 2 W).
 
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
