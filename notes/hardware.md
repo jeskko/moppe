@@ -133,9 +133,12 @@ one that fits the pin budget). The ESP32-S3 has BLE only, no Classic
 Bluetooth, so no A2DP/HFP headsets. The XIAO size is not required (user,
 2026-10-02: larger is fine if available and reasonably priced). Leading
 idea (inferred, not prototyped): a carrier with a Pico 2 (RP2350: PIO bus
-interface, DSP, I²S codec) plus an ESP32 module with U.FL (wireless only;
-ESP32-WROOM-32UE if Classic BT headsets matter, else ESP32-S3/C6 -1U), linked
-by SPI or UART; it replaces the CPLD.
+interface, DSP, I²S codec) plus an ESP32 module with U.FL (wireless only),
+linked by SPI or UART; it replaces the CPLD. BT headsets are a bonus, not
+required (user, 2026-10-02), so the plan is an **ESP32-S3-WROOM-1U** (newer
+chip, PSRAM variants for web UI / OTA / audio buffers), optionally with a
+second footprint for an ESP32-WROOM-32UE (the only common ESP32 with
+Classic BT) wired to the same few link pins.
 
 **Modem socket audio lines (user trace, 2026-09-28):**
 - CPU board: FFSKIN has C30 (47 nF) in series; FFSKOUT has C81 (or C61)
