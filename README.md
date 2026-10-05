@@ -18,7 +18,7 @@ without burning an EPROM for every change.
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md) (none since 2026-10-01; decided ones in [notes/open-bugs-history.md](notes/open-bugs-history.md)).
-Nokia R40 (RC40/RD40, H8/532): the emulator runs the original Nokia firmware to its self test and into service mode; hardware and open items in [notes/r40.md](notes/r40.md). A C toolchain for it is ready (lcc back end + patched GNU binutils 2.16.1, [notes/h8500-compiler.md](notes/h8500-compiler.md)); next is a ham firmware, **start at [notes/r40-firmware.md](notes/r40-firmware.md) "Start here"**.
+Nokia R40 (RC40/RD40, H8/532): the emulator runs the original Nokia firmware to its self test and into service mode; hardware and open items in [notes/r40.md](notes/r40.md). A C toolchain for it is ready (lcc back end + patched GNU binutils 2.16.1, [notes/h8500-compiler.md](notes/h8500-compiler.md)); the ham firmware in `r40/` (C + start-up asm) boots in the emulator with its own display driver and keypad (`make -C r40`, tests in `tests/test_r40fw.py`); **continue at [notes/r40-firmware.md](notes/r40-firmware.md) "Start here"**.
 Emulator design, fidelity and limits: `emu/notes/emulator.md` (overview) and one note per radio, `emu/notes/r58.md` for the R58 (in the emulator repo).
 
 ## Quick start

@@ -23,8 +23,8 @@ target's rules) pass: 550 seeds at two sizes with the full generator, 600 before
 switch to gas/ld the whole suite, 100 default and 151 larger seeds
 pass. Work items:
 
-1. The R40 firmware: continue in [r40-firmware.md](r40-firmware.md)
-   "Start here" (layout, start-up, display; memory model decided there).
+1. The R40 firmware (`r40/`, running): continue in
+   [r40-firmware.md](r40-firmware.md) "Start here".
 2. Test gaps if the firmware needs them: structs (assignment, arguments,
    returns), local arrays, recursion, `register` pressure with longs,
    bit-fields (16-bit), function pointers. `intgen.py` is the place.
@@ -99,6 +99,10 @@ needed).
   below 0xFF80), data/bss/stack in page 8 with 16-bit pointers; const
   and initialized data live in RAM, copied by crt0 from their load
   image after the code (the linker script's `AT`).
+- A constant pointer into FF80-FFFF (the H8/532 register field, page 0
+  only) is addressed `@aa:8` through BR = FF; any other constant pointer
+  `@aa:16` (DP's page). So `*(volatile unsigned char *)0xFF82` is PORT1
+  (r40/regs.h). Added 2026-10-06 (`regfield()` in h8500.md).
 - char 8 signed, short/int/pointer 16, long 32, float/double 32
   (helpers). Big-endian; a long in a register pair rN:rN+1 (N even),
   high word in rN.

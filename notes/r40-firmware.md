@@ -11,38 +11,51 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 
 ## Start here (next session)
 
-Nothing of the firmware is written yet. The toolchain is ready (all
-tests pass, `tools/h8500/test/run.sh`). Steps, each checked in the
-emulator before the next:
+State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
+`python3 -m unittest test_r40fw` (in `tests/`) runs 7 scenarios; `make
+-C r40 run` opens it in the emulator's TUI. It boots, shows "R40 ham /
+Hello, world" and a seconds counter, and shows the last key pressed.
+Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
-1. **Layout and build.** Proposed: sources in `r40/` (C, `.s`, linker
-   script, Makefile), firmware scenario tests in `tests/r40/` (pytest
-   with `emu/python/r40emu.py`'s `Radio`, as `emu/tests/r40/` does for
-   the Nokia ROM). h8cc.py builds h8run programs with its own crt0 and
-   script; for the firmware add a way to pass a start-up file and a
-   linker script (`--crt` exists; add `--script` or let the Makefile
-   call rcc/as/ld directly). Run with
-   `python3 emu/python/r40tui.py --rom r40/build/r40.bin`.
-2. **Start-up** (`r40/start.s`): vectors (4 bytes each in maximum mode:
-   page word + PC word, r40.md "Hardware"), page registers (DP = TP = 8,
-   BR = 0xFF, EP 0 except while used), stack, data copy and bss clear
-   as `tools/h8500/lib/crt0.s`, ports, interrupt priorities, the
-   watchdog kick (`watchdog_kick` 0x1CE91 in the Nokia ROM: P9.0 high
-   for a few µs, then WDT reload A57F/5A00), then `main`. OH5NXO's
-   `start.s` covers most of this (below) but differs in two places
-   to settle against the Nokia ROM: WCR 0xF0 (no wait states; Nokia
-   uses 0xF1, the FX429 needs a wait state) and the on-chip WDT used
-   as a 123 Hz tick instead of a watchdog.
-3. **Display hello**: PCF8584 I2C → CU43 LCD (own font), from C.
-4. Keypad (CU43 via I2C; ALPHA/handset/HF/F1 still unmapped), then RX:
-   PLL to a 6.25 kHz channel (RX = f + 45 MHz), audio/squelch (AN1),
-   RSSI (AN0), power-off. Then the VFO UI, NV storage (battery SRAM at
-   0x80000), TX (TX ON OUT1.0, PTT P7.3, TX synthesizer parked +62.5 kHz
-   until PTT), scan, memories, settings.
+Next, each checked in the emulator before the next:
+
+1. **Serial bus and power**: the three 4094s (audio switches, volume,
+   deviation, the power-off bit IC39.2), MC144111 DAC; OH5NXO's
+   `serbus.s` is the reference, his `PINS` and the board description
+   disagree on bit meanings (r40.md gap 4): settle them from the Nokia
+   firmware's SR events in the emulator. Then power-off on PWR.
+2. **RX**: PLL to a 6.25 kHz channel (RX VCO = f + 45 MHz, 128/129
+   prescaler, R = 1024, OH5NXO's `pll.s`; the emulator's `pll()` reads
+   it back), audio unmute and noise squelch (AN1), RSSI (AN0).
+3. The VFO UI (frequency entry, UP/DOWN steps), then NV storage (battery
+   SRAM at 0x80000: needs a NOLOAD section, so a linker script of our
+   own or `h8cc.py --script`), TX (TX ON OUT1.0, PTT P7.3, TX
+   synthesizer parked +62.5 kHz until PTT), duplex split, memories,
+   scan, settings.
 
 Open questions to keep in view: the gaps list in r40.md (CTCSS path,
 calibration tables, 4094 bit meanings, PLL lock timing, no hardware
-checks yet).
+checks yet); whether the real CU43 needs the slower Nokia-like I2C
+pacing; what P1.5 does when the PCF8574 /INT and the IRQ0 function share
+it on hardware (the emulator reads the pin).
+
+## Firmware layout
+
+| File | What |
+|---|---|
+| `r40/start.s` | vectors (CP word + PC word), reset (page registers, RAMCR off, WCR 0xF0, data copy, bss clear, `main`), NMI/faults → reset, the FRT1 OCIA entry (saves r0-r3 and EP, EP = 8, calls `tick_isr`), `xin`/`xout` (a byte in another page via EP and r4), `ei`/`di` |
+| `r40/regs.h` | H8/532 registers as C lvalues (`@aa:8`) |
+| `r40/hw.c`, `hw.h` | ports, OUT0/OUT1 latches with shadows, 100 Hz tick (`ticks`), `wdog_kick` (P9.0 pulse + WDT A57F/5A00), `delay_ticks` |
+| `r40/i2c.c` | PCF8584, polled: `i2c_write(addr, hdr, nh, data, nd)`, `i2c_read`; S2 = 0x11 (45 kHz, as Nokia); gives up after 2000 polls |
+| `r40/lcd.c`, `font.c` | text buffer 3 x 24, dirty rows sent as `78 F0+row E0 18` + 120 columns; top row 20 characters around gap cells 2, 9, 14, 21 |
+| `r40/keypad.c` | CU43 matrix, PWR, hook; `key_get()` queue of presses |
+| `r40/main.c` | the main loop (hello + key display for now) |
+| `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys |
+
+Conventions: C runs with DP = EP = TP = 8, BR = FF. Only `xin`/`xout`
+change EP; the interrupt entry saves it and sets 8 for C. Main loop
+code owns PORT9 and the latches (read-modify-write is not atomic
+against interrupts).
 
 ## Decisions
 
