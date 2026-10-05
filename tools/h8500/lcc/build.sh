@@ -24,9 +24,13 @@ fi
 
 L=$TC/lcc
 # moppe's fixes to lcc itself (lcc.patch): hex constants try unsigned int
-# before long; sizeof and pointer differences use the pointer-sized ints
-git -C "$L" apply --reverse --check "$HERE/lcc.patch" 2>/dev/null ||
+# before long; sizeof and pointer differences use the pointer-sized ints;
+# unsigned long to float masks with an unsigned long 1.  A changed patch
+# is applied to clean sources.
+git -C "$L" apply --reverse --check "$HERE/lcc.patch" 2>/dev/null || {
+    git -C "$L" checkout -- src
     git -C "$L" apply "$HERE/lcc.patch"
+}
 # the back end, with the %term list for this target's type sizes
 python3 "$HERE/gen_terms.py" "$L/src/ops.h" > "$HERE/terms.inc"
 sed -e "/^%include terms.inc/r $HERE/terms.inc" -e "/^%include terms.inc/d" \

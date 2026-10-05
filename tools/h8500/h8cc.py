@@ -74,11 +74,11 @@ def load(path, k, args):
 
 def defs(text):
     """global names a unit defines (C names start with one underscore)"""
-    return set(re.findall(r"^(_[A-Za-z]\w*):", text, re.M))
+    return set(re.findall(r"^(_+[A-Za-z]\w*):", text, re.M))
 
 
 def refs(text):
-    return set(re.findall(r"(?<![\w$])(_[A-Za-z]\w*)", text)) - defs(text)
+    return set(re.findall(r"(?<![\w$])(_+[A-Za-z]\w*)", text)) - defs(text)
 
 
 def split(text):
@@ -109,11 +109,12 @@ def main():
 
     inputs = [args.crt or os.path.join(LIB, "crt0.asm")] + args.files
     inputs.append(os.path.join(LIB, "rt.asm"))
-    library = []
+    libdirs = ["rt"]
     if args.lib == "sim":
         inputs.append(os.path.join(LIB, "sim.asm"))
-        libc = os.path.join(LIB, "libc")
-        library = sorted(os.path.join(libc, f) for f in os.listdir(libc) if f.endswith(".c"))
+        libdirs.append("libc")
+    library = sorted(os.path.join(LIB, d, f) for d in libdirs
+                     for f in os.listdir(os.path.join(LIB, d)) if f.endswith((".c", ".asm")))
     units = [(path, load(path, k, args)) for k, path in enumerate(inputs)]
     # library units only when they define something still undefined
     libunits = [(path, load(path, 100 + k, args)) for k, path in enumerate(library)]

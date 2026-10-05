@@ -33,6 +33,11 @@ __clear:
 	clr.b	@r0+
 	bra	__clear
 __cleared:
+	clr.w	r0			; main(0, argv) with argv[0] == NULL
+	mov.w	r0,@-sp
+	mov.w	sp,r1
+	mov.w	r1,@-sp
+	mov.w	r0,@-sp
 	jsr	@_main
 	mov.w	r0,@-sp
 	jsr	@_exit

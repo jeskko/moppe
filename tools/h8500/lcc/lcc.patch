@@ -15,7 +15,7 @@ index 2eb451a..cde0ea3 100755
  		typeerror(op, l, r);
  	return simplify(op, ty, l, r);
 diff --git a/src/expr.c b/src/expr.c
-index 36739fc..8092536 100755
+index 36739fc..7dee841 100755
 --- a/src/expr.c
 +++ b/src/expr.c
 @@ -210,7 +210,9 @@ static Tree unary(void) {
@@ -29,6 +29,42 @@ index 36739fc..8092536 100755
  				      } } break;
  	case '(':
  		t = gettok();
+@@ -570,17 +572,26 @@ Tree cast(Tree p, Type type) {
+ 					break;
+ 				case UNSIGNED:
+ 					if (isfloat(dst)) {
++						/* u fitting the signed type converts as that;
++						   else ((u>>1)|(u&1)) * 2, the shifted-out bit
++						   kept as a sticky bit so that it rounds once
++						   (lcc had (u>>1)*2.0 + (u&1), which rounds twice
++						   when float is narrower than unsigned) */
+ 						Type ssrc = signedint(src);
+-						Tree two = cnsttree(longdouble, (long double)2.0);
+-						p = (*optree['+'])(ADD,
++						Tree c = cnsttree(src, (unsigned long)ssrc->u.sym->u.limits.max.i);
++						if (src->size < longtype->size)	/* exact through long */
++							p = cast(simplify(CVU, longtype, p, NULL), dst);
++						else
++						p = condtree(
++							simplify(LE, src, p, c),
++							cast(simplify(CVU, ssrc, p, NULL), dst),
+ 							(*optree['*'])(MUL,
+-								two,
+-								simplify(CVU, ssrc,
+-									simplify(RSH, src,
+-										p, consttree(1, inttype)), NULL)),
+-							simplify(CVU, ssrc,
+-								simplify(BAND, src,
+-									p, consttree(1, unsignedtype)), NULL));
++								cnsttree(dst, (long double)2.0),
++								cast(simplify(CVU, ssrc,
++									simplify(BOR, src,
++										simplify(RSH, src, p, consttree(1, inttype)),
++										simplify(BAND, src, p, consttree(1, src))),
++									NULL), dst)));
+ 					} else
+ 						p = simplify(CVU, dst, p, NULL);
+ 					break;
 diff --git a/src/lex.c b/src/lex.c
 index af8a78f..7c9da3c 100755
 --- a/src/lex.c
