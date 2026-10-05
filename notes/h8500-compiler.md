@@ -54,24 +54,39 @@ deletion, then subexpressions to 1; weak on blocks).
 
 `tools/h8500/binutils/build.sh` builds gas, ld, objdump, objcopy, nm and
 size for `h8500-hms` (2.16.1, the last release with the target; its
-H8/500 files are 2.15's plus cleanups, opcode table identical). Patched
-(`binutils/h8500.patch`): gas emitted `rtd #xx:16` as 0x14 (the 8-bit
-opcode; 0x1C per the manual and the emulator), RTE was missing, the
-disassembler table's `mov:g.w #xx:8` and `cmp:g.w #xx:8` bugs (from
-r40work), one header line modern gcc rejects.
+H8/500 files are 2.15's plus cleanups, opcode table identical; a changed
+`h8500.patch` triggers a fresh extract and build). Patched:
 
-`tools/h8500/check_gas.py` (like check_asl.py; each instruction
-assembled alone at its address, ~2 s): all **8028 executed ROM
-instructions: 7866 byte-identical, 162 the same instruction in a longer
-encoding, 0 wrong**. The 7 word STC/LDC SR forms dis2 cannot decode
-also assemble to the ROM's bytes (checked by hand). ld links COFF objects
-(cross-file calls and data relocated; a two-file program ran on h8run).
+- opcode table: `rtd #xx:16` is 0x1C (gas emitted 0x14, the 8-bit
+  opcode), RTE added, the disassembler table's `mov:g.w #xx:8` /
+  `cmp:g.w #xx:8` fixes from r40work.
+- gas: `mov:g.w` / `cmp:g.w` to a general EA use the sign-extended
+  `#xx:8` form (06 / 04) for constants in -128..127 or 0xff80..0xffff;
+  `#xx:8` / `#xx:16` written explicitly are honoured (`:8` out of range
+  or without such a form is an error). A word op with an *immediate
+  source EA* has no 8-bit form: 0x04 there means a byte operation
+  (`add.w #5,r0` stays `0C 0005 20`). `bra.w`/`beq.w`/`bsr.w label`
+  accepted. A branch to a number (`bra 0x1234`) no longer segfaults: a
+  16-bit branch with an absolute reloc. Explicit 16-bit branches
+  (`bra l:16`) were 2 bytes off (`md_pcrel_from` used the fix size 4).
+- bfd/ld: `R_H8500_PCREL16` was computed from field+1 (linked 16-bit
+  branches landed one byte past the target); relocs are applied in
+  address order (gas writes a relaxed branch's reloc last, which was
+  then applied in the wrong place).
+- one header line modern gcc rejects.
 
-Limits found: gas segfaults on a branch to a numeric address (`bra
-0x1234`, or to an `=` symbol), branches to labels only; no way to force
-a size (`bra.w`, `#5:8` on word ops: it picks, often the 16-bit form);
-comments are `!` (`;` separates statements). Versus asl: a real linker
-(objects, sections, linker scripts with the h8500s/m/c/b model
+Tests: `tools/h8500/binutils/test_gas.py` (immediate boundaries,
+explicit sizes and errors, RTD/RTE, every branch form, two objects
+linked at 0 and 0x2000; the build without the gas/bfd patches fails 16 checks and cannot assemble the link test) and
+`tools/h8500/check_gas.py` (each executed ROM instruction assembled
+alone at its address, ~2 s): **8028 instructions, 8023 byte-identical,
+5 `cmp:g.w #xx:16,Rn` in the other equal-length form, 0 wrong**. The 7
+word STC/LDC SR forms dis2 cannot decode assemble to the ROM's bytes
+(checked by hand). ld links COFF objects; a two-file program ran on
+h8run.
+
+Still: comments are `!` (`;` separates statements). Versus asl: a real
+linker (objects, sections, linker scripts with the h8500s/m/c/b model
 emulations, archives); lcc's output would need gas syntax.
 
 ## ABI and model

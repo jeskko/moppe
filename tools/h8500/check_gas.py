@@ -39,8 +39,7 @@ def to_gas(mnem, ops, a):
         parts = ca.split_ops(ops)
         tgt = re.fullmatch(r"#?(0x[0-9a-f]+)(?::(?:8|16))?", parts[-1].strip())
         t = (a >> 16) << 16 | int(tgt.group(1), 16)
-        mn = mnem[:-2] if mnem.endswith(".w") else mnem      # gas: no bra.w
-        return "%s\t%s" % (mn, ",".join(parts[:-1] + ["T"])), t
+        return "%s\t%s" % (mnem, ",".join(parts[:-1] + ["T"])), t
     ops = re.sub(r"#(-?\w+):(?:q|4)\b", r"#\1", ops)          # add:q #2:q, bit #3:4
     if mnem.endswith(".w"):     # word op, #xx:8: sign-extended
         ops = re.sub(r"#0x([0-9a-f]+):8", lambda x: "#%d:8" % (int(x.group(1), 16) - 256)
@@ -135,18 +134,23 @@ def main():
             o = re.sub(r"(?<![\w(])-?\d+(?![\w)])", lambda x: str(int(x.group(0)) & 0xFFFF), o)
         return m, o
 
-    bad, other, longer = [], 0, 0
+    bad, other, longer, longk = [], 0, 0, {}
     for a in rest:
         n, mnem, ops = ref[a]
         n2, mnem2, ops2 = new[a]
         if canon(mnem, ops) == canon(mnem2, ops2) and n2 == len(code[a]):
             other += 1
             longer += len(code[a]) > n
+            k = "%s %s %s" % ("longer" if len(code[a]) > n else "other ", mnem,
+                              re.sub(r"0x[0-9a-f]+|\d+", "n", ops))
+            longk.setdefault(k, []).append((a, ops, rom[a:a + n].hex(), code[a].hex()))
         else:
             bad.append((a, mnem + " " + ops, gas_of[a], code[a].hex(), mnem2 + " " + ops2))
     print("%d instructions: %d identical bytes, %d other encoding of the same "
           "(%d longer), %d differ, %d gas errors"
           % (len(gas_of), len(exact), other, longer, len(bad), len(errs)))
+    for k, v in sorted(longk.items(), key=lambda x: -len(x[1])):
+        print("  %s x%-4d %-34s e.g. %05x %s -> %s" % (k[:6], len(v), k[7:], v[0][0], v[0][2], v[0][3]))
     kinds = {}
     for a, e in errs:
         k = gas_of[a].split("\t")[0]

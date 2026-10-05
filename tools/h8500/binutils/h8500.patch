@@ -1,5 +1,5 @@
 --- a/opcodes/h8500-opc.h	2005-03-03 13:49:48.000000000 +0200
-+++ b/opcodes/h8500-opc.h	2026-10-06 00:43:29.197549503 +0300
++++ b/opcodes/h8500-opc.h	2026-10-06 01:23:11.416096905 +0300
 @@ -476,7 +476,7 @@
  {46,'-','B','S','S',O_SCB_EQ|O_UNSZ,"scb/eq",2,{RS,PCREL8},3,	{{0x07,0xff,0 },{0xb8,0xf8,RS },{0x00,0x00,PCREL8 }}},
  {47,'-','B','!','!',O_RTS|O_UNSZ,"rts",0,{0,0},1,	{{0x19,0xff,0 }}},
@@ -102,7 +102,7 @@
  #endif
  ;
 --- a/gas/write.c	2005-03-03 03:29:53.000000000 +0200
-+++ b/gas/write.c	2026-10-06 00:39:15.180561920 +0300
++++ b/gas/write.c	2026-10-06 01:23:11.417208849 +0300
 @@ -2032,6 +2032,7 @@
  #endif /* ! BFD  */
  
@@ -112,7 +112,7 @@
  /* Relax a fragment by scanning TC_GENERIC_RELAX_TABLE.  */
  
 --- a/gas/config/tc-h8500.h	2003-04-15 11:51:53.000000000 +0300
-+++ b/gas/config/tc-h8500.h	2026-10-06 00:39:15.179355874 +0300
++++ b/gas/config/tc-h8500.h	2026-10-06 01:23:11.417749464 +0300
 @@ -53,5 +53,5 @@
  
  #define md_operand(x)
@@ -120,3 +120,264 @@
 -extern struct relax_type md_relax_table[];
 +/* moppe: md_relax_table is declared in write.c, where struct relax_type is complete */
  #define TC_GENERIC_RELAX_TABLE md_relax_table
+--- a/gas/config/tc-h8500.c	2005-02-23 14:28:04.000000000 +0200
++++ b/gas/config/tc-h8500.c	2026-10-06 01:24:06.205253471 +0300
+@@ -149,6 +149,7 @@
+ 
+ static int immediate_inpage;
+ static expressionS immediate;	/* immediate expression */
++static int immediate_size;	/* moppe: 8 or 16 when written #xx:8 / #xx:16 */
+ 
+ static expressionS absolute;	/* absolute expression */
+ 
+@@ -158,6 +159,7 @@
+   unsigned int reg;
+   expressionS exp;
+   int page;
++  int size;			/* moppe: 8, 16 or 24 when written :n, else 0 */
+ }
+ 
+ h8500_operand_info;
+@@ -305,6 +307,7 @@
+      int size24;
+ {
+   ptr = parse_exp (ptr, &exp->exp, &exp->page);
++  exp->size = 0;
+   if (*ptr == ':')
+     {
+       ptr++;
+@@ -312,11 +315,13 @@
+ 	{
+ 	  ptr++;
+ 	  exp->type = size8;
++	  exp->size = 8;
+ 	}
+       else if (ptr[0] == '1' && ptr[1] == '6')
+ 	{
+ 	  ptr += 2;
+ 	  exp->type = size16;
++	  exp->size = 16;
+ 	}
+       else if (ptr[0] == '2' && ptr[1] == '4')
+ 	{
+@@ -326,6 +331,7 @@
+ 	    }
+ 	  ptr += 2;
+ 	  exp->type = size24;
++	  exp->size = 24;
+ 	}
+       else
+ 	{
+@@ -448,6 +454,7 @@
+   unsigned int num;
+   unsigned int len;
+   op->page = 0;
++  op->size = 0;
+   if (src[0] == '(' && src[1] == 'r')
+     {
+       /* This is a register list */
+@@ -740,7 +747,9 @@
+ 		}
+ 	      break;
+ 	    case PCREL16:
+-	      if (user->type == PCREL16)
++	      /* moppe: bra.w label (no :16) */
++	      if (user->type == PCREL16
++		  || (user->type == PCREL8 && user->size == 0))
+ 		{
+ 		  displacement = user->exp;
+ 		  continue;
+@@ -761,6 +770,7 @@
+ 		{
+ 		  immediate_inpage = user->page;
+ 		  immediate = user->exp;
++		  immediate_size = user->size;
+ 		  continue;
+ 		}
+ 	      break;
+@@ -936,13 +946,86 @@
+ 
+ static void build_bytes PARAMS ((h8500_opcode_info *, h8500_operand_info *));
+ 
++/* moppe: the table has only #xx:16 for MOV:G.W and CMP:G.W with an
++   immediate source and a general EA destination (0x07, 0x05 after the
++   EA).  The CPU also has #xx:8 there (0x06, 0x04), sign-extended to the
++   word: use it for a constant in -128..127 (or 0xff80..0xffff) unless
++   written #xx:16, and insist on it when written #xx:8.  (An immediate
++   source EA is another matter: 0x04 there is a byte operation, 0x0C a
++   word one, so word operations have no #xx:8 source.)  Returns OPCODE or
++   a shortened copy in *COPY.  */
++
++static h8500_opcode_info *shrink_imm
++  PARAMS ((h8500_opcode_info *, h8500_opcode_info *));
++
++static h8500_opcode_info *
++shrink_imm (opcode, copy)
++     h8500_opcode_info *opcode;
++     h8500_opcode_info *copy;
++{
++  int k, i, short_op;
++  long v;
++
++  for (k = 1; k < opcode->length; k++)
++    if (opcode->bytes[k].insert == IMM16)
++      break;
++  if (k >= opcode->length)
++    return opcode;
++  for (i = 0; i < opcode->length; i++)
++    if (opcode->bytes[i].insert == CR || opcode->bytes[i].insert == CRB
++	|| opcode->bytes[i].insert == CRW)
++      return opcode;
++  switch (opcode->bytes[k - 1].contents)
++    {
++    case 0x07: short_op = 0x06; break;
++    case 0x05: short_op = 0x04; break;
++    default: short_op = -1; break;
++    }
++  if (opcode->bytes[k - 1].mask != 0xff || opcode->bytes[k - 1].insert != 0)
++    short_op = -1;
++  if (immediate_size == 16)
++    return opcode;
++  if (short_op < 0)
++    {
++      if (immediate_size == 8)
++	as_bad (_("no #xx:8 form of this instruction"));
++      return opcode;
++    }
++  if (immediate.X_op != O_constant || immediate_inpage)
++    {
++      if (immediate_size == 8)
++	as_bad (_("#xx:8 needs a constant"));
++      return opcode;
++    }
++  v = immediate.X_add_number;
++  if (v >= 0xff80 && v <= 0xffff)
++    v -= 0x10000;
++  if (v < -128 || v > 127)
++    {
++      if (immediate_size == 8)
++	as_bad (_("#xx:8 of a word operation is sign-extended: -128..127"));
++      return opcode;
++    }
++  *copy = *opcode;
++  copy->bytes[k - 1].contents = short_op;
++  copy->bytes[k].insert = IMM8;
++  for (i = k + 1; i < opcode->length - 1; i++)
++    copy->bytes[i] = opcode->bytes[i + 1];
++  copy->length--;
++  immediate.X_add_number = v;
++  return copy;
++}
++
+ static void
+ build_bytes (opcode, operand)
+      h8500_opcode_info *opcode;
+      h8500_operand_info *operand;
+ {
+   int index;
++  h8500_opcode_info copy;
+ 
++  opcode = shrink_imm (opcode, &copy);
++  immediate_size = 0;
+   if (pcrel8)
+     {
+       pcrel8 = 0;
+@@ -1346,12 +1429,14 @@
+       wordify_scb (buffer, &disp_size, &inst_size);
+ 
+       /* Make a reloc */
++      /* moppe: pc-relative when there is no symbol (a branch to a
++	 number), so that it becomes an absolute reloc, not a constant */
+       fix_new (fragP,
+ 	       fragP->fr_fix + inst_size,
+ 	       4,
+ 	       fragP->fr_symbol,
+ 	       fragP->fr_offset,
+-	       0,
++	       fragP->fr_symbol == NULL,
+ 	       R_H8500_PCREL16);
+ 
+       fragP->fr_fix += disp_size + inst_size;
+@@ -1453,7 +1538,10 @@
+     case C (SCB_TST, UNDEF_BYTE_DISP):
+       what = GET_WHAT (fragP->fr_subtype);
+       /* used to be a branch to somewhere which was unknown */
+-      if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
++      /* moppe: a branch to a number (bra 0x1234) has no symbol (this
++	 crashed): 16 bits, an absolute reloc for the linker */
++      if (fragP->fr_symbol != NULL
++	  && S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
+ 	{
+ 	  /* Got a symbol and it's defined in this segment, become byte
+ 	     sized - maybe it will fix up.  */
+@@ -1499,7 +1587,11 @@
+ md_pcrel_from (fixP)
+      fixS *fixP;
+ {
+-  return fixP->fx_size + fixP->fx_where + fixP->fx_frag->fr_address;
++  /* moppe: the end of the displacement field (fixes are all made with
++     fx_size 4, which put explicit 16-bit branches 2 bytes off) */
++  int size = fixP->fx_r_type == R_H8500_PCREL8 ? 1
++    : fixP->fx_r_type == R_H8500_PCREL16 ? 2 : fixP->fx_size;
++  return size + fixP->fx_where + fixP->fx_frag->fr_address;
+ }
+ 
+ void
+--- a/bfd/coff-h8500.c	2005-03-03 13:40:56.000000000 +0200
++++ b/bfd/coff-h8500.c	2026-10-06 01:24:06.205779513 +0300
+@@ -272,8 +272,9 @@
+ 	bfd_vma dot = link_order->offset
+ 	  + *dst_ptr
+ 	    + link_order->u.indirect.section->output_section->vma;
+-	int gap = dst - dot - 1; /* -1 since were in the odd byte of the
+-				    word and the pc's been incremented.  */
++	/* moppe: the PC is past the 2-byte field (was -1, as for PCREL8:
++	   16-bit branches landed one byte past their target) */
++	int gap = dst - dot - 2;
+ 
+ 	if (gap > 32767 || gap < -32768)
+ 	  {
+--- a/bfd/reloc16.c	2004-06-29 16:51:20.000000000 +0300
++++ b/bfd/reloc16.c	2026-10-06 01:24:06.206084045 +0300
+@@ -136,6 +136,23 @@
+     }
+ }
+ 
++/* moppe: the code below walks the relocs in address order, copying the
++   bytes between them; gas (h8500) can write a relaxed branch's reloc
++   after later ones, which was then applied in the wrong place.  */
++
++static int reloc16_cmp PARAMS ((const PTR, const PTR));
++
++static int
++reloc16_cmp (a, b)
++     const PTR a;
++     const PTR b;
++{
++  bfd_vma x = (*(arelent * const *) a)->address;
++  bfd_vma y = (*(arelent * const *) b)->address;
++
++  return x < y ? -1 : x > y;
++}
++
+ bfd_boolean
+ bfd_coff_reloc16_relax_section (abfd, input_section, link_info, again)
+      bfd *abfd;
+@@ -171,6 +188,8 @@
+       free (reloc_vector);
+       return FALSE;
+     }
++  if (reloc_count > 1)
++    qsort (reloc_vector, (size_t) reloc_count, sizeof (arelent *), reloc16_cmp);
+ 
+   /* The reloc16.c and related relaxing code is very simple, the price
+      for that simplicity is we can only call this function once for
+@@ -286,6 +305,8 @@
+       free (reloc_vector);
+       return NULL;
+     }
++  if (reloc_count > 1)
++    qsort (reloc_vector, (size_t) reloc_count, sizeof (arelent *), reloc16_cmp);
+ 
+   if (reloc_count > 0)
+     {

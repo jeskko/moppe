@@ -14,8 +14,19 @@
 #   gas/write.c, gas/config/tc-h8500.h
 #                        md_relax_table declared where struct relax_type
 #                        is complete (modern gcc rejects the old header)
+#   gas/config/tc-h8500.c
+#                        MOV:G.W / CMP:G.W #xx:8 (sign-extended) for small
+#                        constants, explicit #xx:8 / #xx:16 honoured;
+#                        bra.w etc. without :16; a branch to a number no
+#                        longer crashes (absolute reloc); explicit 16-bit
+#                        branches were 2 bytes off (md_pcrel_from)
+#   bfd/coff-h8500.c     PCREL16 from the end of the field (linked 16-bit
+#                        branches landed one byte past the target)
+#   bfd/reloc16.c        relocs applied in address order (gas writes a
+#                        relaxed branch's reloc last)
+# Tests: tools/h8500/binutils/test_gas.py, tools/h8500/check_gas.py.
 # Results: reference/toolchain/binutils-h8500/bin/h8500-hms-{as,ld,objdump,
-# objcopy,nm,size}.  Check: tools/h8500/check_gas.py.
+# objcopy,nm,size}.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 TOP=$(cd "$HERE/../../.." && pwd)
@@ -24,11 +35,13 @@ V=binutils-2.16.1
 mkdir -p "$TC"
 cd "$TC"
 [ -f $V.tar.bz2 ] || curl -sfLO https://ftp.gnu.org/gnu/binutils/$V.tar.bz2
-if [ ! -f $V/.moppe-patched ]; then
-    rm -rf $V
+# a changed patch: fresh sources and build
+SUM=$(md5sum < "$HERE/h8500.patch")
+if [ "$(cat $V/.moppe-patched 2>/dev/null)" != "$SUM" ]; then
+    rm -rf $V binutils-h8500/build
     tar xjf $V.tar.bz2
     patch -s -d $V -p1 < "$HERE/h8500.patch"
-    touch $V/.moppe-patched
+    echo "$SUM" > $V/.moppe-patched
 fi
 mkdir -p binutils-h8500/build
 cd binutils-h8500/build

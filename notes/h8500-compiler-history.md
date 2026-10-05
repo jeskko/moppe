@@ -39,3 +39,11 @@
   #xx:16, so the ROM's `rtd #2` (14 02) plus the next byte read back as
   `rtd #0x212` and reassembled to the same bytes. The check now takes
   RTD and RTE from the bytes; the table is fixed.
+- Patched gas's limits the same day. The first try at short immediates
+  also shrank `0C imm16` source operands to `04 imm8`: wrong, 0x04 as a
+  source EA is a byte operation (objdump showed add.w as add:g.b);
+  only the destination-EA forms of MOV:G/CMP:G have a sign-extended
+  #xx:8. Making `bra.w` work exposed two off-by-N bugs that had never
+  been reached (gas's md_pcrel_from, bfd's PCREL16) and unsorted relocs
+  in the linker. Relaxed branches had always been right: md_convert_frag
+  computes them itself.
