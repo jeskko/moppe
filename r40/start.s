@@ -47,8 +47,9 @@
 	.endr
 	.org	0x180		! 100-17F: DTC vectors (DTC unused)
 
-	.global	reset
+	.global	reset, _reset
 reset:
+_reset:
 	ldc.w	#0x0700,sr	! also after a jump here, not only a reset
 	ldc.b	#8,tp
 	mov.w	#__stack,sp	! (16-bit relocations keep the low word)

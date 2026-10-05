@@ -68,11 +68,15 @@ static void push(int k)
 	}
 }
 
+static void scan(void);
+
+/* a key held at power-on (PWR, usually) is down, not pressed */
 void keypad_init(void)
 {
 	wr(IC200, LIGHTS);	/* rows low */
 	wr(IC190, 0xFF);	/* columns, PWR, hook: inputs */
-	(void)rd(IC190);	/* releases /INT */
+	scan();
+	qhead = qtail = 0;
 }
 
 static void scan(void)

@@ -24,6 +24,7 @@ extern volatile unsigned ticks;		/* +1 every 10 ms */
 void hw_init(void);
 void ei(void);				/* start.s */
 void di(void);
+void reset(void);
 void wdog_kick(void);
 void delay_ticks(unsigned n);		/* kicks the watchdog meanwhile */
 void out0(unsigned char v);

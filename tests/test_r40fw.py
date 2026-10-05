@@ -111,14 +111,56 @@ class Keypad(unittest.TestCase):
         r.press("9", hold=0.05, gap=0.3)
         self.assertEqual(r.display()[2][8:], "Key 9")
 
-    def test_pwr_key(self):
+    def test_volume_keys(self):
+        # UP / DOWN set the volume (IC40 bits 6-4) for now
         r = booted()
-        r.power_key(True)
-        r.run(0.3)
-        r.power_key(False)
-        r.run(0.3)
-        self.assertEqual(r.display()[2][8:], "Key PWR")
+        self.assertEqual(r.sreg(1), 0x30)
+        r.press("UP")
+        r.press("UP")
+        self.assertEqual((r.display()[1][14:], r.sreg(1)), ("Vol 5", 0x50))
+        r.press("DOWN")
+        self.assertEqual((r.display()[1][14:], r.sreg(1)), ("Vol 4", 0x40))
 
+
+def pwr(r, hold=0.3, gap=0.5):
+    r.power_key(True)
+    r.run(hold)
+    r.power_key(False)
+    r.run(gap)
+
+
+class Power(unittest.TestCase):
+    def test_audio_switches_at_boot(self):
+        # the Nokia firmware's receive state with the squelch closed: mic
+        # and receiver audio muted, spacing gain; volume 3, amplifier off;
+        # deviation bits 0111
+        r = booted()
+        self.assertEqual([r.sreg(i) for i in range(3)], [0x0B, 0x30, 0x07])
+
+    def test_pwr_held_at_power_on_is_not_a_press(self):
+        r = Radio(ROM, power=False)
+        r.power_key(True)
+        r.power(True)
+        r.run(1.0)
+        r.power_key(False)
+        r.run(0.5)
+        self.assertEqual(r.display()[0], "R40 ham")
+        self.assertEqual(r.take_events("POWEROFF"), [])
+
+    def test_pwr_switches_off_and_on(self):
+        # IC39 bit 2 cuts the supply; if it stays on (ignition), PWR
+        # starts the firmware again
+        r = booted()
+        pwr(r)
+        self.assertEqual(len(r.take_events("POWEROFF")), 1)
+        self.assertEqual(r.sreg(0) & 0x07, 0x07)     # off, mic and audio muted
+        self.assertEqual(r.display(), ["", "", ""])
+        r.press("5")
+        self.assertEqual(r.display(), ["", "", ""])
+        pwr(r, gap=1.5)
+        self.assertEqual(r.display()[0], "R40 ham")
+        self.assertEqual(r.sreg(0), 0x0B)
+        self.assertEqual(faults(r), [])
 
 if __name__ == "__main__":
     unittest.main()

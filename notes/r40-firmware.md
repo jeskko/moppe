@@ -12,32 +12,35 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 ## Start here (next session)
 
 State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
-`python3 -m unittest test_r40fw` (in `tests/`) runs 7 scenarios; `make
+`python3 -m unittest test_r40fw` (in `tests/`) runs 10 scenarios; `make
 -C r40 run` opens it in the emulator's TUI. It boots, shows "R40 ham /
-Hello, world" and a seconds counter, and shows the last key pressed.
+Hello, world" and a seconds counter and the last key; UP/DOWN set the
+volume; PWR switches off (IC39 OFF), PWR held at power-on is ignored.
 Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
 Next, each checked in the emulator before the next:
 
-1. **Serial bus and power**: the three 4094s (audio switches, volume,
-   deviation, the power-off bit IC39.2), MC144111 DAC; OH5NXO's
-   `serbus.s` is the reference, his `PINS` and the board description
-   disagree on bit meanings (r40.md gap 4): settle them from the Nokia
-   firmware's SR events in the emulator. Then power-off on PWR.
-2. **RX**: PLL to a 6.25 kHz channel (RX VCO = f + 45 MHz, 128/129
+1. **RX**: PLL to a 6.25 kHz channel (RX VCO = f + 45 MHz, 128/129
    prescaler, R = 1024, OH5NXO's `pll.s`; the emulator's `pll()` reads
-   it back), audio unmute and noise squelch (AN1), RSSI (AN0).
-3. The VFO UI (frequency entry, UP/DOWN steps), then NV storage (battery
-   SRAM at 0x80000: needs a NOLOAD section, so a linker script of our
-   own or `h8cc.py --script`), TX (TX ON OUT1.0, PTT P7.3, TX
-   synthesizer parked +62.5 kHz until PTT), duplex split, memories,
-   scan, settings.
+   it back), squelch from the noise input (AN1; high = noise) driving
+   `audio_rx()`, RSSI (AN0). The RX tuning DAC (RFC, MC144111 channel
+   2) wants Nokia's calibration from NV (r40.md gap 3); `dac_write()`
+   exists but is unused.
+2. The VFO UI (frequency entry, UP/DOWN steps; volume then moves to
+   another key), then NV storage (battery SRAM at 0x80000: needs a
+   NOLOAD section, so a linker script of our own or `h8cc.py
+   --script`), TX (TX ON OUT1.0, PTT P7.3, TX synthesizer parked +62.5
+   kHz until PTT; `audio_tx()`), duplex split, memories, scan,
+   settings. Key beeps: TMO (8-bit timer) with IC41 SIGN LSP + IC40
+   PWRAMP.
 
 Open questions to keep in view: the gaps list in r40.md (CTCSS path,
-calibration tables, 4094 bit meanings, PLL lock timing, no hardware
-checks yet); whether the real CU43 needs the slower Nokia-like I2C
-pacing; what P1.5 does when the PCF8574 /INT and the IRQ0 function share
-it on hardware (the emulator reads the pin).
+calibration tables, PLL lock timing, no hardware checks yet); whether
+the real CU43 needs the slower Nokia-like I2C pacing; what P1.5 does
+when the PCF8574 /INT and the IRQ0 function share it on hardware (the
+emulator reads the pin); whether the supply really drops on IC39 OFF
+with the ignition line high (the firmware then waits for PWR and
+restarts).
 
 ## Firmware layout
 
@@ -48,9 +51,11 @@ it on hardware (the emulator reads the pin).
 | `r40/hw.c`, `hw.h` | ports, OUT0/OUT1 latches with shadows, 100 Hz tick (`ticks`), `wdog_kick` (P9.0 pulse + WDT A57F/5A00), `delay_ticks` |
 | `r40/i2c.c` | PCF8584, polled: `i2c_write(addr, hdr, nh, data, nd)`, `i2c_read`; S2 = 0x11 (45 kHz, as Nokia); gives up after 2000 polls |
 | `r40/lcd.c`, `font.c` | text buffer 3 x 24, dirty rows sent as `78 F0+row E0 18` + 120 columns; top row 20 characters around gap cells 2, 9, 14, 21 |
-| `r40/keypad.c` | CU43 matrix, PWR, hook; `key_get()` queue of presses |
+| `r40/keypad.c` | CU43 matrix, PWR, hook; `key_get()` queue of presses; a key held at power-on is not a press |
+| `r40/serbus.c` | serial bus bit-banging: `sr_write(n, v)` (4094 + OUT1 strobe), `dac_write()` (MC144111, 4 x 6 bits) |
+| `r40/audio.c` | the 4094 states: `audio_rx(open)`, `audio_tx(on)`, `audio_volume()`, `power_off()`; differs from Nokia in keeping RX audio muted in TX |
 | `r40/main.c` | the main loop (hello + key display for now) |
-| `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys |
+| `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys, volume, 4094 boot state, power off/on |
 
 Conventions: C runs with DP = EP = TP = 8, BR = FF. Only `xin`/`xout`
 change EP; the interrupt entry saves it and sets 8 for C. Main loop

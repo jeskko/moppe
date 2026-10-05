@@ -69,3 +69,21 @@ emulator. Changes against the plan:
 - Keypad: scanned when P1.5 (IC190 /INT) is low, and every 100 ms while
   a key is down. All 18 known keys, PWR and the unknown row-4 positions
   decode in the emulator.
+
+## 2026-10-06: serial bus, audio switches, power-off
+
+The 4094 bit meanings (r40.md gap 4) settled by running the Nokia
+firmware in the emulator: boot, volume UP/DOWN ("Volume level n" =
+IC40 bits 6-4), beeps (IC40 bit 3 + IC41 bit 7), PWR (IC39 00001101,
+bit 2), service-mode PTT, and normal-mode simplex (`*55*30#` after four
+CLRs) with the noise input AN1 swept: IC39 bit 1 follows it (1 =
+muted on noise). Service mode never squelches (bit 1 stays 1 whatever
+the inputs). The board description's numbering matches the emulator's
+`sreg()` bit numbers; OH5NXO's `PINS` does not for IC40/IC41. In TX
+Nokia unmutes the RX audio (IC39 08); ours keeps it muted.
+
+Firmware: `serbus.c` (shift MSB first, strobe pulse on OUT1), `audio.c`
+(the states), PWR → `power_off()`, then wait for PWR and restart (for
+an ignition-held supply). The keypad's first scan at start-up now only
+records the keys held, so the PWR press that switched the radio on is
+not taken as "off".
