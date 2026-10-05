@@ -2,7 +2,7 @@
    precision (float and double are both 32 bits), round to nearest even.
    Simplifications: denormal inputs read as zero and results that would
    be denormal become zero; NaNs are not distinguished from infinities
-   in comparisons.  Called through the register shims in floatrt.asm;
+   in comparisons.  Called through the register shims in floatrt.s;
    values are passed as their bit patterns. */
 
 typedef unsigned long u32;
@@ -180,7 +180,7 @@ u32 _itofp(long i)
 
 	if (i < 0) {
 		s = SIGN;
-		m = -m;
+		m = 0 - m;
 	}
 	return pack(s, 127 + 30, m);
 }

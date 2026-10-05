@@ -1,8 +1,8 @@
 /* malloc for test programs: a bump allocator from the end of bss
-   (__bss_end, from h8cc) towards the stack; free() does nothing */
+   (__bss_end, from the linker script) towards the stack; free() does nothing */
 #include <stdlib.h>
 
-extern char _bss_end[];		/* asl: __bss_end */
+extern char _bss_end[];		/* __bss_end, from the linker script */
 static char *brk;
 
 void *malloc(size_t n)

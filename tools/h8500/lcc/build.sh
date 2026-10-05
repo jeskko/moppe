@@ -1,5 +1,7 @@
 #!/bin/sh
-# Build lcc with the H8/500 back end (h8500.md) and the AS assembler.
+# Build lcc with the H8/500 back end (h8500.md), GNU binutils for the
+# H8/500 (../binutils/build.sh: gas, ld, ar; h8cc.py uses them) and AS
+# (asl, kept for check_asl.py).
 #
 #   tools/h8500/lcc/build.sh
 #
@@ -8,7 +10,8 @@
 #             to use and redistribute with acknowledgement, not to sell)
 #   AS (asl)  http://john.ccac.rwth-aachen.de:8000/as/  (GPL)
 # Results: reference/toolchain/lcc/build/{rcc,cpp}, reference/toolchain/
-# asl-current/{asl,p2bin}, tools/h8500/h8run.
+# asl-current/{asl,p2bin}, reference/toolchain/binutils-h8500/bin,
+# tools/h8500/h8run.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 TOP=$(cd "$HERE/../../.." && pwd)
@@ -35,8 +38,9 @@ git -C "$L" apply --reverse --check "$HERE/lcc.patch" 2>/dev/null || {
 python3 "$HERE/gen_terms.py" "$L/src/ops.h" > "$HERE/terms.inc"
 sed -e "/^%include terms.inc/r $HERE/terms.inc" -e "/^%include terms.inc/d" \
     "$HERE/h8500.md" > "$L/src/h8500.md"
+sed -i 's|^xx(h8500/asl, |xx(h8500/gas, |' "$L/src/bind.c"	# the old name
 grep -q h8500IR "$L/src/bind.c" ||
-    sed -i 's|^xx(x86/linux,    x86linuxIR) \\|&\nxx(h8500/asl,    h8500IR) \\|' "$L/src/bind.c"
+    sed -i 's|^xx(x86/linux,    x86linuxIR) \\|&\nxx(h8500/gas,    h8500IR) \\|' "$L/src/bind.c"
 grep -q 'Bh8500' "$L/makefile" || {
     sed -i 's|^\t\$Bx86linux\$O$|&\\\n\t$Bh8500$O|' "$L/makefile"
     printf '\n$Bh8500$O:\t$Bh8500.c;\t$(CC) $(CFLAGS) -c -Isrc -o $@ $Bh8500.c\n$Bh8500.c:\t$Blburg$E src/h8500.md; $Blburg src/h8500.md $@\n' >> "$L/makefile"
@@ -44,4 +48,5 @@ grep -q 'Bh8500' "$L/makefile" || {
 mkdir -p "$L/build"
 make -s -C "$L" HOSTFILE=etc/linux.c BUILDDIR=build CFLAGS="-g -std=gnu89 -w" LDFLAGS=-g rcc cpp
 cc -O2 -Wall -I"$TOP/emu" -o "$HERE/../h8run" "$HERE/../h8run.c" "$TOP/emu/h8500.c"
-echo "rcc: $L/build/rcc -target=h8500/asl"
+"$HERE/../binutils/build.sh"
+echo "rcc: $L/build/rcc -target=h8500/gas"

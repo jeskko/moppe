@@ -37,7 +37,7 @@ static char *fdigits(char *p, double x, int prec, int efmt)
 
 	if (x != x)
 		return strcpy(p, "nan") + 3;
-	if (x > 3.4028235e38)
+	if (x > 3.4028234e38)		/* above FLT_MAX: infinity */
 		return strcpy(p, "inf") + 3;
 	if (efmt && x != 0) {
 		while (x >= 10) {

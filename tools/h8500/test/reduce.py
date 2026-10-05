@@ -5,7 +5,7 @@ reduce: shrink a C file that makes rcc fail, keeping the same message.
     reduce.py file.c 'assertion text' > small.c
 
 Deletes lines, then replaces parenthesized subexpressions by 1, as long
-as rcc -target=h8500/asl (after lcc's cpp) still prints the text.
+as rcc -target=h8500/gas (after lcc's cpp) still prints the text.
 """
 import os
 import re
@@ -20,7 +20,7 @@ INC = os.path.join(TOP, "tools/h8500/lib/include")
 def fails(text, msg):
     pre = subprocess.run([os.path.join(LCC, "cpp"), "-D__H8500__", "-I" + INC],
                          input=text, capture_output=True, text=True).stdout
-    p = subprocess.run([os.path.join(LCC, "rcc"), "-target=h8500/asl"],
+    p = subprocess.run([os.path.join(LCC, "rcc"), "-target=h8500/gas"],
                        input=pre, capture_output=True, text=True)
     return msg in p.stderr
 

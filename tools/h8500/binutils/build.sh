@@ -26,7 +26,7 @@
 #                        relaxed branch's reloc last)
 # Tests: tools/h8500/binutils/test_gas.py, tools/h8500/check_gas.py.
 # Results: reference/toolchain/binutils-h8500/bin/h8500-hms-{as,ld,objdump,
-# objcopy,nm,size}.
+# objcopy,nm,size,ar}.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 TOP=$(cd "$HERE/../../.." && pwd)
@@ -51,6 +51,6 @@ make -j8 all-gas all-ld all-binutils >make.log 2>&1 || { tail -20 make.log; exit
 mkdir -p ../bin
 cp gas/as-new ../bin/h8500-hms-as
 cp ld/ld-new ../bin/h8500-hms-ld
-for p in objdump objcopy size; do cp binutils/$p ../bin/h8500-hms-$p; done
+for p in objdump objcopy size ar; do cp binutils/$p ../bin/h8500-hms-$p; done
 cp binutils/nm-new ../bin/h8500-hms-nm
 echo "binutils: $TC/binutils-h8500/bin"

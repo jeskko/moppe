@@ -1,10 +1,19 @@
-; Float helpers called by lcc-compiled H8/500 code (h8500.md): operands
-; in r0:r1 and r2:r3, result in r0:r1 (__cmpf: -1/0/1 in r0, __ftoi2:
-; r1, __itof2 takes r1).  Every other register is kept: the back end
-; only expects the result registers (and r0 for __cmpf and __ftoi2) to
-; change, and an operand register may still hold a live value.  The work
-; is done by float.c, which takes its arguments on the stack.
-;@code
+! Float helpers called by lcc-compiled H8/500 code (h8500.md): operands
+! in r0:r1 and r2:r3, result in r0:r1 (__cmpf: -1/0/1 in r0, __ftoi2:
+! r1, __itof2 takes r1).  Every other register is kept: the back end
+! only expects the result registers (and r0 for __cmpf and __ftoi2) to
+! change, and an operand register may still hold a live value.  The work
+! is done by float.c, which takes its arguments on the stack.
+	.text
+	.global	__addf
+	.global	__subf
+	.global	__mulf
+	.global	__divf
+	.global	__cmpf
+	.global	__ftoi2
+	.global	__ftoi4
+	.global	__itof2
+	.global	__itof4
 
 __addf:	stm	(r2,r3,r4),@-sp
 	mov.w	#__fpadd,r4
@@ -17,7 +26,7 @@ __mulf:	stm	(r2,r3,r4),@-sp
 	bra	__fcall2
 __divf:	stm	(r2,r3,r4),@-sp
 	mov.w	#__fpdiv,r4
-__fcall2:				; r4 holds the C function
+__fcall2:				! r4 holds the C function
 	mov.w	r3,@-sp
 	mov.w	r2,@-sp
 	mov.w	r1,@-sp
@@ -37,7 +46,7 @@ __cmpf:	stm	(r1,r2,r3),@-sp
 	ldm	@sp+,(r1,r2,r3)
 	rts
 
-; __ftoi2: the low word of the 32-bit result is already in r1
+! __ftoi2: the low word of the 32-bit result is already in r1
 __ftoi2:
 __ftoi4:
 	stm	(r2,r3),@-sp

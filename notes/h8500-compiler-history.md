@@ -47,3 +47,13 @@
   been reached (gas's md_pcrel_from, bfd's PCREL16) and unsorted relocs
   in the linker. Relaxed branches had always been right: md_convert_frag
   computes them itself.
+
+## 2026-10-06 (gas/ld for h8cc)
+
+- The back end now prints gas syntax; lib/*.asm became .s (checked:
+  rt.s and sim.s assemble to asl's bytes, floatrt.s too apart from its
+  relocations); h8cc assembles each file, links with ld and a generated
+  script, libraries as ar archives. First full run: only cq failed, on
+  gas's "Signed .word overflow" check for switch tables in the upper
+  half of page 0 (`-J`). Then the whole suite and 251 random programs
+  passed.

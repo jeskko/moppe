@@ -1,13 +1,23 @@
-; Run-time helpers called by lcc-compiled H8/500 code (h8500.md).
-; Register conventions are the back end's: each helper keeps every
-; register its caller does not expect to change.
-;@code
+! Run-time helpers called by lcc-compiled H8/500 code (h8500.md).
+! Register conventions are the back end's: each helper keeps every
+! register its caller does not expect to change.
+	.text
+	.global	__divi2
+	.global	__blkcpy
+	.global	__shl4
+	.global	__shr4
+	.global	__sar4
+	.global	__mul4
+	.global	__divu4
+	.global	__modu4
+	.global	__divi4
+	.global	__modi4
 
-; signed 16-bit divide: r1 / r2 -> quotient r1, remainder r0
-; (remainder has the dividend's sign, C semantics); keeps r2-r5
+! signed 16-bit divide: r1 / r2 -> quotient r1, remainder r0
+! (remainder has the dividend's sign, C semantics); keeps r2-r5
 __divi2:
 	stm	(r2,r3),@-sp
-	clr.w	r3			; bit 0: negate quotient, bit 1: remainder
+	clr.w	r3			! bit 0: negate quotient, bit 1: remainder
 	tst.w	r1
 	bpl	__divi2_a
 	neg.w	r1
@@ -31,7 +41,7 @@ __divi2_d:
 	ldm	@sp+,(r2,r3)
 	rts
 
-; block copy: r1 bytes from @r3 to @r2; uses r0-r3
+! block copy: r1 bytes from @r3 to @r2; uses r0-r3
 __blkcpy:
 	tst.w	r1
 	beq	__blkcpy_x
@@ -42,7 +52,7 @@ __blkcpy:
 __blkcpy_x:
 	rts
 
-; 32-bit shifts of r0:r1 by r2 (r2 destroyed)
+! 32-bit shifts of r0:r1 by r2 (r2 destroyed)
 __shl4:	tst.w	r2
 	beq	__shift_x
 	shll.w	r1
@@ -64,23 +74,23 @@ __sar4:	tst.w	r2
 __shift_x:
 	rts
 
-; 32-bit multiply: r0:r1 * r2:r3 -> r0:r1 (low 32 bits); keeps r4, r5
+! 32-bit multiply: r0:r1 * r2:r3 -> r0:r1 (low 32 bits); keeps r4, r5
 __mul4:
 	stm	(r4,r5),@-sp
 	mov.w	r1,r4
-	mulxu.w	r2,r4			; al * bh: low word in r5
+	mulxu.w	r2,r4			! al * bh: low word in r5
 	mov.w	r5,@-sp
 	mov.w	r0,r4
-	mulxu.w	r3,r4			; ah * bl
-	add.w	@sp+,r5			; cross terms, low word
+	mulxu.w	r3,r4			! ah * bl
+	add.w	@sp+,r5			! cross terms, low word
 	mov.w	r1,r0
-	mulxu.w	r3,r0			; al * bl, 32 bits
+	mulxu.w	r3,r0			! al * bl, 32 bits
 	add.w	r5,r0
 	ldm	@sp+,(r4,r5)
 	rts
 
-; unsigned 32/32: r0:r1 / r2:r3 -> quotient r0:r1, remainder r4:r5
-; (callers save r4, r5)
+! unsigned 32/32: r0:r1 / r2:r3 -> quotient r0:r1, remainder r4:r5
+! (callers save r4, r5)
 __udivmod4:
 	clr.w	r4
 	clr.w	r5
@@ -119,12 +129,12 @@ __modu4:
 	ldm	@sp+,(r4,r5)
 	rts
 
-; signed: divide the magnitudes; the quotient is negative if the signs
-; differ, the remainder has the dividend's sign
+! signed: divide the magnitudes; the quotient is negative if the signs
+! differ, the remainder has the dividend's sign
 __divi4:
 	stm	(r4,r5),@-sp
 	jsr	@__sdivmod4
-	btst.w	#0,@sp			; sign bits left by __sdivmod4
+	btst.w	#0,@sp			! sign bits left by __sdivmod4
 	beq	__divi4_x
 	jsr	@__neg01
 __divi4_x:
@@ -145,10 +155,10 @@ __modi4_x:
 	ldm	@sp+,(r4,r5)
 	rts
 
-; magnitudes divided; returns with a word pushed under the return
-; address: bit 0 negate the quotient, bit 1 the remainder
+! magnitudes divided; returns with a word pushed under the return
+! address: bit 0 negate the quotient, bit 1 the remainder
 __sdivmod4:
-	mov.w	@sp+,r4			; return address
+	mov.w	@sp+,r4			! return address
 	clr.w	r5
 	tst.w	r0
 	bpl	__sdm_a
@@ -168,7 +178,7 @@ __sdm_b:
 	jsr	@__udivmod4
 	rts
 
-; r0:r1 = -r0:r1
+! r0:r1 = -r0:r1
 __neg01:
 	not.w	r0
 	not.w	r1
