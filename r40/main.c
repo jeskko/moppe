@@ -44,6 +44,7 @@ int main(void)
 		wdog_kick();
 		keypad_poll();
 		radio_poll();
+		ui_poll();
 		k = key_get();
 		if (k == K_PWR)
 			off();

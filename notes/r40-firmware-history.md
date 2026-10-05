@@ -113,3 +113,14 @@ later (no lock wait), IC39 0A, then 08 6 ms later. Release: IC39 09,
 TX OFF, synthesizer parked, IC39 back to the squelch state 13 ms later.
 Ours follows it except the last IC39 step in TX (RX audio stays muted)
 and a 10-20 ms PTT debounce (two ticks).
+
+## 2026-10-06: duplex, memories, scan
+
+Key layout grew on FNC: # duplex, * shift, 0 reverse, 1 step, RCL
+store, 9 scan, UP/DOWN volume. STO first switched to memory mode, which
+made "store, then type the next frequency" impossible (in memory mode
+digits pick channels); it now keeps the mode. TX is limited to 430-440
+MHz. The scan's dwell (3 ticks for the PLL, 2 for the squelch) is a
+guess until the lock timing is known (r40.md gap 5). Scan tests drive
+the noise input from the RX synthesizer's frequency in 5 ms slices
+(`run_with_signals`), as the emulator has no RF model.

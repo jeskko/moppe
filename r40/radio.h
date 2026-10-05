@@ -15,6 +15,7 @@ extern unsigned sq_level;	/* opens below this noise reading */
 
 void radio_init(void);
 void radio_tune(unsigned long rx, unsigned long tx);
-void radio_poll(void);		/* main loop: once per tick */
+void radio_poll(void);
+int radio_settled(void);		/* main loop: once per tick */
 
 #endif

@@ -16,7 +16,9 @@ extern unsigned char mem_mode, mem_ch;
 extern unsigned char ui_step;	/* index of the tuning step */
 void ui_init(void);
 void ui_key(int k);
-void ui_draw(void);		/* main loop: refreshes what changed */
+void ui_draw(void);
+void ui_poll(void);		/* main loop: the scan */
+extern unsigned char scanning;		/* main loop: refreshes what changed */
 char *utoa(unsigned long v, char *buf, int digits);
 
 #endif

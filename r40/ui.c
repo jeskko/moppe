@@ -10,7 +10,11 @@
  * FNC, then: UP / DOWN volume; 1 the next tuning step; # duplex
  * (simplex, -, +); 0 reverse; * a shift entry in kHz ("7600" OK); RCL
  * (= STO) store what is on now: two digits name the memory (the mode
- * stays).  FNC again or any other key cancels.
+ * stays); 9 scan.  FNC again or any other key cancels.
+ *
+ * Scan: the VFO steps up through 430-440 MHz, the memories through the
+ * stored ones; it stops while the squelch is open and goes on 2 s after
+ * it closes.  Any key (taken by the scan, not acted on) or PTT ends it.
  *
  * RCL switches between the VFO and the memories ("M05" on row 0; the
  * last channel used, or the next stored one).  In memory mode two
@@ -51,6 +55,13 @@ static int nentry;
 static unsigned char etype;
 static unsigned char fnc;
 static unsigned char redraw;	/* rows 0 and 1 */
+unsigned char scanning;
+static unsigned scan_resume;	/* ticks: when to leave a busy channel */
+static unsigned char scan_held;
+
+#define SCAN_LO 430000000L
+#define SCAN_HI 440000000L
+#define SCAN_HOLD 200		/* ticks after the signal goes */
 
 /* v as decimal, at least `digits` digits; returns the end */
 char *utoa(unsigned long v, char *buf, int digits)
@@ -198,7 +209,52 @@ static void fnc_key(int k)
 		nentry = 0;
 		etype = E_STORE;
 		break;
+	case '9':
+		if (!mem_mode || mem_next(mem_ch, 1) >= 0) {
+			scanning = 1;
+			scan_held = 0;
+		}
+		break;
 	}
+}
+
+static void scan_step(void)
+{
+	unsigned long hz;
+	int n;
+
+	if (mem_mode) {
+		n = mem_next(mem_ch, 1);
+		if (n >= 0)
+			recall(n);
+		return;
+	}
+	hz = cur.hz + steps[ui_step];
+	if (hz < SCAN_LO || hz > SCAN_HI)
+		hz = SCAN_LO;
+	tune(hz);
+}
+
+/* main loop: the scan */
+void ui_poll(void)
+{
+	if (!scanning)
+		return;
+	if (transmitting) {
+		scanning = 0;
+		return;
+	}
+	if (!radio_settled())
+		return;
+	if (sq_open) {
+		scan_held = 1;
+		scan_resume = ticks + SCAN_HOLD;
+		return;
+	}
+	if (scan_held && (int)(ticks - scan_resume) < 0)
+		return;
+	scan_held = 0;
+	scan_step();
 }
 
 /* OK, or the second digit of a memory number */
@@ -237,6 +293,10 @@ static void enter(void)
 void ui_key(int k)
 {
 	redraw = 1;
+	if (scanning) {
+		scanning = 0;
+		return;
+	}
 	if (fnc) {
 		fnc = 0;
 		fnc_key(k);
@@ -373,14 +433,15 @@ static void draw_rx(void)
 	char buf[6];
 	static unsigned char last_state = 0xFF;
 	static unsigned last_rssi = 0xFFFF;
-	unsigned char state = transmitting ? 2 : tx_locked ? 3 : sq_open;
+	unsigned char state = transmitting ? 2 : tx_locked ? 3 : sq_open ? 1 :
+		scanning ? 4 : 0;
 
 	if (state != last_state) {
 		if (state == 2 || last_state == 2)
 			redraw = 1;	/* the top row shows the TX frequency */
 		last_state = state;
 		lcd_puts(2, 0, state == 2 ? "TX  " : state == 3 ? "LOCK" :
-			 state ? "BUSY" : "    ");
+			 state == 4 ? "SCAN" : state ? "BUSY" : "    ");
 	}
 	if (!transmitting && rssi / 4 != last_rssi) {
 		last_rssi = rssi / 4;

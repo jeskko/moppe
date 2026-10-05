@@ -363,6 +363,62 @@ class Memories(unittest.TestCase):
         self.assertEqual(faults(r2), [])
 
 
+def run_with_signals(r, seconds, busy_mhz):
+    """run in 5 ms slices with the noise input low (a signal) while the
+    receiver is on one of busy_mhz"""
+    busy = {round((f + 45) * 1e6) for f in busy_mhz}
+    t = 0.0
+    while t < seconds:
+        on = round(r.pll(0)[-1]) in busy
+        r.set_adc(1, 100 if on else 900)
+        r.run(0.005)
+        t += 0.005
+
+
+class Scan(unittest.TestCase):
+    def test_vfo_scan_stops_and_resumes(self):
+        r = booted()
+        fnc(r, "9")
+        run_with_signals(r, 1.5, [433.600])
+        self.assertEqual(r.display()[0], "433.60000")
+        self.assertEqual(r.display()[2][:4], "BUSY")
+        run_with_signals(r, 1.5, [])            # gone: held 2 s, then on
+        self.assertEqual(r.display()[0], "433.60000")
+        self.assertEqual(r.display()[2][:4], "SCAN")
+        run_with_signals(r, 1.0, [])
+        self.assertNotEqual(r.display()[0], "433.60000")
+        r.press("OK")                           # any key ends it
+        f = r.display()[0]
+        run_with_signals(r, 0.5, [])
+        self.assertEqual((r.display()[0], r.display()[2][:4]), (f, "    "))
+
+    def test_vfo_scan_wraps_in_the_band(self):
+        r = booted()
+        r.type("43995")
+        r.press("OK")
+        fnc(r, "9")
+        run_with_signals(r, 1.0, [430.025])
+        self.assertEqual(r.display()[0], "430.02500")
+
+    def test_memory_scan_and_ptt(self):
+        r = booted()
+        for n, f in (("01", "4331"), ("02", "4387"), ("03", "4395")):
+            r.type(f)
+            r.press("OK")
+            r.press("FNC")
+            r.press("RCL")
+            r.type(n)
+        r.press("RCL")
+        fnc(r, "9")
+        run_with_signals(r, 1.0, [439.5])
+        self.assertEqual(r.display()[0], "439.50000     M03")
+        r.ptt(True)                             # PTT ends the scan
+        r.run(0.2)
+        r.ptt(False)
+        run_with_signals(r, 3.0, [])
+        self.assertEqual((r.display()[0], r.display()[2][:4]), ("439.50000     M03", "    "))
+
+
 # the settings block: NV 0x83000 with P9.2 = 0, the emulator's image
 # offset 0x4000 + 0x3000 (r40/nv.h)
 NV_CFG = 0x7000

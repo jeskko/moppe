@@ -9,7 +9,9 @@
  * TX OFF, synthesizer parked, receive state back.  The A/D
  * scans AN0 (RSSI) and AN1 (noise: high with no signal) continuously;
  * the squelch opens when the noise falls below sq_level and closes 16
- * counts above it, each after two ticks in a row.
+ * counts above it, each after two ticks in a row.  A retune closes it
+ * and ignores the A/D for SETTLE ticks while the PLL locks (a guess:
+ * the lock input is unknown, notes/r40.md gap 5).
  */
 #include "regs.h"
 #include "hw.h"
@@ -20,6 +22,8 @@
 
 #define TX_PARK 62500L
 #define SQ_HYST 16
+#define SETTLE 3		/* ticks after a retune before the squelch looks */
+#define SQ_TICKS 2
 
 unsigned long rx_hz, tx_hz;
 unsigned char transmitting;
@@ -31,6 +35,7 @@ unsigned char sq_open;
 unsigned sq_level = 480;
 static unsigned last_tick;
 static unsigned char sq_count;
+static unsigned char settle;
 
 void radio_init(void)
 {
@@ -41,10 +46,20 @@ void radio_init(void)
 
 void radio_tune(unsigned long rx, unsigned long tx)
 {
+	int moved = rx != rx_hz;
+
 	rx_hz = rx;
 	tx_hz = tx;
 	if (transmitting)
 		return;
+	if (moved) {
+		settle = SETTLE + SQ_TICKS;
+		sq_count = 0;
+		if (sq_open) {
+			sq_open = 0;
+			audio_rx(0);
+		}
+	}
 	pll_vco(PLL_RX, rx + RX_IF);
 	pll_vco(PLL_TX, tx + TX_PARK);
 }
@@ -93,6 +108,12 @@ static void ptt_poll(void)
 		tx_off();
 }
 
+/* the squelch has had its look at the channel since the last retune */
+int radio_settled(void)
+{
+	return settle == 0;
+}
+
 void radio_poll(void)
 {
 	int want;
@@ -102,6 +123,10 @@ void radio_poll(void)
 	last_tick = ticks;
 	ptt_poll();
 	if (transmitting)
+		return;
+	if (settle)
+		settle--;
+	if (settle > SQ_TICKS)
 		return;
 	rssi = ADDRA >> 6;
 	noise = ADDRB >> 6;
@@ -113,7 +138,7 @@ void radio_poll(void)
 		sq_count = 0;
 		return;
 	}
-	if (++sq_count < 2)
+	if (++sq_count < SQ_TICKS)
 		return;
 	sq_count = 0;
 	sq_open = want;
