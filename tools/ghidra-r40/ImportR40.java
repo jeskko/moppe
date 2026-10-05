@@ -145,6 +145,7 @@ public class ImportR40 extends GhidraScript {
 		label(0xA22A, "dial_star55_key");	// '#': "Give simplex channel" or go
 		label(0xA288, "dial_hash55");		// #55: leave simplex
 		label(0x34ADB, "simplex_channel_check");	// n <= 251 and record n st bit 3
+		label(0x1CE91, "watchdog_kick");	// P9.0 pulse (external IC57) + WDT reload
 
 		// NV parameter blocks (two checksummed copies, +0x2000)
 		long[][] nv = {{0x000, 0x12B}, {0x12C, 0x135}, {0x136, 0x1CB}, {0x1CC, 0x3F1},
