@@ -137,3 +137,9 @@ L100 + CU43 board in moppe-emu (commit 50ead02). Steps that mattered:
   shared with Cr 13.04 showed each of the 34 missing values replaced
   by one or a few fixed values (BF→2B every time, 0F→CF, 14→F4, 15→F5),
   matching an OEM→ANSI→OEM best-fit conversion.
+- `r40nv.py`: a set-up NV image built through the service mode. An
+  image with the band set-up and own number still showed Error 11 in
+  the service head's power-on list; 172 + 190002 cleared it (190002
+  rewrites the 10-12 words, so they go after it). PE1BVU's squelch
+  delay settings (31/32 00, FNC STO) never reached NV in the emulator;
+  the manual calls 31/32 factory tests with no effect in system mode.
