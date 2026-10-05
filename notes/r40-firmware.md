@@ -12,27 +12,28 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 ## Start here (next session)
 
 State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
-`python3 -m unittest test_r40fw` (in `tests/`) runs 10 scenarios; `make
--C r40 run` opens it in the emulator's TUI. It boots, shows "R40 ham /
-Hello, world" and a seconds counter and the last key; UP/DOWN set the
-volume; PWR switches off (IC39 OFF), PWR held at power-on is ignored.
+`python3 -m unittest test_r40fw` (in `tests/`) runs 14 scenarios; `make
+-C r40 run` opens it in the emulator's TUI. A receive-only VFO: boots
+on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
+channel), frequency entry (digits, OK; CLR deletes), UP/DOWN 12.5 kHz
+steps, FNC + UP/DOWN volume, noise squelch with hysteresis switching
+the RX audio and amplifier, BUSY and the RSSI reading; PWR off.
 Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
 Next, each checked in the emulator before the next:
 
-1. **RX**: PLL to a 6.25 kHz channel (RX VCO = f + 45 MHz, 128/129
-   prescaler, R = 1024, OH5NXO's `pll.s`; the emulator's `pll()` reads
-   it back), squelch from the noise input (AN1; high = noise) driving
-   `audio_rx()`, RSSI (AN0). The RX tuning DAC (RFC, MC144111 channel
-   2) wants Nokia's calibration from NV (r40.md gap 3); `dac_write()`
-   exists but is unused.
-2. The VFO UI (frequency entry, UP/DOWN steps; volume then moves to
-   another key), then NV storage (battery SRAM at 0x80000: needs a
-   NOLOAD section, so a linker script of our own or `h8cc.py
-   --script`), TX (TX ON OUT1.0, PTT P7.3, TX synthesizer parked +62.5
-   kHz until PTT; `audio_tx()`), duplex split, memories, scan,
-   settings. Key beeps: TMO (8-bit timer) with IC41 SIGN LSP + IC40
-   PWRAMP.
+1. **TX**: PTT (P7.3, /PTT low) → TX synthesizer to f, `audio_tx(1)`,
+   TX ON (OUT1.0); release in reverse; order and delays from the Nokia
+   firmware's events (service-mode PTT: IC39 09 then 08, IC41 00, TX ON).
+   TX power (DAC channel 2?) and deviation correction want calibration
+   data (r40.md gap 3).
+2. **NV storage** (battery SRAM 0x80000, page 8: a NOLOAD section, so a
+   linker script of our own or `h8cc.py --script`): last frequency,
+   volume, squelch, step; checksum, defaults on a bad one.
+3. Duplex split (shift and reverse), memories, VFO and memory scan,
+   settings (squelch level, step), key beeps (TMO + IC41 SIGN LSP +
+   IC40 PWRAMP). RFC (DAC channel 1) is 0 everywhere today: needs
+   Nokia's calibration from NV (gap 3) or a setting.
 
 Open questions to keep in view: the gaps list in r40.md (CTCSS path,
 calibration tables, PLL lock timing, no hardware checks yet); whether
@@ -52,10 +53,13 @@ restarts).
 | `r40/i2c.c` | PCF8584, polled: `i2c_write(addr, hdr, nh, data, nd)`, `i2c_read`; S2 = 0x11 (45 kHz, as Nokia); gives up after 2000 polls |
 | `r40/lcd.c`, `font.c` | text buffer 3 x 24, dirty rows sent as `78 F0+row E0 18` + 120 columns; top row 20 characters around gap cells 2, 9, 14, 21 |
 | `r40/keypad.c` | CU43 matrix, PWR, hook; `key_get()` queue of presses; a key held at power-on is not a press |
-| `r40/serbus.c` | serial bus bit-banging: `sr_write(n, v)` (4094 + OUT1 strobe), `dac_write()` (MC144111, 4 x 6 bits) |
+| `r40/serbus.c` | serial bus bit-banging: `sr_write(n, v)` (4094 + OUT1 strobe), `dac_write()` (MC144111, 4 x 6 bits; channel 1 = RFC) |
 | `r40/audio.c` | the 4094 states: `audio_rx(open)`, `audio_tx(on)`, `audio_volume()`, `power_off()`; differs from Nokia in keeping RX audio muted in TX |
-| `r40/main.c` | the main loop (hello + key display for now) |
-| `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys, volume, 4094 boot state, power off/on |
+| `r40/pll.c` | both synthesizers: `pll_init()` (R = 1024, SW = 0, both chips), `pll_vco(which, hz)` (N/A from the VCO frequency, 6.25 kHz steps) |
+| `r40/radio.c` | `radio_tune(f)` (RX VCO f + 45 MHz, TX parked f + 62.5 kHz), `radio_poll()`: A/D scan AN0/AN1, squelch (opens below `sq_level` = 480, closes 16 above, two ticks) |
+| `r40/ui.c` | VFO screen (row 0 frequency or entry, row 1 volume and step, row 2 BUSY and RSSI / 4) and keys |
+| `r40/main.c` | start-up order, main loop, power off |
+| `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys (`key_down` while held), entry, steps, squelch, volume, synthesizer words, 4094 boot state, power off/on |
 
 Conventions: C runs with DP = EP = TP = 8, BR = FF. Only `xin`/`xout`
 change EP; the interrupt entry saves it and sets 8 for C. Main loop

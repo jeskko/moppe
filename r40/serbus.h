@@ -25,7 +25,7 @@
 #define SW1_SIGNLSP  0x80	/* confidence tones (TMO) to the loudspeaker */
 
 void sr_write(int n, unsigned char v);
-void dac_write(unsigned char tpc, unsigned char rfc, unsigned char c,
-	       unsigned char d);
+void dac_write(unsigned char a, unsigned char b, unsigned char c,
+	       unsigned char d);	/* a = RFC, b = TPC (?), c = a, d = b */
 
 #endif

@@ -38,14 +38,15 @@ void sr_write(int n, unsigned char v)
 	out1(out1_shadow & ~strobe);
 }
 
-/* channels in the order shifted: TPC (TX power), RFC (RX tuning), two
-   unused (OH5NXO's serbus.s) */
-void dac_write(unsigned char tpc, unsigned char rfc, unsigned char c,
+/* channels 1-4 in the order shifted.  1 is RFC (RX front-end tuning:
+   service test 36 moves it); the Nokia firmware shifts only two values
+   per select, so 3 = 1 and 4 = 2, 2 presumably TPC (TX power) */
+void dac_write(unsigned char a, unsigned char b, unsigned char c,
 	       unsigned char d)
 {
 	out0(out0_shadow & ~0x01);
-	shift(tpc, 6);
-	shift(rfc, 6);
+	shift(a, 6);
+	shift(b, 6);
 	shift(c, 6);
 	shift(d, 6);
 	out0(out0_shadow | 0x01);

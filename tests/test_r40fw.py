@@ -50,19 +50,18 @@ def booted():
 
 class Boot(unittest.TestCase):
     def test_hello(self):
-        # the top row's gaps (cells 2, 9, ...) are skipped: "R40 ham"
+        # the top row's gaps (cells 2, 9, ...) are skipped: the frequency
         # reads back whole only if the firmware maps them as display() does
         r = Radio(ROM)
         r.run(1.5)
-        self.assertEqual(r.display()[:2], ["R40 ham", "Hello, world"])
+        self.assertEqual(r.display()[:2], ["433.50000", "Vol 3         12.50k"])
         self.assertEqual(faults(r), [])
 
-    def test_tick_and_watchdog(self):
-        # the seconds counter comes from the 100 Hz FRT1 tick; a watchdog
-        # NMI would restart the firmware and the count
+    def test_watchdog_kept(self):
+        # a watchdog NMI would restart the firmware (and reload the PLLs)
         r = Radio(ROM)
         r.run(10.5)
-        self.assertEqual(r.display()[2], "10")
+        self.assertEqual(r.pll(0)[4], 2)                 # reference + N/A, once
         self.assertEqual(r.peek(0xFFEC) & 0x60, 0x60)    # WDT: watchdog mode, on
         self.assertEqual(faults(r), [])
 
@@ -95,31 +94,97 @@ class Boot(unittest.TestCase):
         self.assertEqual(first, bytes([0x78, 0xD7, 0x7C]))
 
 
+# key codes (r40/keypad.h)
+CODES = {"OK": 0x80, "CLR": 0x81, "FNC": 0x82, "RCL": 0x83, "UP": 0x84, "DOWN": 0x85}
+CODES.update({c: ord(c) for c in "0123456789*#"})
+
+
 class Keypad(unittest.TestCase):
-    def test_every_known_key(self):
+    def test_every_known_key_while_held(self):
         r = booted()
-        for k in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#",
-                  "OK", "CLR", "FNC", "RCL", "UP", "DOWN"]:
-            r.press(k)
-            self.assertEqual(r.display()[2][8:], "Key " + k, k)
+        at = symbol("key_down")
+        for k, code in CODES.items():
+            r.key(k, True)
+            r.run(0.15)
+            self.assertEqual(r.peek(at), code, k)
+            r.key(k, False)
+            r.run(0.15)
+            self.assertEqual(r.peek(at), 0, k)
         self.assertEqual(faults(r), [])
 
-    def test_long_then_quick_presses(self):
+    def test_digits_long_and_quick_presses(self):
         r = booted()
-        r.press("7", hold=1.0)
-        r.press("8", hold=0.05, gap=0.05)
-        r.press("9", hold=0.05, gap=0.3)
-        self.assertEqual(r.display()[2][8:], "Key 9")
+        r.press("4", hold=1.0)
+        for k in "3950625":
+            r.press(k, hold=0.05, gap=0.05)
+        r.run(0.3)
+        self.assertEqual(r.display()[0], "439.50625")
+        r.press("CLR")
+        self.assertEqual(r.display()[0], "439.5062_")
 
-    def test_volume_keys(self):
-        # UP / DOWN set the volume (IC40 bits 6-4) for now
+
+class Vfo(unittest.TestCase):
+    def test_boot_frequency_and_synthesizers(self):
+        # the Nokia firmware's words for 433.500 MHz simplex: RX 598/16
+        # (478.5 MHz, 45 MHz IF), TX parked 541/122 (+62.5 kHz)
+        r = booted()
+        self.assertEqual(r.pll(0)[:4], (1024, 0, 598, 16))
+        self.assertEqual(r.pll(1)[:4], (1024, 0, 541, 122))
+
+    def test_entry(self):
+        r = booted()
+        r.type("4381")
+        self.assertEqual(r.display()[0], "438.1____")
+        r.press("OK")
+        self.assertEqual(r.display()[0], "438.10000")
+        self.assertEqual((r.pll(0)[-1], r.pll(1)[-1]), (483.1e6, 438.1625e6))
+        r.type("43350627")                      # down to the 6.25 kHz raster
+        r.press("OK")
+        self.assertEqual(r.display()[0], "433.50625")
+        r.type("999")                           # out of range: ignored
+        r.press("OK")
+        self.assertEqual(r.display()[0], "433.50625")
+
+    def test_steps(self):
+        r = booted()
+        r.press("UP")
+        r.press("UP")
+        self.assertEqual(r.display()[0], "433.52500")
+        r.press("DOWN")
+        self.assertEqual(r.display()[0], "433.51250")
+        self.assertEqual(r.pll(0)[-1], 478.5125e6)
+        self.assertEqual(r.display()[1][14:], "12.50k")
+
+    def test_squelch(self):
+        # noise (AN1) below the level opens: RX audio on, amplifier on
+        r = booted()
+        self.assertEqual((r.sreg(0), r.sreg(1) & 0x08), (0x0B, 0))
+        r.set_adc(1, 100)
+        r.set_adc(0, 800)
+        r.run(0.2)
+        self.assertEqual((r.sreg(0), r.sreg(1) & 0x08), (0x09, 0x08))
+        self.assertEqual(r.display()[2], "BUSY                 200")
+        r.set_adc(1, 490)                       # inside the hysteresis
+        r.run(0.2)
+        self.assertEqual(r.sreg(0), 0x09)
+        r.set_adc(1, 900)
+        r.run(0.2)
+        self.assertEqual((r.sreg(0), r.sreg(1) & 0x08), (0x0B, 0))
+        self.assertEqual(r.display()[2].strip(), "200")
+
+    def test_volume_is_fnc_up_down(self):
         r = booted()
         self.assertEqual(r.sreg(1), 0x30)
+        r.press("FNC")
+        self.assertEqual(r.display()[0][-1], "F")
         r.press("UP")
+        r.press("FNC")
         r.press("UP")
-        self.assertEqual((r.display()[1][14:], r.sreg(1)), ("Vol 5", 0x50))
+        self.assertEqual((r.display()[1][:5], r.sreg(1)), ("Vol 5", 0x50))
+        r.press("FNC")
         r.press("DOWN")
-        self.assertEqual((r.display()[1][14:], r.sreg(1)), ("Vol 4", 0x40))
+        self.assertEqual((r.display()[1][:5], r.sreg(1)), ("Vol 4", 0x40))
+        self.assertEqual(r.display()[0], "433.50000")
 
 
 def pwr(r, hold=0.3, gap=0.5):
@@ -144,7 +209,7 @@ class Power(unittest.TestCase):
         r.run(1.0)
         r.power_key(False)
         r.run(0.5)
-        self.assertEqual(r.display()[0], "R40 ham")
+        self.assertEqual(r.display()[0], "433.50000")
         self.assertEqual(r.take_events("POWEROFF"), [])
 
     def test_pwr_switches_off_and_on(self):
@@ -158,7 +223,7 @@ class Power(unittest.TestCase):
         r.press("5")
         self.assertEqual(r.display(), ["", "", ""])
         pwr(r, gap=1.5)
-        self.assertEqual(r.display()[0], "R40 ham")
+        self.assertEqual(r.display()[0], "433.50000")
         self.assertEqual(r.sreg(0), 0x0B)
         self.assertEqual(faults(r), [])
 

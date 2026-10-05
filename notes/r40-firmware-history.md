@@ -87,3 +87,20 @@ Firmware: `serbus.c` (shift MSB first, strobe pulse on OUT1), `audio.c`
 an ignition-held supply). The keypad's first scan at start-up now only
 records the keys held, so the PWR press that switched the radio on is
 not taken as "off".
+
+## 2026-10-06: receiver, VFO screen; the emulator's DAC
+
+Nokia never seemed to load the MC144111 in the emulator. Stepping its
+DAC routine (0x2F902) showed why: it shifts two 6-bit values (12 bits)
+per chip select and relies on the chip keeping the other 12; the model
+waited for 24. Fixed in moppe-emu (266673f): a separate 24-bit register
+clocked only while selected. Test 36 then moves channel 1 (and 3):
+channel 1 is RFC, the first value shifted, not TPC as in OH5NXO's
+`serbus.s`. Nokia's values in the r40nv image are all 0 (no tuning
+calibration stored), so there is no default to copy.
+
+PLL as Nokia (128/129, R = 1024; OH5NXO used 64/65): our 433.500 MHz
+words equal Nokia's simplex channel's (RX 598/16, TX parked 541/122).
+The VFO keys are a first choice (digits + OK, UP/DOWN step, FNC +
+UP/DOWN volume); the keypad tests now read `key_down` from RAM for
+keys without a function.
