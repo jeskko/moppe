@@ -18,6 +18,7 @@ without burning an EPROM for every change.
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md) (none since 2026-10-01; decided ones in [notes/open-bugs-history.md](notes/open-bugs-history.md)).
+Nokia R40 (RC40/RD40, H8/532) emulator feasibility and hardware: [notes/r40.md](notes/r40.md) (research only, 2026-10-05).
 Emulator design, fidelity and limits: `emu/notes/emulator.md` (overview) and one note per radio, `emu/notes/r58.md` for the R58 (in the emulator repo).
 
 ## Quick start
