@@ -34,17 +34,12 @@ int main(void)
 	hw_init();
 	i2c_init();
 	lcd_init();
-	rx_hz = tx_hz = 433500000L;	/* defaults, unless NV has better */
-	if (nv_load() || rx_hz < BAND_LO || rx_hz > BAND_HI) {
-		rx_hz = tx_hz = 433500000L;
-		nv_save();
-	}
+	nv_load();		/* the defaults stay if NV is not valid */
 	audio_init();
 	keypad_init();
 	radio_init();
 	ei();
-	radio_tune(rx_hz, tx_hz);
-	ui_init();
+	ui_init();		/* checks the settings, tunes, saves */
 	for (;;) {
 		wdog_kick();
 		keypad_poll();

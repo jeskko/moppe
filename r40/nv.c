@@ -31,8 +31,10 @@ int nv_load(void)
 	    c->size != sizeof(struct nv_cfg) ||
 	    (unsigned)(sum((unsigned char *)c, n) + c->sum) != 0)
 		return -1;
-	rx_hz = c->rx_hz;
-	tx_hz = c->rx_hz;
+	vfo_hz = c->vfo_hz;
+	shift_hz = c->shift_hz;
+	duplex = c->duplex;
+	reverse = c->reverse;
 	volume = c->volume & 7;
 	ui_step = c->step;
 	sq_level = c->sq_level;
@@ -49,7 +51,10 @@ void nv_save(void)
 	c->magic = NV_MAGIC;
 	c->version = NV_VERSION;
 	c->size = sizeof(struct nv_cfg);
-	c->rx_hz = rx_hz;
+	c->vfo_hz = vfo_hz;
+	c->shift_hz = shift_hz;
+	c->duplex = duplex;
+	c->reverse = reverse;
 	c->volume = volume;
 	c->step = ui_step;
 	c->sq_level = sq_level;

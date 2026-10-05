@@ -23,6 +23,7 @@
 
 unsigned long rx_hz, tx_hz;
 unsigned char transmitting;
+unsigned char tx_locked;
 unsigned char rfc, tpc;		/* DAC: RX tuning, TX power (uncalibrated) */
 static unsigned char ptt_count;
 unsigned noise, rssi;
@@ -74,6 +75,11 @@ static void ptt_poll(void)
 {
 	int down = !(PORT7 & 0x08);
 
+	if (down && (tx_hz < TX_LO || tx_hz > TX_HI)) {
+		tx_locked = 1;
+		down = 0;
+	} else if (!down)
+		tx_locked = 0;
 	if (down == transmitting) {
 		ptt_count = 0;
 		return;

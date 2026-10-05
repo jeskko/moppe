@@ -38,7 +38,8 @@ def faults(r):
 
 def symbol(name):
     """a C function's address from the map (COFF drops the underscore)"""
-    m = re.search(r"^\s+0x([0-9a-f]+)\s+%s$" % name, open(MAP).read(), re.M)
+    with open(MAP) as f:
+        m = re.search(r"^\s+0x([0-9a-f]+)\s+%s$" % name, f.read(), re.M)
     return int(m.group(1), 16)
 
 
@@ -68,7 +69,8 @@ class Boot(unittest.TestCase):
     def test_watchdog_bites_without_kicks(self):
         # the main loop's jsr @_wdog_kick removed: the WDT (130 ms) restarts
         # the firmware through NMI, again and again
-        rom = bytearray(open(ROM, "rb").read())
+        with open(ROM, "rb") as f:
+            rom = bytearray(f.read())
         kick = symbol("wdog_kick").to_bytes(2, "big")
         i = rom.find(b"\x18" + kick, symbol("main"))
         rom[i:i + 3] = bytes(3)
@@ -232,6 +234,63 @@ class Tx(unittest.TestCase):
         self.assertEqual(r.sreg(0), 0x09)              # open again (signal)
 
 
+def fnc(r, key):
+    r.press("FNC")
+    r.press(key)
+
+
+class Duplex(unittest.TestCase):
+    def test_minus_plus_simplex(self):
+        r = booted()
+        r.type("4387")
+        r.press("OK")
+        fnc(r, "#")
+        self.assertEqual(r.display()[0], "438.70000 -")
+        self.assertEqual((r.pll(0)[-1], r.pll(1)[-1]), (483.7e6, 431.1625e6))
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual(r.display()[0], "431.10000 -")       # TX frequency
+        self.assertEqual(r.pll(1)[-1], 431.1e6)
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual(r.display()[0], "438.70000 -")
+        fnc(r, "#")
+        self.assertEqual(r.display()[0], "438.70000 +")
+        self.assertEqual(r.pll(1)[-1], 446.3625e6)
+        fnc(r, "#")
+        self.assertEqual(r.display()[0], "438.70000")
+        self.assertEqual(r.pll(1)[-1], 438.7625e6)
+
+    def test_reverse_and_shift_entry(self):
+        r = booted()
+        r.type("4387")
+        r.press("OK")
+        fnc(r, "#")
+        fnc(r, "*")
+        r.type("5000")
+        self.assertEqual(r.display()[0], "Shift 5000_ kHz")
+        r.press("OK")
+        fnc(r, "0")                             # listen on the input
+        self.assertEqual(r.display()[0], "433.70000 -R")
+        self.assertEqual((r.pll(0)[-1], r.pll(1)[-1]), (478.7e6, 438.7625e6))
+        r2 = Radio(ROM, nv=r.nv())              # all of it kept
+        r2.run(1.0)
+        self.assertEqual(r2.display()[0], "433.70000 -R")
+
+    def test_tx_locked_outside_the_band(self):
+        r = booted()
+        r.type("4450")
+        r.press("OK")
+        r.take_events()
+        r.ptt(True)
+        r.run(0.3)
+        self.assertEqual(r.display()[2][:4], "LOCK")
+        self.assertEqual((r.out(1) & 1, r.take_events("TX_ON")), (0, []))
+        r.ptt(False)
+        r.run(0.3)
+        self.assertEqual(r.display()[2][:4], "    ")
+
+
 # the settings block: NV 0x83000 with P9.2 = 0, the emulator's image
 # offset 0x4000 + 0x3000 (r40/nv.h)
 NV_CFG = 0x7000
@@ -240,7 +299,7 @@ NV_CFG = 0x7000
 class Nv(unittest.TestCase):
     def test_empty_nv_gets_defaults(self):
         r = booted()
-        self.assertEqual(r.nv()[NV_CFG:NV_CFG + 4], bytes([0x52, 0x34, 1, 16]))
+        self.assertEqual(r.nv()[NV_CFG:NV_CFG + 4], bytes([0x52, 0x34, 2, 22]))
         self.assertEqual(r.nv()[:0x4000], bytes(0x4000))  # Nokia's copies untouched
 
     def test_settings_survive_power_off(self):

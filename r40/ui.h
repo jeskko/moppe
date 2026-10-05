@@ -5,6 +5,12 @@
 #define BAND_LO 400000000L	/* tuning limits (the VCO's range is unknown) */
 #define BAND_HI 470000000L
 
+#define DUP_SIMPLEX 0
+#define DUP_MINUS   1
+#define DUP_PLUS    2
+
+extern unsigned long vfo_hz, shift_hz;
+extern unsigned char duplex, reverse;
 extern unsigned char ui_step;	/* index of the tuning step */
 void ui_init(void);
 void ui_key(int k);

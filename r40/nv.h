@@ -4,12 +4,14 @@
 
 #define NV_BASE  0x3000		/* 0x83000 with P9.2 = 0 (page 8) */
 #define NV_MAGIC 0x5234		/* "R4" */
-#define NV_VERSION 1
+#define NV_VERSION 2
 
 struct nv_cfg {
 	unsigned magic;
 	unsigned char version, size;
-	unsigned long rx_hz;
+	unsigned long vfo_hz;
+	unsigned long shift_hz;
+	unsigned char duplex, reverse;
 	unsigned char volume;
 	unsigned char step;	/* index into ui.c's steps */
 	unsigned sq_level;
