@@ -37,7 +37,7 @@ int main(void)
 	keypad_init();
 	radio_init();
 	ei();
-	radio_tune(433500000L);
+	radio_tune(433500000L, 433500000L);
 	ui_init();
 	for (;;) {
 		wdog_kick();

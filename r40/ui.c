@@ -51,7 +51,7 @@ static void tune(unsigned long hz)
 	hz -= hz % PLL_STEP;
 	if (hz < BAND_LO || hz > BAND_HI)
 		return;
-	radio_tune(hz);
+	radio_tune(hz, hz);
 	redraw = 1;
 }
 
@@ -170,18 +170,19 @@ static void draw_mid(void)
 	lcd_puts(1, 0, buf);
 }
 
-/* bottom row: "BUSY" and the RSSI reading */
+/* bottom row: "TX" or "BUSY", and the RSSI reading */
 static void draw_rx(void)
 {
 	char buf[6];
-	static unsigned char last_open = 2;
+	static unsigned char last_state = 0xFF;
 	static unsigned last_rssi = 0xFFFF;
+	unsigned char state = transmitting ? 2 : sq_open;
 
-	if (sq_open != last_open) {
-		last_open = sq_open;
-		lcd_puts(2, 0, sq_open ? "BUSY" : "    ");
+	if (state != last_state) {
+		last_state = state;
+		lcd_puts(2, 0, state == 2 ? "TX  " : state ? "BUSY" : "    ");
 	}
-	if (rssi / 4 != last_rssi) {
+	if (!transmitting && rssi / 4 != last_rssi) {
 		last_rssi = rssi / 4;
 		lcd_puts(2, 18, "      ");
 		utoa(last_rssi, buf, 1);

@@ -104,3 +104,12 @@ words equal Nokia's simplex channel's (RX 598/16, TX parked 541/122).
 The VFO keys are a first choice (digits + OK, UP/DOWN step, FNC +
 UP/DOWN volume); the keypad tests now read `key_down` from RAM for
 keys without a function.
+
+## 2026-10-06: transmit
+
+Nokia's PTT in simplex (emulator events, ~3 ms after /PTT): IC41 00,
+DAC load (all 0 on the r40nv image), TX synthesizer to f, TX ON 0.6 ms
+later (no lock wait), IC39 0A, then 08 6 ms later. Release: IC39 09,
+TX OFF, synthesizer parked, IC39 back to the squelch state 13 ms later.
+Ours follows it except the last IC39 step in TX (RX audio stays muted)
+and a 10-20 ms PTT debounce (two ticks).

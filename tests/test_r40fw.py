@@ -187,6 +187,51 @@ class Vfo(unittest.TestCase):
         self.assertEqual(r.display()[0], "433.50000")
 
 
+class Tx(unittest.TestCase):
+    def test_ptt_sequence(self):
+        # the Nokia firmware's order: deviation bits, DAC, TX synthesizer
+        # to f, TX ON, microphone on; release: mic off, TX OFF, parked
+        r = booted()
+        r.take_events()
+        r.ptt(True)
+        r.run(0.3)
+        ev = [(k, a) for _, k, a in r.take_events() if k in ("SR", "DAC", "SYNTH", "TX_ON")]
+        order = [k for k, _ in ev]
+        self.assertLess(order.index("DAC"), order.index("SYNTH"))
+        self.assertLess(order.index("SYNTH"), order.index("TX_ON"))
+        self.assertEqual(ev[0], ("SR", 2 << 8 | 0x00))               # IC41: deviation 0
+        self.assertEqual(ev[-1], ("SR", 0 << 8 | 0x0A))              # IC39: mic on
+        self.assertEqual((r.pll(1)[-1], r.out(1) & 1), (433.5e6, 1))
+        self.assertEqual(r.display()[2][:4], "TX  ")
+        r.ptt(False)
+        r.run(0.3)
+        self.assertEqual((r.pll(1)[-1], r.out(1) & 1), (433.5625e6, 0))
+        self.assertEqual([r.sreg(i) for i in range(3)], [0x0B, 0x30, 0x07])
+        self.assertEqual(r.display()[2][:4], "    ")
+        self.assertEqual(faults(r), [])
+
+    def test_tuning_during_tx(self):
+        r = booted()
+        r.ptt(True)
+        r.run(0.2)
+        r.press("UP")
+        self.assertEqual((r.pll(0)[-1], r.pll(1)[-1]), (478.5e6, 433.5e6))
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual((r.pll(0)[-1], r.pll(1)[-1]), (478.5125e6, 433.575e6))
+
+    def test_squelch_closed_after_tx(self):
+        r = booted()
+        r.set_adc(1, 100)
+        r.run(0.2)
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual(r.sreg(0) & 0x02, 0x02)       # RX audio muted in TX
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual(r.sreg(0), 0x09)              # open again (signal)
+
+
 def pwr(r, hold=0.3, gap=0.5):
     r.power_key(True)
     r.run(hold)

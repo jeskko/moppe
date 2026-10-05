@@ -39,18 +39,31 @@ void audio_rx(int open)
 	update();
 }
 
-void audio_tx(int on)
+/* before TX ON: the deviation bits; the receiver's audio off */
+void audio_tx_prepare(void)
 {
-	if (on) {
-		sw2 = (sw2 | SW2_AFMUTE) & ~SW2_MICMUTE;
-		sr_write(SR_SW2, sw2);
-		af &= ~AF_PWRAMP;
-		sw1 &= ~SW1_DEV_MASK;
-	} else {
-		sw2 |= SW2_MICMUTE | SW2_AFMUTE;
-		sw1 = (sw1 & ~SW1_DEV_MASK) | 0x07;
-	}
-	update();
+	sw1 &= ~SW1_DEV_MASK;
+	sr_write(SR_SW1, sw1);
+	sw2 |= SW2_AFMUTE;
+	af &= ~AF_PWRAMP;
+	sr_write(SR_AF, af);
+}
+
+/* after TX ON: microphone on; off again before TX OFF */
+void audio_mic(int on)
+{
+	if (on)
+		sw2 &= ~SW2_MICMUTE;
+	else
+		sw2 |= SW2_MICMUTE;
+	sr_write(SR_SW2, sw2);
+}
+
+/* after TX OFF: receive deviation bits (the squelch sets the rest) */
+void audio_tx_done(void)
+{
+	sw1 = (sw1 & ~SW1_DEV_MASK) | 0x07;
+	sr_write(SR_SW1, sw1);
 }
 
 void audio_volume(int v)
