@@ -16,3 +16,5 @@ experiments/c-density/sample.sym
 experiments/c-density/sample.s
 .claude/worktrees/
 dist/
+tools/h8500/h8run
+tools/h8500/lcc/terms.inc

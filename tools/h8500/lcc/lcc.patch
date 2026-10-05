@@ -1,0 +1,49 @@
+diff --git a/src/enode.c b/src/enode.c
+index 2eb451a..cde0ea3 100755
+--- a/src/enode.c
++++ b/src/enode.c
+@@ -514,8 +514,9 @@ static Tree subtree(int op, Tree l, Tree r) {
+ 			error("unknown size for type `%t'\n", ty->type);
+ 		l = simplify(SUB+U, unsignedptr,
+ 			cast(l, unsignedptr), cast(r, unsignedptr));
+-		return simplify(DIV+I, longtype,
+-			cast(l, longtype), cnsttree(longtype, n));
++		/* ptrdiff_t: the signed type of a pointer's size (int on 16-bit targets) */
++		return simplify(DIV+I, signedptr,
++			cast(l, signedptr), cnsttree(signedptr, n));
+ 	} else
+ 		typeerror(op, l, r);
+ 	return simplify(op, ty, l, r);
+diff --git a/src/expr.c b/src/expr.c
+index 36739fc..8092536 100755
+--- a/src/expr.c
++++ b/src/expr.c
+@@ -210,7 +210,9 @@ static Tree unary(void) {
+ 				      		error("invalid type argument `%t' to `sizeof'\n", ty);
+ 				      	else if (p && rightkid(p)->op == FIELD)
+ 				      		error("`sizeof' applied to a bit field\n");
+-				      	p = cnsttree(unsignedlong, (unsigned long)ty->size);
++				      	/* size_t: unsigned int where that holds a pointer (16-bit targets) */
++				      	p = cnsttree(unsignedtype->size >= voidptype->size ? unsignedtype : unsignedlong,
++				      		(unsigned long)ty->size);
+ 				      } } break;
+ 	case '(':
+ 		t = gettok();
+diff --git a/src/lex.c b/src/lex.c
+index af8a78f..7c9da3c 100755
+--- a/src/lex.c
++++ b/src/lex.c
+@@ -713,10 +713,11 @@ static Symbol icon(unsigned long n, int overflow, int base) {
+ 		cp += 1;
+ 	} else if (overflow || n > longtype->u.sym->u.limits.max.i)
+ 		tval.type = unsignedlong;
++	else if (base != 10 && n > inttype->u.sym->u.limits.max.i
++	&& n <= unsignedtype->u.sym->u.limits.max.u)
++		tval.type = unsignedtype;	/* C89: octal and hex try unsigned int before long */
+ 	else if (n > inttype->u.sym->u.limits.max.i)
+ 		tval.type = longtype;
+-	else if (base != 10 && n > inttype->u.sym->u.limits.max.i)
+-		tval.type = unsignedtype;
+ 	else
+ 		tval.type = inttype;
+ 	switch (tval.type->op) {
