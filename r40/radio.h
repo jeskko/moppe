@@ -4,7 +4,10 @@
 
 extern unsigned long rx_hz, tx_hz;
 extern unsigned char transmitting;
-extern unsigned char tx_locked;	/* PTT held outside the TX band */
+extern unsigned char tx_locked;	/* why PTT is not transmitting: */
+#define TXL_BAND 1			/* outside the TX band */
+#define TXL_TOT  2			/* the time-out ran out */
+extern unsigned tot_limit;		/* seconds, 0 = none */
 
 #define TX_LO 430000000L		/* transmit only in the 70 cm band */
 #define TX_HI 440000000L

@@ -10,7 +10,8 @@
  * FNC, then: UP / DOWN volume; 1 the next tuning step; # duplex
  * (simplex, -, +); 0 reverse; * a shift entry in kHz ("7600" OK); RCL
  * (= STO) store what is on now: two digits name the memory (the mode
- * stays); 9 scan.  FNC again or any other key cancels.
+ * stays); 9 scan; OK the settings menu (menu.c).  FNC again or any
+ * other key cancels.
  *
  * Scan: the VFO steps up through 430-440 MHz, the memories through the
  * stored ones; it stops while the squelch is open and goes on 2 s after
@@ -31,6 +32,7 @@
 #include "radio.h"
 #include "nv.h"
 #include "mem.h"
+#include "menu.h"
 #include "ui.h"
 
 #define ENTRY_MAX 8
@@ -209,6 +211,9 @@ static void fnc_key(int k)
 		nentry = 0;
 		etype = E_STORE;
 		break;
+	case K_OK:
+		menu_open();
+		break;
 	case '9':
 		if (!mem_mode || mem_next(mem_ch, 1) >= 0) {
 			scanning = 1;
@@ -295,6 +300,10 @@ void ui_key(int k)
 	redraw = 1;
 	if (scanning) {
 		scanning = 0;
+		return;
+	}
+	if (menu_active) {
+		menu_key(k);
 		return;
 	}
 	if (fnc) {
@@ -433,15 +442,16 @@ static void draw_rx(void)
 	char buf[6];
 	static unsigned char last_state = 0xFF;
 	static unsigned last_rssi = 0xFFFF;
-	unsigned char state = transmitting ? 2 : tx_locked ? 3 : sq_open ? 1 :
-		scanning ? 4 : 0;
+	unsigned char state = transmitting ? 2 : tx_locked == TXL_BAND ? 3 :
+		tx_locked == TXL_TOT ? 5 : sq_open ? 1 : scanning ? 4 : 0;
 
 	if (state != last_state) {
 		if (state == 2 || last_state == 2)
 			redraw = 1;	/* the top row shows the TX frequency */
 		last_state = state;
 		lcd_puts(2, 0, state == 2 ? "TX  " : state == 3 ? "LOCK" :
-			 state == 4 ? "SCAN" : state ? "BUSY" : "    ");
+			 state == 4 ? "SCAN" : state == 5 ? "TOT " :
+			 state ? "BUSY" : "    ");
 	}
 	if (!transmitting && rssi / 4 != last_rssi) {
 		last_rssi = rssi / 4;
@@ -456,6 +466,10 @@ void ui_draw(void)
 	draw_rx();
 	if (redraw) {
 		redraw = 0;
+		if (menu_active) {
+			menu_draw();
+			return;
+		}
 		draw_top();
 		draw_mid();
 	}

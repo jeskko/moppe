@@ -11,6 +11,7 @@
 #include "audio.h"
 #include "radio.h"
 #include "ui.h"
+#include "menu.h"
 #include "nv.h"
 
 static unsigned sum(const unsigned char *p, int n)
@@ -36,7 +37,9 @@ int nv_load(void)
 	mem_ch = c->mem_ch < NMEM ? c->mem_ch : 0;
 	volume = c->volume & 7;
 	ui_step = c->step;
-	sq_level = c->sq_level;
+	sq_index = c->sq_index;
+	tot_index = c->tot_index;
+	beep_enabled = c->beep != 0;
 	rfc = c->rfc;
 	tpc = c->tpc;
 	return 0;
@@ -55,7 +58,9 @@ void nv_save(void)
 	c->mem_ch = mem_ch;
 	c->volume = volume;
 	c->step = ui_step;
-	c->sq_level = sq_level;
+	c->sq_index = sq_index;
+	c->tot_index = tot_index;
+	c->beep = beep_enabled;
 	c->rfc = rfc;
 	c->tpc = tpc;
 	c->sum = 0 - sum((unsigned char *)c, n);

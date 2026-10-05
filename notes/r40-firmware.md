@@ -12,7 +12,7 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 ## Start here (next session)
 
 State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
-`python3 -m unittest test_r40fw` (in `tests/`) runs 29 scenarios; `make
+`python3 -m unittest test_r40fw` (in `tests/`) runs 35 scenarios; `make
 -C r40 run` opens it in the emulator's TUI. A simplex VFO: boots
 on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
 channel), frequency entry (digits, OK; CLR deletes), UP/DOWN 12.5 kHz
@@ -22,7 +22,9 @@ transmitting), TX only in 430-440 MHz ("LOCK" otherwise), memories 00-99 (FNC RC
 + two digits stores; RCL toggles VFO / memories; two digits or
 UP/DOWN choose), scan (FNC 9: VFO through 430-440 MHz, or the stored
 memories; stops while busy, resumes 2 s after; any key or PTT ends it;
-~15 channels/s: 30 ms PLL settle guess + 20 ms squelch), noise squelch with hysteresis switching
+~15 channels/s: 30 ms PLL settle guess + 20 ms squelch), key beep (as
+Nokia's), settings menu (FNC OK: squelch 0-9, TX time-out, beep, TX
+power and RX tune as raw DAC values), noise squelch with hysteresis switching
 the RX audio and amplifier, BUSY and the RSSI reading; PTT transmits
 in the Nokia firmware's order (deviation bits, DAC, TX synthesizer,
 TX ON, mic); settings (VFO, memory mode and channel, volume, step) and memories kept in NV RAM; PWR
@@ -31,10 +33,14 @@ Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
 Next, each checked in the emulator before the next:
 
-1. Settings (squelch level, step, TX power), TX time-out, key beeps (TMO + IC41 SIGN LSP +
-   IC40 PWRAMP). RFC and TPC (DAC channels 1, 2) and the deviation
-   bits are 0 today, as Nokia's on an uncalibrated NV: need Nokia's
-   calibration from NV (gap 3) or settings.
+1. **CTCSS encode** (the last MVP item) if the hardware allows: only
+   TMO → SIGN → Fii switch (IC41 bit 5) reaches the TX audio (r40.md
+   gap 1); whether TMO is divided by 8 on the way (OH5NXO) decides
+   the timer setting.
+2. Calibration (r40.md gap 3): read Nokia's RX tuning (RFC per MHz),
+   TX power and deviation tables from the other NV half instead of the
+   raw menu values.
+3. Hardware checks of everything in "Open questions" below.
 
 Open questions to keep in view: the gaps list in r40.md (CTCSS path,
 calibration tables, PLL lock timing, no hardware checks yet); whether
@@ -53,15 +59,16 @@ restarts).
 | `r40/regs.h` | H8/532 registers as C lvalues (`@aa:8`) |
 | `r40/hw.c`, `hw.h` | ports, OUT0/OUT1 latches with shadows, 100 Hz tick (`ticks`), `wdog_kick` (P9.0 pulse + WDT A57F/5A00), `delay_ticks` |
 | `r40/i2c.c` | PCF8584, polled: `i2c_write(addr, hdr, nh, data, nd)`, `i2c_read`; S2 = 0x11 (45 kHz, as Nokia); gives up after 2000 polls |
-| `r40/lcd.c`, `font.c` | text buffer 3 x 24, dirty rows sent as `78 F0+row E0 18` + 120 columns; top row 20 characters around gap cells 2, 9, 14, 21 |
+| `r40/lcd.c`, `font.c` | text buffer 3 x 24 cells; `lcd_update()` sends the changed cells of one row per call (`78 F0+row E0+dev X` + 5 bytes a cell); top row 20 characters around gap cells 2, 9, 14, 21 |
 | `r40/keypad.c` | CU43 matrix, PWR, hook; `key_get()` queue of presses; a key held at power-on is not a press |
 | `r40/serbus.c` | serial bus bit-banging: `sr_write(n, v)` (4094 + OUT1 strobe), `dac_write()` (MC144111, 4 x 6 bits; channel 1 = RFC) |
-| `r40/audio.c` | the 4094 states: `audio_rx(open)`, `audio_tx_prepare()` / `audio_mic()` / `audio_tx_done()`, `audio_volume()`, `power_off()`; differs from Nokia in keeping RX audio muted in TX |
+| `r40/audio.c` | key beep (8-bit timer as Nokia: phi/64, compare 89 then 51, IC41 SIGN LSP + IC40 PWRAMP); the 4094 states: `audio_rx(open)`, `audio_tx_prepare()` / `audio_mic()` / `audio_tx_done()`, `audio_volume()`, `power_off()`; differs from Nokia in keeping RX audio muted in TX |
 | `r40/pll.c` | both synthesizers: `pll_init()` (R = 1024, SW = 0, both chips), `pll_vco(which, hz)` (N/A from the VCO frequency, 6.25 kHz steps) |
 | `r40/radio.c` | `radio_tune(rx, tx)` (a new RX frequency closes the squelch and waits `SETTLE` ticks; `radio_settled()`) (RX VCO rx + 45 MHz, TX parked tx + 62.5 kHz), `radio_poll()`: PTT (P7.3, two ticks) with the TX sequence, A/D scan AN0/AN1, squelch (opens below `sq_level` = 480, closes 16 above, two ticks) |
 | `r40/ui.c` | VFO state (`vfo_hz`, duplex, shift, reverse → `radio_tune(rx, tx)`), screen (row 0 frequency or entry + `-`/`+`/`R`/`F`, row 1 volume and step, row 2 TX/LOCK/BUSY and RSSI / 4) and keys; the key layout is in its header comment |
-| `r40/nv.c` | settings block (`struct nv_cfg`, version 3: the VFO as a `struct chan`, memory mode/channel, volume, step, squelch, RFC/TPC) at 0x83000 (P9.2 = 0 half, emulator `nv()[0x7000:]`): magic `R4`, version, size, 16-bit checksum; `nv_save()` on every change, defaults when invalid. Nokia's copies (the other half) are left alone |
+| `r40/nv.c` | settings block (`struct nv_cfg`, version 4: the VFO as a `struct chan`, memory mode/channel, volume, step, squelch level, time-out, beep, RFC/TPC) at 0x83000 (P9.2 = 0 half, emulator `nv()[0x7000:]`): magic `R4`, version, size, 16-bit checksum; `nv_save()` on every change, defaults when invalid. Nokia's copies (the other half) are left alone |
 | `r40/mem.c` | memories 00-99 at 0x83100: `struct chan` (frequency, shift, duplex, reverse) + used byte + checksum byte per slot; `mem_get/put/clear/next` |
+| `r40/menu.c` | settings menu; `settings_apply()` (squelch level n → threshold 600 - 20 n, 0 = open; time-out; DAC write) |
 | `r40/main.c` | start-up order, main loop, power off |
 | `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys (`key_down` while held), entry, steps, squelch, volume, synthesizer words, 4094 boot state, power off/on |
 

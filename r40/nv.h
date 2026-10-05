@@ -6,7 +6,7 @@
 
 #define NV_BASE  0x3000		/* 0x83000 with P9.2 = 0 (page 8) */
 #define NV_MAGIC 0x5234		/* "R4" */
-#define NV_VERSION 3
+#define NV_VERSION 4
 
 struct nv_cfg {
 	unsigned magic;
@@ -15,7 +15,7 @@ struct nv_cfg {
 	unsigned char mem_mode, mem_ch;
 	unsigned char volume;
 	unsigned char step;	/* index into ui.c's steps */
-	unsigned sq_level;
+	unsigned char sq_index, tot_index, beep;
 	unsigned char rfc, tpc;
 	unsigned sum;		/* 0 - (sum of the bytes before) */
 };

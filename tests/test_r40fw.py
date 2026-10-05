@@ -419,6 +419,80 @@ class Scan(unittest.TestCase):
         self.assertEqual((r.display()[0], r.display()[2][:4]), ("439.50000     M03", "    "))
 
 
+def menu(r, item, ups=0, downs=0):
+    """FNC OK, OK to item (0 squelch, 1 time-out, 2 beep, 3 TX power,
+    4 RX tune), UP / DOWN, CLR"""
+    fnc(r, "OK")
+    for _ in range(item):
+        r.press("OK")
+    for _ in range(ups):
+        r.press("UP")
+    for _ in range(downs):
+        r.press("DOWN")
+    shown = r.display()[:2]
+    r.press("CLR")
+    return shown
+
+
+class Settings(unittest.TestCase):
+    def test_squelch_levels(self):
+        r = booted()
+        r.set_adc(1, 530)                       # opens at level 3 (540)
+        r.run(0.2)
+        self.assertEqual(r.sreg(0), 0x0B)
+        self.assertEqual(menu(r, 0, downs=3), ["Squelch", "3"])
+        r.run(0.2)
+        self.assertEqual(r.sreg(0), 0x09)
+        menu(r, 0, downs=3)                     # 0: always open
+        r.set_adc(1, 1023)
+        r.run(0.2)
+        self.assertEqual(r.sreg(0), 0x09)
+
+    def test_time_out(self):
+        r = booted()
+        self.assertEqual(menu(r, 1, ups=1), ["Time-out", "30 s"])
+        r.ptt(True)
+        r.run(29.0)
+        self.assertEqual(r.out(1) & 1, 1)
+        r.run(1.5)
+        self.assertEqual((r.out(1) & 1, r.display()[2][:4]), (0, "TOT "))
+        self.assertEqual(r.pll(1)[-1], 433.5625e6)
+        r.run(2.0)                              # still held: stays off
+        self.assertEqual(r.out(1) & 1, 0)
+        r.ptt(False)
+        r.run(0.2)
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual(r.out(1) & 1, 1)
+
+    def test_beep_off(self):
+        r = booted()
+        self.assertEqual(menu(r, 2, ups=1), ["Beep", "off"])
+        r.run(0.3)
+        r.key("5", True)
+        on = False
+        for _ in range(100):
+            r.run(0.001)
+            on |= r.peek(0xFFD0) != 0
+        r.key("5", False)
+        self.assertFalse(on)
+
+    def test_dac_values_and_persistence(self):
+        r = booted()
+        self.assertEqual(menu(r, 3, ups=5), ["TX power", "5"])
+        self.assertEqual(menu(r, 4, downs=1), ["RX tune", "63"])
+        self.assertEqual(r.dac(), [63, 5, 63, 5])
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual(r.dac(), [63, 5, 63, 5])
+        r.ptt(False)
+        menu(r, 0, ups=2)
+        r2 = Radio(ROM, nv=r.nv())
+        r2.run(1.0)
+        self.assertEqual(r2.dac(), [63, 5, 63, 5])
+        self.assertEqual(menu(r2, 0), ["Squelch", "8"])
+
+
 # the settings block: NV 0x83000 with P9.2 = 0, the emulator's image
 # offset 0x4000 + 0x3000 (r40/nv.h)
 NV_CFG = 0x7000

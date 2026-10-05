@@ -18,6 +18,7 @@
 #include "pll.h"
 #include "audio.h"
 #include "serbus.h"
+#include "menu.h"
 #include "radio.h"
 
 #define TX_PARK 62500L
@@ -28,6 +29,8 @@
 unsigned long rx_hz, tx_hz;
 unsigned char transmitting;
 unsigned char tx_locked;
+unsigned tot_limit;
+static unsigned tx_start;
 unsigned char rfc, tpc;		/* DAC: RX tuning, TX power (uncalibrated) */
 static unsigned char ptt_count;
 unsigned noise, rssi;
@@ -41,6 +44,7 @@ void radio_init(void)
 {
 	ADCSR = 0x31;		/* scan AN0-AN1, start */
 	pll_init();
+	settings_apply();
 	audio_rx(0);
 }
 
@@ -67,6 +71,7 @@ void radio_tune(unsigned long rx, unsigned long tx)
 static void tx_on(void)
 {
 	transmitting = 1;
+	tx_start = ticks;
 	audio_tx_prepare();
 	dac_write(rfc, tpc, rfc, tpc);
 	pll_vco(PLL_TX, tx_hz);
@@ -90,11 +95,19 @@ static void ptt_poll(void)
 {
 	int down = !(PORT7 & 0x08);
 
-	if (down && (tx_hz < TX_LO || tx_hz > TX_HI)) {
-		tx_locked = 1;
-		down = 0;
-	} else if (!down)
+	if (!down)
 		tx_locked = 0;
+	else if (tx_locked)
+		down = 0;
+	else if (tx_hz < TX_LO || tx_hz > TX_HI) {
+		tx_locked = TXL_BAND;
+		down = 0;
+	} else if (transmitting && tot_limit &&
+		   ticks - tx_start >= tot_limit * TICK_HZ) {
+		tx_locked = TXL_TOT;	/* until PTT is let go */
+		down = 0;
+		ptt_count = 2;		/* off at once */
+	}
 	if (down == transmitting) {
 		ptt_count = 0;
 		return;
