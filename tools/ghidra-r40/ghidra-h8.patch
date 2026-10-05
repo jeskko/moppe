@@ -1,0 +1,47 @@
+diff --git a/h8/data/languages/h8539f-arith.sinc b/h8/data/languages/h8539f-arith.sinc
+index 796573b..7b289fb 100644
+--- a/h8/data/languages/h8539f-arith.sinc
++++ b/h8/data/languages/h8539f-arith.sinc
+@@ -846,6 +846,25 @@
+ :sub.b        imm8,Rd     is opcode_special=0x04; imm8;  opcode=6  & Rd { op1:1 = Rd[0,8]; op2:1 = imm8:1;  out:1 = op1 - op2; Rd[0,8] = out; subflags(op1, op2); }
+ :sub.w        imm16,Rd    is opcode_special=0x0C; imm16; opcode=6  & Rd { op1:2 = Rd;       op2:2 = imm16:2; out:2 = op1 - op2; Rd      = out; subflags(op1, op2); }
+ 
++# moppe: SUBS <EAs>,Rd (0x38 | Rd after a general EA), the ADDS forms with
++# opcode=7 and a subtraction; no flags (H8/500 Programming Manual SUBS)
++:subs.b       eab_direct,Rd             is eab_direct;       opcode=7 & Rd                    { Rd      = Rd      - sext(eab_direct[0,8]); }
++:subs.b       eab_indirect,Rd           is eab_indirect;     opcode=7 & Rd                    { Rd      = Rd      - sext(eab_indirect[0,8]); }
++:subs.b       eab_disp8,Rd              is eab_disp8;        opcode=7 & Rd                    { Rd      = Rd      - sext(eab_disp8[0,8]); }
++:subs.b       eab_disp16,Rd             is eab_disp16;       opcode=7 & Rd                    { Rd      = Rd      - sext(eab_disp16[0,8]); }
++:subs.b       eab_predec,Rd             is eab_predec;       opcode=7 & Rd                    { Rd      = Rd      - sext(eab_predec[0,8]); }
++:subs.b       eab_postinc,Rd            is eab_postinc;      opcode=7 & Rd                    { Rd      = Rd      - sext(eab_postinc[0,8]); }
++:subs.b       eab_abs8_br,Rd            is eab_abs8_br;      opcode=7 & Rd                    { Rd      = Rd      - sext(eab_abs8_br[0,8]); }
++:subs.w       eaw_direct,Rd             is eaw_direct;       opcode=7 & Rd                    { Rd      = Rd      - eaw_direct; }
++:subs.w       eaw_indirect,Rd           is eaw_indirect;     opcode=7 & Rd                    { Rd      = Rd      - eaw_indirect; }
++:subs.w       eaw_disp8,Rd              is eaw_disp8;        opcode=7 & Rd                    { Rd      = Rd      - eaw_disp8; }
++:subs.w       eaw_disp16,Rd             is eaw_disp16;       opcode=7 & Rd                    { Rd      = Rd      - eaw_disp16; }
++:subs.w       eaw_predec,Rd             is eaw_predec;       opcode=7 & Rd                    { Rd      = Rd      - eaw_predec; }
++:subs.w       eaw_postinc,Rd            is eaw_postinc;      opcode=7 & Rd                    { Rd      = Rd      - eaw_postinc; }
++:subs.w       eaw_abs8_br,Rd            is eaw_abs8_br;      opcode=7 & Rd                    { Rd      = Rd      - eaw_abs8_br; }
++:subs.b       eab_abs16,Rd       is eab_abs16; opcode=7 & Rd [targetBase = Rd; ] { Rd      = Rd      - sext(eab_abs16); }
++:subs.w       eaw_abs16,Rd       is eaw_abs16; opcode=7 & Rd [targetBase = Rd; ] { Rd      = Rd      - eaw_abs16; }
++
+ # subs (opcode=7) MAP5 forms. Same shape as adds above, opcode=7 per
+ # A5tail's grouping -- not yet verified with the Sleigh compiler.
+ :subs.b       imm8,Rd     is opcode_special=0x04; imm8;  opcode=7  & Rd { Rd      = Rd      - sext(imm8:1); }
+diff --git a/h8/data/languages/h8539f-branch.sinc b/h8/data/languages/h8539f-branch.sinc
+index 1a68f17..f45b1a7 100644
+--- a/h8/data/languages/h8539f-branch.sinc
++++ b/h8/data/languages/h8539f-branch.sinc
+@@ -49,9 +49,10 @@
+ {
+ 	goto [Rn_banked];
+ }
+-:jmp       "@"^addr16_dp^":16"         is opcode_special=0x10; addr16_dp [targetBase=0;]
++# moppe: jump TO CP:aa (was a load from DP:aa), as :jsr @aa:16 below
++:jmp       "@"^addr16^":16"            is opcode_special=0x10; addr16
+ {
+-	addr:4 = zext(*:2 addr16_dp) | (zext(CP) << 16);
++	addr:4 = (zext(CP) << 16) | zext(addr16:2);
+ 	goto [addr];
+ }
+ #       BUG FIX: same CP re-folding bug as :jmp/:jsr @Rn_banked above.

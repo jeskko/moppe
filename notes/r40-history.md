@@ -114,3 +114,26 @@ L100 + CU43 board in moppe-emu (commit 50ead02). Steps that mattered:
   synthesizer steps 403-473 MHz (hunting?) while the RX never gets an
   N/A. `*55*001#` did not take: '#' is not echoed, OK adds a second
   '_'; (4,4) cleared the entry.
+
+## 2026-10-05, third session: Ghidra project, TUI, Cr 15.06 damage
+
+- Ghidra has no H8/500 support; the OZVR4 community module (H8/539F,
+  same CPU core, maximum mode) imported the ROM with an H8/532 pspec.
+  First pass: 45 199 instructions, 12 length disagreements with
+  binutils, all binutils' fault. Reset's `jmp @0x27bc:16` was not
+  followed: the constructor loaded a word from DP:aa. After the fix,
+  sampling the emulator's PC showed 9 % of executed addresses still
+  undecoded (computed calls; the idle loop at 0x215F8); a coverage map
+  in the emulator seeded them, which exposed analyzer data placed over
+  code and a missing SUBS <EA>,Rd. End state: nothing executed is
+  undecoded.
+- Ghidra xrefs to P7DR led to `pll_rx_load` / `pll_tx_load` /
+  `pll_reference_load` behind a far-pointer table at 0x1B50, matching
+  the emulator's PLL model. Breakpoints in normal mode: `tx_tune` 350
+  times from `tx_park`, `rx_tune` never.
+- `r40tui.py` written by a subagent (checked: headless script gives
+  RX 480 / TX 435 MHz on PTT; curses screen shows the boot text).
+- Cr1506.bin: bit statistics normal; aligning 28 000 bytes of code
+  shared with Cr 13.04 showed each of the 34 missing values replaced
+  by one or a few fixed values (BF→2B every time, 0F→CF, 14→F4, 15→F5),
+  matching an OEM→ANSI→OEM best-fit conversion.
