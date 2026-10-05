@@ -50,6 +50,30 @@ deletion, then subexpressions to 1; weak on blocks).
 | `h8run.c` | runs an image on emu/h8500.c: ROM 0-3FFFF, RAM page 8, putchar 8FFF0, exit 8FFF1, getchar word 8FFF2; `-s` states, `-t lo-hi` trace |
 | `check_asl.py` | asl round trip on every instruction the Nokia ROM executes: 8023, no errors, no differences (needs reference/ghidra-r40/coverage.bin) |
 
+## GNU binutils 2.16.1 (evaluated 2026-10-06, not used by h8cc)
+
+`tools/h8500/binutils/build.sh` builds gas, ld, objdump, objcopy, nm and
+size for `h8500-hms` (2.16.1, the last release with the target; its
+H8/500 files are 2.15's plus cleanups, opcode table identical). Patched
+(`binutils/h8500.patch`): gas emitted `rtd #xx:16` as 0x14 (the 8-bit
+opcode; 0x1C per the manual and the emulator), RTE was missing, the
+disassembler table's `mov:g.w #xx:8` and `cmp:g.w #xx:8` bugs (from
+r40work), one header line modern gcc rejects.
+
+`tools/h8500/check_gas.py` (like check_asl.py; each instruction
+assembled alone at its address, ~2 s): all **8028 executed ROM
+instructions: 7866 byte-identical, 162 the same instruction in a longer
+encoding, 0 wrong**. The 7 word STC/LDC SR forms dis2 cannot decode
+also assemble to the ROM's bytes (checked by hand). ld links COFF objects
+(cross-file calls and data relocated; a two-file program ran on h8run).
+
+Limits found: gas segfaults on a branch to a numeric address (`bra
+0x1234`, or to an `=` symbol), branches to labels only; no way to force
+a size (`bra.w`, `#5:8` on word ops: it picks, often the 16-bit form);
+comments are `!` (`;` separates statements). Versus asl: a real linker
+(objects, sections, linker scripts with the h8500s/m/c/b model
+emulations, archives); lcc's output would need gas syntax.
+
 ## ABI and model
 
 - Small model: code in page 0 (JSR/RTS, 16-bit code addresses, must end

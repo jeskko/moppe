@@ -29,3 +29,13 @@
   int (signed divide, sign extension). After the fixes ~1150 seeds pass,
   with switches (jump tables and compare chains), pointers and arrays
   added to the generator.
+
+## 2026-10-06 (binutils)
+
+- Built binutils 2.16.1 for h8500-hms (OH5NXO's 2.15 copy had its po/
+  directories stripped, which is why the earlier full build failed).
+  The round trip over the executed ROM instructions first looked clean
+  for `rtd`: dis2 and gas share the table, whose 0x14 entry is wrong for
+  #xx:16, so the ROM's `rtd #2` (14 02) plus the next byte read back as
+  `rtd #0x212` and reassembled to the same bytes. The check now takes
+  RTD and RTE from the bytes; the table is fixed.

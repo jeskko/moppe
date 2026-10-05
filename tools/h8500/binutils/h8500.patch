@@ -1,0 +1,122 @@
+--- a/opcodes/h8500-opc.h	2005-03-03 13:49:48.000000000 +0200
++++ b/opcodes/h8500-opc.h	2026-10-06 00:43:29.197549503 +0300
+@@ -476,7 +476,7 @@
+ {46,'-','B','S','S',O_SCB_EQ|O_UNSZ,"scb/eq",2,{RS,PCREL8},3,	{{0x07,0xff,0 },{0xb8,0xf8,RS },{0x00,0x00,PCREL8 }}},
+ {47,'-','B','!','!',O_RTS|O_UNSZ,"rts",0,{0,0},1,	{{0x19,0xff,0 }}},
+ {48,'-','B','!','!',O_RTD|O_UNSZ,"rtd",1,{IMM8,0},2,	{{0x14,0xff,0 },{0x00,0x00,IMM8 }}},
+-{48,'-','B','!','!',O_RTD|O_UNSZ,"rtd",1,{IMM16,0},3,	{{0x14,0xff,0 },{0x00,0x00,IMM16 },{0x00,0x00,0 }}},
++{48,'-','B','!','!',O_RTD|O_UNSZ,"rtd",1,{IMM16,0},3,	{{0x1c,0xff,0 },{0x00,0x00,IMM16 },{0x00,0x00,0 }}},
+ {49,'h','E','!','E',O_ROTXR|O_WORD,"rotxr.w",1,{RN,0},2,	{{0xa8,0xf8,RN },{0x1f,0xff,0 }}},
+ {49,'h','E','!','E',O_ROTXR|O_WORD,"rotxr.w",1,{RNDEC,0},2,	{{0xb8,0xf8,RN },{0x1f,0xff,0 }}},
+ {49,'h','E','!','E',O_ROTXR|O_WORD,"rotxr.w",1,{RNINC,0},2,	{{0xc8,0xf8,RN },{0x1f,0xff,0 }}},
+@@ -1607,6 +1607,7 @@
+ {229,'a','E','D','D',O_ADD|O_UNSZ,"add",2,{IMM16,RD},4,	{{0x0c,0xff,0 },{0x00,0x00,IMM16 },{0x00,0x00,0 },{0x20,0xf8,RD }}},
+ {229,'a','I','E','E',O_ADD|O_UNSZ,"add",2,{QIM,ABS16},4,	{{0x1d,0xff,0 },{0x00,0x00,ABS16 },{0x00,0x00,0 },{0x08,0xf8,QIM }}},
+ {229,'a','E','D','D',O_ADD|O_UNSZ,"add",2,{RNIND_D16,RD},4,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0 },{0x20,0xf8,RD }}},
++{230,'-','!','!','!',O_RTS|O_UNSZ,"rte",0,{0,0},1,	{{0x0a,0xff,0 }}},
+ {0,0,0,0,0,0,0,0,{0,0},0,{{0,0,0}}}
+ }
+ #endif
+@@ -1836,7 +1837,7 @@
+ {41,'h','E','!','E',O_SHAL|O_WORD,"shal.w",1,{ABS8,0},3,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x18,0xff,0}}},
+ {52,'h','E','!','E',O_ROTXL|O_WORD,"rotxl.w",1,{ABS8,0},3,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x1e,0xff,0}}},
+ {49,'h','E','!','E',O_ROTXR|O_WORD,"rotxr.w",1,{ABS8,0},3,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x1f,0xff,0}}},
+-{48,'-','B','!','!',O_RTD|O_UNSZ,"rtd",1,{IMM16,0},3,	{{0x14,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
++{48,'-','B','!','!',O_RTD|O_UNSZ,"rtd",1,{IMM16,0},3,	{{0x1c,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ {48,'-','B','!','!',O_RTD|O_UNSZ,"rtd",1,{IMM8,0},2,	{{0x14,0xff,0},{0x00,0x00,IMM8 }}},
+ {42,'h','E','!','E',O_SHAL|O_BYTE,"shal.b",1,{ABS16,0},4,	{{0x15,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x18,0xff,0}}},
+ {53,'h','E','!','E',O_ROTXL|O_BYTE,"rotxl.b",1,{ABS16,0},4,	{{0x15,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x1e,0xff,0}}},
+@@ -1998,7 +1999,7 @@
+ {94,'m','I','!','E',O_MOV|O_BYTE,"mov:g.b",2,{IMM8,RNDEC},3,	{{0xb0,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,RNDEC},4,	{{0xb8,0xf8,RN },{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ 
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNDEC},4,	{{0xb8,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNDEC},3,	{{0xb8,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ 
+ {94,'m','E','!','D',O_MOV|O_BYTE,"mov:g.b",2,{RNINC,RD},2,	{{0xc0,0xf8,RN },{0x80,0xf8,RD }}},
+@@ -2006,14 +2007,14 @@
+ {94,'m','I','!','E',O_MOV|O_BYTE,"mov:g.b",2,{IMM8,RNINC},3,	{{0xc0,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,RNINC},4,	{{0xc8,0xf8,RN },{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ 
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNINC},4,	{{0xc8,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNINC},3,	{{0xc8,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ {94,'m','E','!','D',O_MOV|O_BYTE,"mov:g.b",2,{RNIND,RD},2,	{{0xd0,0xf8,RN },{0x80,0xf8,RD }}},
+ {94,'m','S','!','E',O_MOV|O_BYTE,"mov:g.b",2,{RS,RNIND},2,	{{0xd0,0xf8,RN },{0x90,0xf8,RS }}},
+ {94,'m','I','!','E',O_MOV|O_BYTE,"mov:g.b",2,{IMM8,RNIND},3,	{{0xd0,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,RNIND},4,	{{0xd8,0xf8,RN },{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNIND},4,	{{0xd8,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNIND},3,	{{0xd8,0xf8,RN },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ {94,'m','E','!','D',O_MOV|O_BYTE,"mov:g.b",2,{RNIND_D8,RD},3,	{{0xe0,0xf8,RN },{0x00,0x00,DISP8 },{0x80,0xf8,RD }}},
+ {94,'m','S','!','E',O_MOV|O_BYTE,"mov:g.b",2,{RS,RNIND_D8},3,	{{0xe0,0xf8,RN },{0x00,0x00,DISP8 },{0x90,0xf8,RS }}},
+@@ -2021,12 +2022,12 @@
+ 
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,RNIND_D8},5,	{{0xe8,0xf8,RN },{0x00,0x00,DISP8 },{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ 
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNIND_D8},5,	{{0xe8,0xf8,RN },{0x00,0x00,DISP8 },{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNIND_D8},4,	{{0xe8,0xf8,RN },{0x00,0x00,DISP8 },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ 
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,RNIND_D16},6,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0},{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ 
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNIND_D16},6,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0},{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,RNIND_D16},5,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0},{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ {93,'m','E','!','D',O_MOV|O_WORD,"mov:g.w",2,{RNIND_D16,RD},4,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0},{0x80,0xf8,RD }}},
+ {93,'m','S','!','E',O_MOV|O_WORD,"mov:g.w",2,{RS,RNIND_D16},4,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0},{0x90,0xf8,RS }}},
+@@ -2038,7 +2039,7 @@
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,ABS8},5,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ {93,'m','E','!','D',O_MOV|O_WORD,"mov:g.w",2,{IMM16,RD},4,	{{0x0c,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0},{0x80,0xf8,RD }}},
+ 
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,ABS8},5,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,ABS8},4,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ 
+ {55,'h','E','!','E',O_ROTR|O_WORD,"rotr.w",1,{IMM16,0},4,	{{0x0c,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0},{0x1d,0xff,0}}},
+@@ -2049,7 +2050,7 @@
+ 
+ {93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM16,ABS16},6,	{{0x1d,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x07,0xff,0},{0x00,0x00,IMM16 },{0x00,0x00,0}}},
+ 
+-{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,ABS16},6,	{{0x1d,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x06,0xff,0},{0x00,0x00,IMM8 },{0x00,0x00,0}}},
++{93,'m','I','!','E',O_MOV|O_WORD,"mov:g.w",2,{IMM8,ABS16},5,	{{0x1d,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x06,0xff,0},{0x00,0x00,IMM8 }}},
+ 
+ {76,'a','E','!','E',O_NEG|O_BYTE,"neg.b",1,{ABS16,0},4,	{{0x15,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x14,0xff,0}}},
+ {56,'h','E','!','E',O_ROTR|O_BYTE,"rotr.b",1,{ABS16,0},4,	{{0x15,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x1d,0xff,0}}},
+@@ -3852,6 +3853,15 @@
+ QIM,ABS16  'a','I','E','E'
+ RNIND_D16,RD  'a','E','D','D'
+ */
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,RN},3,	{{0xa8,0xf8,RN },{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,RNDEC},3,	{{0xb8,0xf8,RN },{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,RNINC},3,	{{0xc8,0xf8,RN },{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,RNIND},3,	{{0xd8,0xf8,RN },{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,RNIND_D8},4,	{{0xe8,0xf8,RN },{0x00,0x00,DISP8 },{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,RNIND_D16},5,	{{0xf8,0xf8,RN },{0x00,0x00,DISP16 },{0x00,0x00,0},{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,ABS8},4,	{{0x0d,0xff,0},{0x00,0x00,ABS8 },{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{123,'a','E','I','!',O_CMP|O_WORD,"cmp:g.w",2,{IMM8,ABS16},5,	{{0x1d,0xff,0},{0x00,0x00,ABS16 },{0x00,0x00,0},{0x04,0xff,0},{0x00,0x00,IMM8 }}},
++{230,'-','!','!','!',O_RTS|O_UNSZ,"rte",0,{0,0},1,	{{0x0a,0xff,0}}},
+ {0,0,0,0,0,0,NULL,0,{0,0},0,{}}}
+ #endif
+ ;
+--- a/gas/write.c	2005-03-03 03:29:53.000000000 +0200
++++ b/gas/write.c	2026-10-06 00:39:15.180561920 +0300
+@@ -2032,6 +2032,7 @@
+ #endif /* ! BFD  */
+ 
+ #ifdef TC_GENERIC_RELAX_TABLE
++extern relax_typeS md_relax_table[];	/* moppe: moved from tc-h8500.h */
+ 
+ /* Relax a fragment by scanning TC_GENERIC_RELAX_TABLE.  */
+ 
+--- a/gas/config/tc-h8500.h	2003-04-15 11:51:53.000000000 +0300
++++ b/gas/config/tc-h8500.h	2026-10-06 00:39:15.179355874 +0300
+@@ -53,5 +53,5 @@
+ 
+ #define md_operand(x)
+ 
+-extern struct relax_type md_relax_table[];
++/* moppe: md_relax_table is declared in write.c, where struct relax_type is complete */
+ #define TC_GENERIC_RELAX_TABLE md_relax_table
