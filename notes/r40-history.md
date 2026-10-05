@@ -143,3 +143,11 @@ L100 + CU43 board in moppe-emu (commit 50ead02). Steps that mattered:
   rewrites the 10-12 words, so they go after it). PE1BVU's squelch
   delay settings (31/32 00, FNC STO) never reached NV in the emulator;
   the manual calls 31/32 factory tests with no effect in system mode.
+- `*55*`: the string is in a dial-code table at ROM 0x62EA with no
+  direct references; the reset code copies 0x5EE2-0x63CA to 8:1680, and
+  searching for the RAM addresses found the handlers (0xA213 preloads
+  `*55*`, 0xA288 is `#55`). Typed after CLR (the entry otherwise starts
+  with `999`), `*55*001#` gave "Invalid channel"; that message led to
+  0x34ADB: channel n <= 251 and bit 3 of parameter record n's `st`
+  byte. With `st` 008 on record 030, `*55*30#` selected simplex on
+  433.500 MHz (RX VCO 478.5, TX 433.500 on PTT); `#55#` left it.

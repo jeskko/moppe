@@ -136,6 +136,16 @@ public class ImportR40 extends GhidraScript {
 		label(0x8BC9C, "rx_channel");
 		label(0x8BC9E, "tx_channel");
 
+		// dial codes and simplex (Ghidra + emulator, 2026-10-05).  ROM
+		// 0x5EE2-0x63CA is copied to 8:1680 at reset; the code table
+		// ("*2*" .. "*31*") is used from there
+		label(0x81A88, "dial_codes");
+		label(0x81AF1, "dial_code_star55");
+		label(0xA213, "dial_star55");		// preloads "*55*", installs the key handler
+		label(0xA22A, "dial_star55_key");	// '#': "Give simplex channel" or go
+		label(0xA288, "dial_hash55");		// #55: leave simplex
+		label(0x34ADB, "simplex_channel_check");	// n <= 251 and record n st bit 3
+
 		// NV parameter blocks (two checksummed copies, +0x2000)
 		long[][] nv = {{0x000, 0x12B}, {0x12C, 0x135}, {0x136, 0x1CB}, {0x1CC, 0x3F1},
 			{0x3F2, 0x487}, {0x488, 0xA6D}, {0xA6E, 0xE88}, {0xE89, 0x10A9},
