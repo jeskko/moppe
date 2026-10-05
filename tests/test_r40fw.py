@@ -468,6 +468,32 @@ def pwr(r, hold=0.3, gap=0.5):
 
 
 class Power(unittest.TestCase):
+    def test_key_beep(self):
+        # Nokia's key beep: 8-bit timer phi/64 cleared on compare A = 89,
+        # then 51; IC41 SIGN LSP and IC40 PWRAMP while it sounds
+        r = booted()
+        r.key("5", True)
+        seen = []
+        for _ in range(150):
+            r.run(0.001)
+            v = (r.peek(0xFFD0), r.peek(0xFFD2), r.sreg(2) >> 7, (r.sreg(1) >> 3) & 1)
+            if not seen or seen[-1] != v:
+                seen.append(v)
+        r.key("5", False)
+        tones = [(a, b) for a, b, sign, amp in seen if a and sign and amp]
+        self.assertEqual(sorted(set(tones)), [(0x0A, 51), (0x0A, 89)])
+        self.assertEqual(seen[-1][0], 0)                    # timer stopped
+        self.assertEqual((r.sreg(2), r.sreg(1)), (0x07, 0x30))
+
+    def test_lcd_sends_only_changes(self):
+        r = booted()
+        n = r.i2c_count()
+        r.set_adc(0, 500)                       # RSSI 75 -> 125
+        r.run(0.2)
+        lcd = [b for _, b in r.i2c_log(n) if b[0] == 0x78]
+        self.assertEqual([len(b) for b in lcd], [4 + 15])
+        self.assertEqual(r.display()[2].strip(), "125")
+
     def test_audio_switches_at_boot(self):
         # the Nokia firmware's receive state with the squelch closed: mic
         # and receiver audio muted, spacing gain; volume 3, amplifier off;

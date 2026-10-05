@@ -10,6 +10,7 @@ extern const unsigned char font[96][5];
 void lcd_init(void);
 void lcd_clear(void);
 void lcd_puts(int row, int col, const char *s);
-void lcd_update(void);		/* sends the rows changed since the last call */
+void lcd_update(void);		/* sends one changed row */
+void lcd_flush(void);		/* sends all changes */
 
 #endif

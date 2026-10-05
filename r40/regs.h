@@ -32,6 +32,13 @@
 #define FRT_OVF   0x10
 #define FRT_CCLRA 0x01
 
+/* 8-bit timer */
+#define T8_TCR   REG8(0xFFD0)
+#define T8_TCSR  REG8(0xFFD1)
+#define T8_TCORA REG8(0xFFD2)
+#define T8_TCORB REG8(0xFFD3)
+#define T8_TCNT  REG8(0xFFD4)
+
 #define ADDRA   REG16(0xFFE0)	/* left justified: value << 6 */
 #define ADDRB   REG16(0xFFE2)
 #define ADDRC   REG16(0xFFE4)

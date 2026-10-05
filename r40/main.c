@@ -14,7 +14,7 @@ static void off(void)
 {
 	power_off();
 	lcd_clear();
-	lcd_update();
+	lcd_flush();
 	while (key_down == K_PWR) {
 		keypad_poll();
 		wdog_kick();
@@ -44,12 +44,15 @@ int main(void)
 		wdog_kick();
 		keypad_poll();
 		radio_poll();
+		audio_poll();
 		ui_poll();
 		k = key_get();
 		if (k == K_PWR)
 			off();
-		else if (k != K_NONE)
+		else if (k != K_NONE) {
+			audio_beep();
 			ui_key(k);
+		}
 		ui_draw();
 		lcd_update();
 	}

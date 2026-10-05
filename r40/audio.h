@@ -9,6 +9,9 @@ void audio_mic(int on);
 void audio_tx_done(void);
 void audio_volume(int v);	/* 0-7 */
 extern unsigned char volume;
+extern unsigned char beep_enabled;
+void audio_beep(void);		/* the key beep */
+void audio_poll(void);		/* main loop */
 void power_off(void);
 
 #endif
