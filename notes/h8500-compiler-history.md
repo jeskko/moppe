@@ -18,3 +18,14 @@
   r2/r3 that held a live operand (cvt.c).
 - printf %f/%e, atof; crt0 passes argc/argv. cf, cq, cvt now pass;
   `test/run.sh` collects the suite.
+
+## 2026-10-06
+
+- intgen.py (random integer programs, expected values computed in
+  Python) found on its first seeds: rcc's ralloc assertion for a
+  two-address op pinned to r1 whose right operand was in r1; the
+  miscompile `v = a - v` for a register variable; lcc's front end typing
+  `unsigned short op unsigned short` as `int` when short is as wide as
+  int (signed divide, sign extension). After the fixes ~1150 seeds pass,
+  with switches (jump tables and compare chains), pointers and arrays
+  added to the generator.

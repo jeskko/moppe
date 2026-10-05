@@ -9,23 +9,28 @@ Files: `tools/h8500/`.
 ## Start here (next session)
 
 State: `tools/h8500/lcc/build.sh` builds everything; `h8cc.py` compiles
-and links; `h8run` runs the image; `tools/h8500/test/run.sh` runs the
-tests (3 s). lcc's tests **8q, array, cf, cq, cvt, incr, init, sort,
-spill, stdarg, struct, wf1 pass** (cq against `test/cq.1bk`: x86's output
-except the type-size lines). switch, limits and fields assume a 32-bit
-int; paranoia and yacc need signal/setjmp/stdio streams. Floats: soft
-IEEE single in C (`lib/rt/float.c`), bit-exact against the host on
-`test/floatgen.c`'s random cases. Work items, in order:
+and links; `h8run` runs the image; `tools/h8500/test/run.sh [n]` runs
+the tests (~10 s). lcc's tests **8q, array, cf, cq, cvt, incr, init,
+sort, spill, stdarg, struct, wf1 pass** (cq against `test/cq.1bk`: x86's
+output except the type-size lines). switch, limits and fields assume a
+32-bit int; paranoia and yacc need signal/setjmp/stdio streams. Floats:
+soft IEEE single in C (`lib/rt/float.c`), bit-exact against the host on
+`test/floatgen.c`'s random cases. Random integer programs
+(`test/intgen.py`: all operators over the eight integer types, casts,
+?:, && ||, calls, arrays with computed indexes, pointers, if/for,
+dense and sparse switch; expected values computed in Python under the
+target's rules) pass: 550 seeds at two sizes with the full generator, 600 before switch/pointers/arrays were added. Work items:
 
-1. A differential test generator for integer code: random C over
-   explicit 16/32-bit types, run on h8run and on the host (gcc with
-   int16_t/int32_t and a cast after every operation), compare outputs.
-   lcc's tests cover little register pressure; this session's bugs
-   (below) were all register/temporary corner cases.
-2. Then: R40 start-up (vectors, watchdog kick, I/O through EP for pages
-   A/B), and the firmware itself.
+1. R40 start-up (vectors, watchdog kick, I/O through EP for pages A/B),
+   and the firmware itself.
+2. Test gaps if the firmware needs them: structs (assignment, arguments,
+   returns), local arrays, recursion, `register` pressure with longs,
+   bit-fields (16-bit), function pointers. `intgen.py` is the place.
+3. Code quality is unexamined (e.g. `mov.w @x,r3 / mov.w r3,r1` pairs).
 
 Run the tests: `tools/h8500/test/run.sh` (exit status 0 = all pass).
+Reduce an rcc crash: `test/reduce.py file.c 'assert text'` (line
+deletion, then subexpressions to 1; weak on blocks).
 
 ## Pieces
 
@@ -33,12 +38,13 @@ Run the tests: `tools/h8500/test/run.sh` (exit status 0 = all pass).
 |---|---|
 | `lcc/h8500.md` | the back end (lburg grammar + C); `%include terms.inc` is replaced by `gen_terms.py`'s %term list (op codes for this target's sizes) |
 | `lcc/build.sh` | fetches lcc (github drh/lcc) and AS into `reference/toolchain/`, applies `lcc.patch`, adds the target to bind.c and the makefile, builds rcc/cpp/asl and `h8run` |
-| `lcc/lcc.patch` | fixes to lcc's front end for 16-bit int: hex/octal constants try `unsigned int` before `long` (C89; lcc's branch was unreachable), `sizeof` is `unsigned int` and pointer differences `int` where those hold a pointer (lcc hard-coded `unsigned long` / `long`); unsigned → float converts through `long` (16-bit) or as `((u>>1)\|(u&1))*2` above the signed range (lcc's `(u>>1)*2.0 + (u&1)` rounds twice with a 24-bit mantissa, and built the `&1` as `unsigned int`) |
+| `lcc/lcc.patch` | fixes to lcc's front end for 16-bit int: hex/octal constants try `unsigned int` before `long` (C89; lcc's branch was unreachable), `sizeof` is `unsigned int` and pointer differences `int` where those hold a pointer (lcc hard-coded `unsigned long` / `long`); `binary()` and `promote()` treat `short`/`unsigned short` as `int`/`unsigned` when the same width (lcc compared types by identity, so `unsigned short % unsigned short` was signed `int`); unsigned → float converts through `long` (16-bit) or as `((u>>1)\|(u&1))*2` above the signed range (lcc's `(u>>1)*2.0 + (u&1)` rounds twice with a 24-bit mantissa, and built the `&1` as `unsigned int`) |
 | `h8cc.py` | driver: cpp + rcc per C file, `-tag=` per unit for file-local names, asl fix-ups (indent, `@(0-n,r6)`), segment split on `;@code/;@data/;@bss`, library units (`lib/rt`, and `lib/libc` with `--lib sim`) linked only when they define something undefined, one asl run (`-U` case-sensitive), p2bin |
 | `lib/crt0.asm` | reset vector, TP/DP/EP = 8, BR = FF, SP, copies data (ROM → RAM), clears bss, calls `main(0, {NULL})`, then `_exit` |
 | `lib/rt.asm` | helpers: `__divi2`, `__blkcpy`, `__shl4/__shr4/__sar4`, `__mul4`, `__divu4/__modu4/__divi4/__modi4` |
 | `lib/rt/` | library units linked on demand with any `--lib`: `float.c` (soft float: IEEE single, round to nearest even, denormals flushed to zero) and `floatrt.asm` (register shims `__addf` … `__itof4` → the C functions) |
-| `test/run.sh`, `test/floatgen.c`, `test/cq.1bk` | the test suite; floatgen writes a C program of random float cases with the host's results |
+| `test/run.sh`, `test/floatgen.c`, `test/intgen.py`, `test/cq.1bk` | the test suite; floatgen writes a C program of random float cases with the host's results, intgen random integer programs with expected values |
+| `test/reduce.py` | shrinks a C file that crashes rcc |
 | `lib/sim.asm` | h8run console: `_putchar`, `_getchar`, `_exit` |
 | `lib/include`, `lib/libc` | stdarg/stddef/stdio/stdlib/string/limits; printf (%d %u %x %o %c %s %f %e, l, width, precision, 0, -; floats to about 7 digits), atof, str*/mem*, malloc (bump) |
 | `h8run.c` | runs an image on emu/h8500.c: ROM 0-3FFFF, RAM page 8, putchar 8FFF0, exit 8FFF1, getchar word 8FFF2; `-s` states, `-t lo-hi` trace |
@@ -81,6 +87,11 @@ Run the tests: `tools/h8500/test/run.sh` (exit status 0 = all pass).
   like a register. `move(a)` marks a rule as a copy that `requate` may
   rename away: never for a LOAD that narrows a 32-bit pair (`move2`).
   clobber() must not spill a register of the node's own result.
+- Two-address rules (`?mov.w %0,%c / op %1,%c`): lcc only protects a
+  wildcard result from sharing the right operand's register. A result
+  pinned by target() (`ktarget`) or an assignment to a register
+  variable read by the right operand (`v = a - v`, which compiled to
+  `mov a,v / sub v,v`) go through a LOAD instead (`loadtarget`).
 - lcc: a template starting with `#` calls emit2 (write a literal `#`
   as `%#`); register wildcards scan 32 slots; narrowing conversions
   arrive as LOAD nodes; a two-address (`?`) result is kept off the

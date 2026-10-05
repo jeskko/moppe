@@ -15,7 +15,7 @@ index 2eb451a..cde0ea3 100755
  		typeerror(op, l, r);
  	return simplify(op, ty, l, r);
 diff --git a/src/expr.c b/src/expr.c
-index 36739fc..7dee841 100755
+index 36739fc..9d53579 100755
 --- a/src/expr.c
 +++ b/src/expr.c
 @@ -210,7 +210,9 @@ static Tree unary(void) {
@@ -29,7 +29,20 @@ index 36739fc..7dee841 100755
  				      } } break;
  	case '(':
  		t = gettok();
-@@ -570,17 +572,26 @@ Tree cast(Tree p, Type type) {
+@@ -493,6 +495,12 @@ int hascall(Tree p) {
+ }
+ Type binary(Type xty, Type yty) {
+ #define xx(t) if (xty == t || yty == t) return t
++	/* integer promotions first: a short as wide as int is int, an
++	   unsigned short as wide as int unsigned (types compare by identity) */
++	if (isint(xty))
++		xty = promote(xty);
++	if (isint(yty))
++		yty = promote(yty);
+ 	xx(longdouble);
+ 	xx(doubletype);
+ 	xx(floattype);
+@@ -570,17 +578,26 @@ Tree cast(Tree p, Type type) {
  					break;
  				case UNSIGNED:
  					if (isfloat(dst)) {
@@ -83,3 +96,25 @@ index af8a78f..7c9da3c 100755
  	else
  		tval.type = inttype;
  	switch (tval.type->op) {
+diff --git a/src/types.c b/src/types.c
+index 36b2c16..3fdddfb 100755
+--- a/src/types.c
++++ b/src/types.c
+@@ -361,14 +361,14 @@ Type promote(Type ty) {
+ 	switch (ty->op) {
+ 	case ENUM:
+ 		return inttype;
+-	case INT:
+-		if (ty->size < inttype->size)
++	case INT:	/* short as wide as int too: binary() compares types */
++		if (ty->size < inttype->size || ty == shorttype)
+ 			return inttype;
+ 		break;
+ 	case UNSIGNED:
+ 		if (ty->size < inttype->size)
+ 			return inttype;
+-		if (ty->size < unsignedtype->size)
++		if (ty->size < unsignedtype->size || ty == unsignedshort)
+ 			return unsignedtype;
+ 		break;
+ 	case FLOAT:
