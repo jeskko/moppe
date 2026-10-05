@@ -23,8 +23,8 @@ target's rules) pass: 550 seeds at two sizes with the full generator, 600 before
 switch to gas/ld the whole suite, 100 default and 151 larger seeds
 pass. Work items:
 
-1. R40 start-up (vectors, watchdog kick, I/O through EP for pages A/B),
-   and the firmware itself.
+1. The R40 firmware: continue in [r40-firmware.md](r40-firmware.md)
+   "Start here" (layout, start-up, display; memory model decided there).
 2. Test gaps if the firmware needs them: structs (assignment, arguments,
    returns), local arrays, recursion, `register` pressure with longs,
    bit-fields (16-bit), function pointers. `intgen.py` is the place.
