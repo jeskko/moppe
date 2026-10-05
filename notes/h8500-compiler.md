@@ -25,8 +25,8 @@ pass. Work items:
 
 1. The R40 firmware (`r40/`, running): continue in
    [r40-firmware.md](r40-firmware.md) "Start here".
-2. Test gaps if the firmware needs them: structs (assignment, arguments,
-   returns), local arrays, recursion, `register` pressure with longs,
+2. Test gaps if the firmware needs them: structs (arguments, returns;
+   assignment works in the R40 firmware's memories), local arrays, recursion, `register` pressure with longs,
    bit-fields (16-bit), function pointers. `intgen.py` is the place.
 3. Code quality is unexamined (e.g. `mov.w @x,r3 / mov.w r3,r1` pairs).
 

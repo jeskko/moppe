@@ -8,8 +8,16 @@
  * 433.500, "43350625" OK = 433.50625), rounded down to the 6.25 kHz
  * raster; CLR deletes the last digit.  UP / DOWN tune by one step.
  * FNC, then: UP / DOWN volume; 1 the next tuning step; # duplex
- * (simplex, -, +); 0 reverse; * a shift entry in kHz ("7600" OK).
- * FNC again or any other key cancels.  Every change is saved to NV.
+ * (simplex, -, +); 0 reverse; * a shift entry in kHz ("7600" OK); RCL
+ * (= STO) store what is on now: two digits name the memory (the mode
+ * stays).  FNC again or any other key cancels.
+ *
+ * RCL switches between the VFO and the memories ("M05" on row 0; the
+ * last channel used, or the next stored one).  In memory mode two
+ * digits choose a channel and UP / DOWN step through the stored ones;
+ * duplex, shift and reverse change the channel until the next recall
+ * (STO keeps them).  The VFO and settings are saved to NV on every
+ * change.
  */
 #include "hw.h"
 #include "lcd.h"
@@ -18,6 +26,7 @@
 #include "pll.h"
 #include "radio.h"
 #include "nv.h"
+#include "mem.h"
 #include "ui.h"
 
 #define ENTRY_MAX 8
@@ -27,15 +36,19 @@ static const unsigned long steps[] = {
 };
 #define NSTEPS (sizeof steps / sizeof steps[0])
 
-unsigned long vfo_hz = 433500000L;
-unsigned long shift_hz = 7600000L;
-unsigned char duplex;		/* DUP_SIMPLEX, DUP_MINUS, DUP_PLUS */
-unsigned char reverse;
+struct chan vfo = { 433500000L, 7600000L, DUP_SIMPLEX, 0 };
+static struct chan cur;		/* what the radio is on */
+unsigned char mem_mode;
+unsigned char mem_ch;
 unsigned char ui_step = 1;
 
 static char entry[ENTRY_MAX + 1];
 static int nentry;
-static unsigned char shift_entry;	/* the entry is a shift in kHz */
+#define E_FREQ  0
+#define E_SHIFT 1		/* a shift in kHz */
+#define E_STORE 2		/* a memory number to store to */
+#define E_RCL   3		/* a memory number to recall */
+static unsigned char etype;
 static unsigned char fnc;
 static unsigned char redraw;	/* rows 0 and 1 */
 
@@ -62,21 +75,40 @@ static char *fmt_mhz(unsigned long hz, char *buf)
 	return utoa(hz % 1000000L / 10, buf, 5);
 }
 
-/* the radio's frequencies from the VFO */
+/* the radio's frequencies from cur; in VFO mode cur is the VFO */
 static void apply(void)
 {
-	unsigned long other = vfo_hz;
+	unsigned long other = cur.hz;
 
-	if (duplex == DUP_MINUS)
-		other = vfo_hz - shift_hz;
-	else if (duplex == DUP_PLUS)
-		other = vfo_hz + shift_hz;
-	if (reverse)
-		radio_tune(other, vfo_hz);
+	if (cur.duplex == DUP_MINUS)
+		other = cur.hz - cur.shift;
+	else if (cur.duplex == DUP_PLUS)
+		other = cur.hz + cur.shift;
+	if (cur.reverse)
+		radio_tune(other, cur.hz);
 	else
-		radio_tune(vfo_hz, other);
+		radio_tune(cur.hz, other);
+	if (!mem_mode)
+		vfo = cur;
 	nv_save();
 	redraw = 1;
+}
+
+static void to_vfo(void)
+{
+	mem_mode = 0;
+	cur = vfo;
+	apply();
+}
+
+/* memory n, if stored */
+static void recall(int n)
+{
+	if (mem_get(n, &cur))
+		return;
+	mem_mode = 1;
+	mem_ch = n;
+	apply();
 }
 
 static void tune(unsigned long hz)
@@ -84,7 +116,11 @@ static void tune(unsigned long hz)
 	hz -= hz % PLL_STEP;
 	if (hz < BAND_LO || hz > BAND_HI)
 		return;
-	vfo_hz = hz;
+	if (mem_mode) {
+		mem_mode = 0;
+		cur = vfo;
+	}
+	cur.hz = hz;
 	apply();
 }
 
@@ -112,17 +148,26 @@ static unsigned long entry_khz(void)
 	return khz * 1000L;
 }
 
+static int entry_num(void)
+{
+	return (entry[0] - '0') * 10 + entry[1] - '0';
+}
+
 void ui_init(void)
 {
 	if (ui_step >= NSTEPS)
 		ui_step = 1;
-	if (duplex > DUP_PLUS)
-		duplex = DUP_SIMPLEX;
-	if (vfo_hz < BAND_LO || vfo_hz > BAND_HI)
-		vfo_hz = 433500000L;
-	if (shift_hz % PLL_STEP || shift_hz > 50000000L)
-		shift_hz = 7600000L;
-	apply();
+	if (vfo.duplex > DUP_PLUS)
+		vfo.duplex = DUP_SIMPLEX;
+	if (vfo.hz < BAND_LO || vfo.hz > BAND_HI || vfo.hz % PLL_STEP)
+		vfo.hz = 433500000L;
+	if (vfo.shift % PLL_STEP || vfo.shift > 50000000L)
+		vfo.shift = 7600000L;
+	vfo.reverse = vfo.reverse != 0;
+	if (mem_mode && mem_get(mem_ch, &cur) == 0)
+		apply();
+	else
+		to_vfo();
 }
 
 static void fnc_key(int k)
@@ -138,18 +183,55 @@ static void fnc_key(int k)
 		nv_save();
 		break;
 	case '#':
-		duplex = (duplex + 1) % 3;
+		cur.duplex = (cur.duplex + 1) % 3;
 		apply();
 		break;
 	case '0':
-		reverse = !reverse;
+		cur.reverse = !cur.reverse;
 		apply();
 		break;
 	case '*':
 		nentry = 0;
-		shift_entry = 1;
+		etype = E_SHIFT;
+		break;
+	case K_RCL:
+		nentry = 0;
+		etype = E_STORE;
 		break;
 	}
+}
+
+/* OK, or the second digit of a memory number */
+static void enter(void)
+{
+	unsigned long s;
+
+	switch (etype) {
+	case E_FREQ:
+		if (nentry)
+			tune(entry_hz());
+		break;
+	case E_SHIFT:
+		s = entry_khz();
+		if (nentry && s % PLL_STEP == 0 && s <= 50000000L) {
+			cur.shift = s;
+			apply();
+		}
+		break;
+	case E_STORE:
+		if (nentry == 2) {
+			mem_put(entry_num(), &cur);
+			if (mem_mode)
+				recall(entry_num());
+		}
+		break;
+	case E_RCL:
+		if (nentry == 2)
+			recall(entry_num());
+		break;
+	}
+	nentry = 0;
+	etype = E_FREQ;
 }
 
 void ui_key(int k)
@@ -161,38 +243,47 @@ void ui_key(int k)
 		return;
 	}
 	if (k >= '0' && k <= '9') {
+		if (mem_mode && etype == E_FREQ && nentry == 0)
+			etype = E_RCL;
 		if (nentry < ENTRY_MAX)
 			entry[nentry++] = k;
+		if ((etype == E_STORE || etype == E_RCL) && nentry == 2)
+			enter();
 		return;
 	}
 	switch (k) {
 	case K_OK:
-		if (shift_entry) {
-			unsigned long s = entry_khz();
-
-			if (nentry && s % PLL_STEP == 0 && s <= 50000000L) {
-				shift_hz = s;
-				apply();
-			}
-		} else if (nentry)
-			tune(entry_hz());
-		nentry = 0;
-		shift_entry = 0;
+		enter();
 		break;
 	case K_CLR:
 		if (nentry)
 			nentry--;
 		else
-			shift_entry = 0;
+			etype = E_FREQ;
 		break;
 	case K_UP:
 	case K_DOWN:
 		nentry = 0;
-		shift_entry = 0;
-		if (k == K_UP)
-			tune(vfo_hz + steps[ui_step]);
+		etype = E_FREQ;
+		if (mem_mode) {
+			int n = mem_next(mem_ch, k == K_UP ? 1 : -1);
+
+			if (n >= 0)
+				recall(n);
+		} else if (k == K_UP)
+			tune(cur.hz + steps[ui_step]);
 		else
-			tune(vfo_hz - steps[ui_step]);
+			tune(cur.hz - steps[ui_step]);
+		break;
+	case K_RCL:
+		nentry = 0;
+		etype = E_FREQ;
+		if (mem_mode)
+			to_vfo();
+		else if (mem_get(mem_ch, 0) == 0)
+			recall(mem_ch);
+		else if (mem_next(mem_ch, 1) >= 0)
+			recall(mem_next(mem_ch, 1));
 		break;
 	case K_FNC:
 		fnc = 1;
@@ -205,21 +296,28 @@ static void draw_top(void)
 	char buf[21], *p = buf;
 	int i;
 
-	if (shift_entry) {
-		/* "Shift 7600_ kHz" */
-		lcd_puts(0, 0, "Shift               ");
+	if (etype == E_SHIFT || etype == E_STORE) {
+		/* "Shift 7600_ kHz", "Store 0_" */
+		lcd_puts(0, 0, etype == E_SHIFT ? "Shift               " :
+			 "Store               ");
 		for (i = 0; i < nentry; i++)
 			buf[i] = entry[i];
 		buf[i++] = '_';
 		buf[i] = 0;
 		lcd_puts(0, 6, buf);
-		lcd_puts(0, 7 + i, "kHz");
+		if (etype == E_SHIFT)
+			lcd_puts(0, 7 + i, "kHz");
 		return;
 	}
 	for (i = 0; i < 20; i++)
 		buf[i] = ' ';
 	buf[20] = 0;
-	if (nentry) {
+	if (etype == E_RCL) {
+		/* "M0_" while choosing a memory */
+		*p++ = 'M';
+		*p++ = entry[0];
+		*p++ = '_';
+	} else if (nentry) {
 		/* "433.5___" while typing */
 		for (i = 0; i < ENTRY_MAX; i++) {
 			if (i == 3)
@@ -230,10 +328,15 @@ static void draw_top(void)
 		p = fmt_mhz(transmitting ? tx_hz : rx_hz, buf);
 		*p = ' ';
 	}
-	if (duplex)
-		buf[10] = duplex == DUP_MINUS ? '-' : '+';
-	if (reverse)
+	if (cur.duplex && !nentry)
+		buf[10] = cur.duplex == DUP_MINUS ? '-' : '+';
+	if (cur.reverse && !nentry)
 		buf[11] = 'R';
+	if (mem_mode && !nentry) {
+		buf[14] = 'M';
+		buf[15] = '0' + mem_ch / 10;
+		buf[16] = '0' + mem_ch % 10;
+	}
 	if (fnc)
 		buf[19] = 'F';
 	lcd_puts(0, 0, buf);

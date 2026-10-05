@@ -291,6 +291,78 @@ class Duplex(unittest.TestCase):
         self.assertEqual(r.display()[2][:4], "    ")
 
 
+class Memories(unittest.TestCase):
+    def store(self, r, n):
+        r.press("FNC")
+        r.press("RCL")
+        self.assertEqual(r.display()[0], "Store _")
+        r.type(n)
+
+    def test_store_recall_step(self):
+        r = booted()
+        r.press("RCL")                          # no memories: stays on VFO
+        self.assertEqual(r.display()[0], "433.50000")
+        for n, f in (("05", "4331"), ("12", "4387"), ("40", "4395")):
+            r.type(f)
+            r.press("OK")
+            if n == "12":
+                fnc(r, "#")
+            self.store(r, n)
+            self.assertEqual(r.display()[0][:9], f[:3] + "." + f[3:] + "0000")
+        self.assertEqual(r.display()[0], "439.50000 -")       # still the VFO
+        r.press("RCL")                          # the first stored one
+        self.assertEqual(r.display()[0], "433.10000     M05")
+        r.press("UP")
+        self.assertEqual(r.display()[0], "438.70000 -   M12")
+        self.assertEqual(r.pll(1)[-1], 431.1625e6)
+        r.press("UP")
+        self.assertEqual(r.display()[0], "439.50000 -   M40")
+        r.press("UP")                           # wraps
+        self.assertEqual(r.display()[0], "433.10000     M05")
+        r.press("DOWN")
+        self.assertEqual(r.display()[0], "439.50000 -   M40")
+        r.type("1")
+        self.assertEqual(r.display()[0], "M1_")
+        r.type("2")
+        self.assertEqual(r.display()[0], "438.70000 -   M12")
+        r.type("33")                            # empty: no change
+        self.assertEqual(r.display()[0], "438.70000 -   M12")
+        r.press("RCL")                          # back to the VFO as it was
+        self.assertEqual(r.display()[0], "439.50000 -")
+        r.press("RCL")                          # and to the last memory
+        self.assertEqual(r.display()[0], "438.70000 -   M12")
+
+    def test_memory_changes_do_not_touch_the_vfo(self):
+        r = booted()
+        r.type("4387")
+        r.press("OK")
+        self.store(r, "07")
+        r.press("RCL")
+        fnc(r, "#")                             # duplex on the channel only
+        self.assertEqual(r.display()[0], "438.70000 -   M07")
+        r.press("RCL")
+        self.assertEqual(r.display()[0], "438.70000")
+        r.press("RCL")                          # recalled as stored
+        self.assertEqual(r.display()[0], "438.70000     M07")
+        fnc(r, "#")
+        self.store(r, "08")                     # store in memory mode: to 08
+        self.assertEqual(r.display()[0], "438.70000 -   M08")
+
+    def test_memories_survive_power_off(self):
+        r = booted()
+        r.type("4387")
+        r.press("OK")
+        fnc(r, "#")
+        fnc(r, "0")
+        self.store(r, "99")
+        r.press("RCL")
+        r2 = Radio(ROM, nv=r.nv())
+        r2.run(1.0)
+        self.assertEqual(r2.display()[0], "431.10000 -R  M99")
+        self.assertEqual((r2.pll(0)[-1], r2.pll(1)[-1]), (476.1e6, 438.7625e6))
+        self.assertEqual(faults(r2), [])
+
+
 # the settings block: NV 0x83000 with P9.2 = 0, the emulator's image
 # offset 0x4000 + 0x3000 (r40/nv.h)
 NV_CFG = 0x7000
@@ -299,7 +371,11 @@ NV_CFG = 0x7000
 class Nv(unittest.TestCase):
     def test_empty_nv_gets_defaults(self):
         r = booted()
-        self.assertEqual(r.nv()[NV_CFG:NV_CFG + 4], bytes([0x52, 0x34, 2, 22]))
+        nv = r.nv()
+        self.assertEqual(nv[NV_CFG:NV_CFG + 2], b"R4")
+        size = nv[NV_CFG + 3]
+        words = sum(nv[NV_CFG:NV_CFG + size - 2]) + int.from_bytes(nv[NV_CFG + size - 2:NV_CFG + size], "big")
+        self.assertEqual(words & 0xFFFF, 0)
         self.assertEqual(r.nv()[:0x4000], bytes(0x4000))  # Nokia's copies untouched
 
     def test_settings_survive_power_off(self):
