@@ -77,3 +77,40 @@ L100 + CU43 board in moppe-emu (commit 50ead02). Steps that mattered:
 3. Boot Cr 13.04 to "Self test" and the service display; a test
    scripting the PE1BVU procedure.
 4. Look for a clean Cr 15.x dump.
+
+## 2026-10-05, second session: NV map, keys, PLL
+
+- Service tests diffed against `nv()`: every test writes the same offset
+  in three places, 0x0000 and 0x2000 in the half with P9.2 = 1 and the
+  working copy (P9.2 = 0, the half that also holds the stack). Byte
+  0x12B changed with every write: the first block's checksum. The block
+  table (start, length, checksum byte) turned up at ROM 0x36966 by
+  searching for 0x012B / 0x01CB; the routine at 0x36A47 writes each byte
+  to both copies and stores NOT(sum).
+- Test 10 before test 18 stored 0x1980: (430 MHz / 3.125 kHz) mod 2^16,
+  the overflow of an unset 0-channel. In PE1BVU's order (18 first) the
+  stored words are the physical channels, 4800 for 430.0 MHz.
+- The top row showed "05 600" and "435000 00": the gap cells are 2, 9,
+  ? and 21, not 16 and 23. "Self test" confirms 2 and 9; 13 or 14 can't
+  be told apart from these texts, so 14 was chosen by symmetry.
+- PLL: RX read 960 MHz for 435 MHz with A = 0, TX had A = 96, which
+  rules out the 64/65 prescaler; OH5NXO's `pll.s` says the chip sees
+  the VCO's second harmonic and puts SRE on P7.7. Halving gave RX 480
+  MHz (435 + 45 IF). The TX R stayed 0: SYNTH events showed SRE with 16
+  bits and then STE with 0, so the firmware strobes the two chips one
+  after the other on the same shifted word. The model now keeps the
+  shared shift register across strobes. TX then read 435.0625 MHz idle,
+  435.000 on PTT (parked, like OH5NXO's `xor #16`).
+- Keys: 70 OK 1234 followed by every ordered pair of unknown positions;
+  only (2,0) (0,0) entered parameter programming: FNC, STO. In tests 31
+  and 36, (2,4) raised and (3,4) lowered the value, and (0,0) stepped
+  test 36 to the next frequency (+1.5 MHz, then +1 MHz, as PE1BVU says
+  for RCL). The manual's key list has STO and RCL on one key.
+- Parameter 030 in Cr 13.04 asks rx, tx and `st`; the entries live in
+  6-byte records from 0x48E (parameter 001), and leaving with `*` wrote
+  FFFF into the unused records. Parameter 800 (own number) cleared
+  Error 6: normal mode shows the number and "Number unobtainable" /
+  date, the cold-start company text "British Gas Northern", and the TX
+  synthesizer steps 403-473 MHz (hunting?) while the RX never gets an
+  N/A. `*55*001#` did not take: '#' is not echoed, OK adds a second
+  '_'; (4,4) cleared the entry.
