@@ -232,6 +232,43 @@ class Tx(unittest.TestCase):
         self.assertEqual(r.sreg(0), 0x09)              # open again (signal)
 
 
+# the settings block: NV 0x83000 with P9.2 = 0, the emulator's image
+# offset 0x4000 + 0x3000 (r40/nv.h)
+NV_CFG = 0x7000
+
+
+class Nv(unittest.TestCase):
+    def test_empty_nv_gets_defaults(self):
+        r = booted()
+        self.assertEqual(r.nv()[NV_CFG:NV_CFG + 4], bytes([0x52, 0x34, 1, 16]))
+        self.assertEqual(r.nv()[:0x4000], bytes(0x4000))  # Nokia's copies untouched
+
+    def test_settings_survive_power_off(self):
+        r = booted()
+        r.type("4381")
+        r.press("OK")
+        r.press("FNC")
+        r.press("UP")
+        r.press("FNC")
+        r.press("1")                            # step 25 kHz
+        r.press("UP")
+        self.assertEqual(r.display()[:2], ["438.12500", "Vol 4         25.00k"])
+        r2 = Radio(ROM, nv=r.nv())
+        r2.run(1.0)
+        self.assertEqual(r2.display()[:2], ["438.12500", "Vol 4         25.00k"])
+        self.assertEqual((r2.sreg(1), r2.pll(0)[-1]), (0x40, 483.125e6))
+
+    def test_bad_checksum_gives_defaults(self):
+        r = booted()
+        r.type("4381")
+        r.press("OK")
+        nv = bytearray(r.nv())
+        nv[NV_CFG + 6] ^= 1                     # a bit of the frequency
+        r2 = Radio(ROM, nv=bytes(nv))
+        r2.run(1.0)
+        self.assertEqual(r2.display()[0], "433.50000")
+
+
 def pwr(r, hold=0.3, gap=0.5):
     r.power_key(True)
     r.run(hold)

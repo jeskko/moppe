@@ -5,6 +5,7 @@
 #define BAND_LO 400000000L	/* tuning limits (the VCO's range is unknown) */
 #define BAND_HI 470000000L
 
+extern unsigned char ui_step;	/* index of the tuning step */
 void ui_init(void);
 void ui_key(int k);
 void ui_draw(void);		/* main loop: refreshes what changed */

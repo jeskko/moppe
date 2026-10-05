@@ -12,22 +12,20 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 ## Start here (next session)
 
 State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
-`python3 -m unittest test_r40fw` (in `tests/`) runs 17 scenarios; `make
+`python3 -m unittest test_r40fw` (in `tests/`) runs 20 scenarios; `make
 -C r40 run` opens it in the emulator's TUI. A simplex VFO: boots
 on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
 channel), frequency entry (digits, OK; CLR deletes), UP/DOWN 12.5 kHz
 steps, FNC + UP/DOWN volume, noise squelch with hysteresis switching
 the RX audio and amplifier, BUSY and the RSSI reading; PTT transmits
 in the Nokia firmware's order (deviation bits, DAC, TX synthesizer,
-TX ON, mic); PWR off.
+TX ON, mic); settings (frequency, volume, step) kept in NV RAM; PWR
+off.
 Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
 Next, each checked in the emulator before the next:
 
-1. **NV storage** (battery SRAM 0x80000, page 8: a NOLOAD section, so a
-   linker script of our own or `h8cc.py --script`): last frequency,
-   volume, squelch, step; checksum, defaults on a bad one.
-2. Duplex split (shift and reverse), memories, VFO and memory scan,
+1. Duplex split (shift and reverse), memories, VFO and memory scan,
    settings (squelch level, step, TX power), TX time-out, key beeps (TMO + IC41 SIGN LSP +
    IC40 PWRAMP). RFC and TPC (DAC channels 1, 2) and the deviation
    bits are 0 today, as Nokia's on an uncalibrated NV: need Nokia's
@@ -37,7 +35,8 @@ Open questions to keep in view: the gaps list in r40.md (CTCSS path,
 calibration tables, PLL lock timing, no hardware checks yet); whether
 the real CU43 needs the slower Nokia-like I2C pacing; what P1.5 does
 when the PCF8574 /INT and the IRQ0 function share it on hardware (the
-emulator reads the pin); whether the supply really drops on IC39 OFF
+emulator reads the pin); what OUT0.3 (RAM PAGE) does to the NV window on hardware (Nokia toggles
+it, the emulator ignores it, we keep it 0); whether the supply really drops on IC39 OFF
 with the ignition line high (the firmware then waits for PWR and
 restarts).
 
@@ -56,6 +55,7 @@ restarts).
 | `r40/pll.c` | both synthesizers: `pll_init()` (R = 1024, SW = 0, both chips), `pll_vco(which, hz)` (N/A from the VCO frequency, 6.25 kHz steps) |
 | `r40/radio.c` | `radio_tune(rx, tx)` (RX VCO rx + 45 MHz, TX parked tx + 62.5 kHz), `radio_poll()`: PTT (P7.3, two ticks) with the TX sequence, A/D scan AN0/AN1, squelch (opens below `sq_level` = 480, closes 16 above, two ticks) |
 | `r40/ui.c` | VFO screen (row 0 frequency or entry, row 1 volume and step, row 2 BUSY and RSSI / 4) and keys |
+| `r40/nv.c` | settings block (`struct nv_cfg`, 16 bytes) at 0x83000 (P9.2 = 0 half, emulator `nv()[0x7000:]`): magic `R4`, version, size, 16-bit checksum; `nv_save()` on every change, defaults when invalid. Nokia's copies (the other half) are left alone |
 | `r40/main.c` | start-up order, main loop, power off |
 | `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys (`key_down` while held), entry, steps, squelch, volume, synthesizer words, 4094 boot state, power off/on |
 

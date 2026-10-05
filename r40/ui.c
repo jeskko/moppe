@@ -5,7 +5,8 @@
  * Keys: digits then OK enter a frequency, MHz first ("4335" OK =
  * 433.500, "43350625" OK = 433.50625), rounded down to the 6.25 kHz
  * raster; CLR deletes the last digit.  UP / DOWN tune by one step.
- * FNC, then UP / DOWN: volume (FNC again or any other key cancels).
+ * FNC, then UP / DOWN: volume; FNC, then 1: the next tuning step (FNC
+ * again or any other key cancels).  Every change is saved to NV.
  */
 #include "hw.h"
 #include "lcd.h"
@@ -13,6 +14,7 @@
 #include "audio.h"
 #include "pll.h"
 #include "radio.h"
+#include "nv.h"
 #include "ui.h"
 
 #define ENTRY_MAX 8
@@ -20,7 +22,11 @@
 static char entry[ENTRY_MAX + 1];
 static int nentry;
 static unsigned char fnc;
-static unsigned long step = 12500L;
+static const unsigned long steps[] = {
+	6250L, 12500L, 25000L, 100000L, 1000000L
+};
+#define NSTEPS (sizeof steps / sizeof steps[0])
+unsigned char ui_step = 1;
 static unsigned char redraw;	/* rows 0 and 1 */
 
 /* v as decimal, at least `digits` digits; returns the end */
@@ -52,6 +58,7 @@ static void tune(unsigned long hz)
 	if (hz < BAND_LO || hz > BAND_HI)
 		return;
 	radio_tune(hz, hz);
+	nv_save();
 	redraw = 1;
 }
 
@@ -70,6 +77,8 @@ static unsigned long entry_hz(void)
 
 void ui_init(void)
 {
+	if (ui_step >= NSTEPS)
+		ui_step = 1;
 	redraw = 1;
 }
 
@@ -80,6 +89,12 @@ void ui_key(int k)
 		redraw = 1;
 		if (k == K_UP || k == K_DOWN) {
 			audio_volume(volume + (k == K_UP ? 1 : -1));
+			nv_save();
+			return;
+		}
+		if (k == '1') {
+			ui_step = (ui_step + 1) % NSTEPS;
+			nv_save();
 			return;
 		}
 		if (k == K_FNC)
@@ -106,11 +121,11 @@ void ui_key(int k)
 		break;
 	case K_UP:
 		nentry = 0;
-		tune(rx_hz + step);
+		tune(rx_hz + steps[ui_step]);
 		break;
 	case K_DOWN:
 		nentry = 0;
-		tune(rx_hz - step);
+		tune(rx_hz - steps[ui_step]);
 		break;
 	case K_FNC:
 		fnc = 1;
@@ -157,7 +172,7 @@ static void draw_mid(void)
 	*p++ = '0' + volume;
 	while (p < buf + 14)
 		*p++ = ' ';
-	p = utoa(step / 10, p, 1);	/* "1250" -> "12.50k" */
+	p = utoa(steps[ui_step] / 10, p, 1);	/* "1250" -> "12.50k" */
 	p[1] = p[0];
 	p[0] = p[-1];
 	p[-1] = p[-2];

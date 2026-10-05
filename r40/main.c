@@ -7,6 +7,7 @@
 #include "audio.h"
 #include "radio.h"
 #include "ui.h"
+#include "nv.h"
 
 /* power off; with the supply held on (ignition), wait for PWR */
 static void off(void)
@@ -33,11 +34,16 @@ int main(void)
 	hw_init();
 	i2c_init();
 	lcd_init();
+	rx_hz = tx_hz = 433500000L;	/* defaults, unless NV has better */
+	if (nv_load() || rx_hz < BAND_LO || rx_hz > BAND_HI) {
+		rx_hz = tx_hz = 433500000L;
+		nv_save();
+	}
 	audio_init();
 	keypad_init();
 	radio_init();
 	ei();
-	radio_tune(433500000L, 433500000L);
+	radio_tune(rx_hz, tx_hz);
 	ui_init();
 	for (;;) {
 		wdog_kick();
