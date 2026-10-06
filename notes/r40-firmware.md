@@ -44,6 +44,14 @@ Next, each checked in the emulator before the next:
 2. Calibration (r40.md gap 3): read Nokia's RX tuning (RFC per MHz),
    TX power and deviation tables from the other NV half instead of the
    raw menu values.
+   **Self-calibration of RFC (idea, not implemented):** without a signal
+   generator, sweep RFC (0-63) at a frequency and watch RSSI: the
+   receiver's own noise is loudest where the front end is tuned, so the
+   RFC with the highest RSSI should be close to the right one. Probe
+   every couple of MHz across the band, keep the table in NV, and
+   interpolate between points when tuning. A fallback when Nokia's
+   table is missing or the band has been moved; check it against a
+   signal generator once. Emulator: needs an RSSI that depends on RFC.
 3. Hardware checks of everything in "Open questions" below.
 
 Open questions to keep in view: the gaps list in r40.md (CTCSS path,
