@@ -5,7 +5,8 @@
  *
  * PTT (P7.3 low, two ticks) in the Nokia firmware's order (emulator,
  * Cr 13.04 simplex): deviation bits, DAC (TPC), TX synthesizer to f,
- * TX ON (no lock wait: 0.6 ms later), microphone on.  Release: mic off,
+ * TX ON (no lock wait: 0.6 ms later), microphone on, then the CTCSS
+ * tone if the channel has one (tone.c).  Release: tone off, mic off,
  * TX OFF, synthesizer parked, receive state back.  The A/D
  * scans AN0 (RSSI) and AN1 (noise: high with no signal) continuously;
  * the squelch opens when the noise falls below sq_level and closes 16
@@ -19,6 +20,7 @@
 #include "audio.h"
 #include "serbus.h"
 #include "menu.h"
+#include "tone.h"
 #include "radio.h"
 
 #define TX_PARK 62500L
@@ -31,7 +33,8 @@ unsigned char transmitting;
 unsigned char tx_locked;
 unsigned tot_limit;
 static unsigned tx_start;
-unsigned char rfc, tpc;		/* DAC: RX tuning, TX power (uncalibrated) */
+unsigned char rfc, tpc;
+unsigned char tx_tone;		/* DAC: RX tuning, TX power (uncalibrated) */
 static unsigned char ptt_count;
 unsigned noise, rssi;
 unsigned char sq_open;
@@ -77,10 +80,18 @@ static void tx_on(void)
 	pll_vco(PLL_TX, tx_hz);
 	out1(out1_shadow | OUT1_TXON);
 	audio_mic(1);
+	if (tx_tone) {
+		ctcss_on(tx_tone);
+		audio_fii(1);
+	}
 }
 
 static void tx_off(void)
 {
+	if (tx_tone) {
+		audio_fii(0);
+		ctcss_off();
+	}
 	audio_mic(0);
 	out1(out1_shadow & ~OUT1_TXON);
 	transmitting = 0;

@@ -3,6 +3,9 @@
  * DOWN change the value (at once, and saved), OK goes to the next item,
  * CLR or FNC leaves.
  *
+ * Tone: the CTCSS tone sent with the current channel (VFO or memory,
+ * like duplex), off or 67.0-254.1 Hz; experimental (tone.c).
+ *
  * Squelch 0-9: 0 never closes; level n opens below a noise reading of
  * 600 - 20 n (level 6 = 480, the old default).  The scale is a guess
  * until a real radio's noise readings are known.  TX power and RX tune
@@ -18,16 +21,18 @@
 #include "nv.h"
 #include "ui.h"
 #include "menu.h"
+#include "tone.h"
 
 #define M_SQUELCH 0
-#define M_TOT     1
-#define M_BEEP    2
-#define M_TXPOWER 3
-#define M_RXTUNE  4
-#define NITEMS    5
+#define M_TONE    1
+#define M_TOT     2
+#define M_BEEP    3
+#define M_TXPOWER 4
+#define M_RXTUNE  5
+#define NITEMS    6
 
 static const char *const names[NITEMS] = {
-	"Squelch", "Time-out", "Beep", "TX power", "RX tune"
+	"Squelch", "Tone (CTCSS)", "Time-out", "Beep", "TX power", "RX tune"
 };
 static const unsigned tot_secs[] = { 0, 30, 60, 120, 180, 300, 600 };
 #define NTOT (sizeof tot_secs / sizeof tot_secs[0])
@@ -63,6 +68,10 @@ static void change(int d)
 		if (sq_index + d >= 0 && sq_index + d <= 9)
 			sq_index += d;
 		break;
+	case M_TONE:
+		if (ui_tone() + d >= 0 && ui_tone() + d <= NTONES)
+			ui_set_tone(ui_tone() + d);
+		return;
 	case M_TOT:
 		if (tot_index + d >= 0 && tot_index + d < (int)NTOT)
 			tot_index += d;
@@ -117,6 +126,21 @@ void menu_draw(void)
 			utoa(sq_index, p, 1);
 		else
 			p = "open";
+		break;
+	case M_TONE:
+		if (ui_tone()) {
+			unsigned t = tones[ui_tone()];
+
+			p = utoa(t / 10, buf, 1);
+			*p++ = '.';
+			*p++ = '0' + t % 10;
+			*p++ = ' ';
+			*p++ = 'H';
+			*p++ = 'z';
+			*p = 0;
+			p = buf;
+		} else
+			p = "off";
 		break;
 	case M_TOT:
 		if (tot_index == 0)

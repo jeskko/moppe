@@ -6,7 +6,7 @@
 
 #define NV_BASE  0x3000		/* 0x83000 with P9.2 = 0 (page 8) */
 #define NV_MAGIC 0x5234		/* "R4" */
-#define NV_VERSION 4
+#define NV_VERSION 5
 
 struct nv_cfg {
 	unsigned magic;

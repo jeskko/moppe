@@ -7,6 +7,7 @@ struct chan {
 	unsigned long shift;
 	unsigned char duplex;	/* DUP_SIMPLEX, DUP_MINUS, DUP_PLUS (ui.h) */
 	unsigned char reverse;
+	unsigned char tone;	/* CTCSS on TX: index into tone.c, 0 = none */
 };
 
 #define NMEM 100

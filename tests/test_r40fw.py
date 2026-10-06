@@ -420,8 +420,8 @@ class Scan(unittest.TestCase):
 
 
 def menu(r, item, ups=0, downs=0):
-    """FNC OK, OK to item (0 squelch, 1 time-out, 2 beep, 3 TX power,
-    4 RX tune), UP / DOWN, CLR"""
+    """FNC OK, OK to item (0 squelch, 1 tone, 2 time-out, 3 beep, 4 TX
+    power, 5 RX tune), UP / DOWN, CLR"""
     fnc(r, "OK")
     for _ in range(item):
         r.press("OK")
@@ -450,7 +450,7 @@ class Settings(unittest.TestCase):
 
     def test_time_out(self):
         r = booted()
-        self.assertEqual(menu(r, 1, ups=1), ["Time-out", "30 s"])
+        self.assertEqual(menu(r, 2, ups=1), ["Time-out", "30 s"])
         r.ptt(True)
         r.run(29.0)
         self.assertEqual(r.out(1) & 1, 1)
@@ -467,7 +467,7 @@ class Settings(unittest.TestCase):
 
     def test_beep_off(self):
         r = booted()
-        self.assertEqual(menu(r, 2, ups=1), ["Beep", "off"])
+        self.assertEqual(menu(r, 3, ups=1), ["Beep", "off"])
         r.run(0.3)
         r.key("5", True)
         on = False
@@ -479,8 +479,8 @@ class Settings(unittest.TestCase):
 
     def test_dac_values_and_persistence(self):
         r = booted()
-        self.assertEqual(menu(r, 3, ups=5), ["TX power", "5"])
-        self.assertEqual(menu(r, 4, downs=1), ["RX tune", "63"])
+        self.assertEqual(menu(r, 4, ups=5), ["TX power", "5"])
+        self.assertEqual(menu(r, 5, downs=1), ["RX tune", "63"])
         self.assertEqual(r.dac(), [63, 5, 63, 5])
         r.ptt(True)
         r.run(0.2)
@@ -491,6 +491,53 @@ class Settings(unittest.TestCase):
         r2.run(1.0)
         self.assertEqual(r2.dac(), [63, 5, 63, 5])
         self.assertEqual(menu(r2, 0), ["Squelch", "8"])
+
+
+def tone_hz(r, seconds):
+    n0, t0 = r.tmo_rises(), r.time()
+    r.run(seconds)
+    return (r.tmo_rises() - n0) / (r.time() - t0)
+
+
+class Ctcss(unittest.TestCase):
+    def test_tone_on_tx(self):
+        # 88.5 Hz (tone 9) on TMO through the Fii switch, only in TX
+        r = booted()
+        self.assertEqual(menu(r, 1, ups=9), ["Tone (CTCSS)", "88.5 Hz"])
+        self.assertEqual(r.display()[0], "433.50000   T")
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual(r.sreg(2), 0x20)                 # Fii on, deviation 0
+        self.assertAlmostEqual(tone_hz(r, 5.0), 88.5, delta=0.3)
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual((r.sreg(2), r.peek(0xFFD0)), (0x07, 0))
+        self.assertEqual(tone_hz(r, 0.5), 0)
+        self.assertEqual(faults(r), [])
+
+    def test_no_tone_by_default_and_highest_tone(self):
+        r = booted()
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual((r.sreg(2), tone_hz(r, 0.5)), (0x00, 0))
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual(menu(r, 1, ups=60), ["Tone (CTCSS)", "254.1 Hz"])
+        r.ptt(True)
+        r.run(0.2)
+        self.assertAlmostEqual(tone_hz(r, 2.0), 254.1, delta=1.0)
+
+    def test_memory_keeps_its_tone(self):
+        r = booted()
+        menu(r, 1, ups=13)                      # 100.0 Hz on the VFO
+        fnc(r, "RCL")
+        r.type("10")
+        menu(r, 1, downs=13)                    # VFO back to none
+        r.press("RCL")
+        self.assertEqual(r.display()[0], "433.50000   T M10")
+        r.ptt(True)
+        r.run(0.2)
+        self.assertAlmostEqual(tone_hz(r, 3.0), 100.0, delta=0.5)
 
 
 # the settings block: NV 0x83000 with P9.2 = 0, the emulator's image
@@ -556,6 +603,8 @@ class Power(unittest.TestCase):
         r.key("5", False)
         tones = [(a, b) for a, b, sign, amp in seen if a and sign and amp]
         self.assertEqual(sorted(set(tones)), [(0x0A, 51), (0x0A, 89)])
+        # TMO: 126 kHz / 90 = 1400 Hz, / 52 = 2423 Hz (no divider after TMO:
+        # Nokia's CCIR tones come out right that way)
         self.assertEqual(seen[-1][0], 0)                    # timer stopped
         self.assertEqual((r.sreg(2), r.sreg(1)), (0x07, 0x30))
 

@@ -122,6 +122,16 @@ void audio_mic(int on)
 	sr_write(SR_SW2, sw2);
 }
 
+/* the Fii switch: TMO (a CTCSS tone) into the TX audio */
+void audio_fii(int on)
+{
+	if (on)
+		sw1 |= SW1_FII;
+	else
+		sw1 &= ~SW1_FII;
+	sr_write(SR_SW1, sw1);
+}
+
 /* after TX OFF: receive deviation bits (the squelch sets the rest) */
 void audio_tx_done(void)
 {

@@ -12,6 +12,7 @@ extern unsigned tot_limit;		/* seconds, 0 = none */
 #define TX_LO 430000000L		/* transmit only in the 70 cm band */
 #define TX_HI 440000000L
 extern unsigned char rfc, tpc;
+extern unsigned char tx_tone;	/* CTCSS index, 0 = none */
 extern unsigned noise, rssi;	/* A/D, 0-1023 */
 extern unsigned char sq_open;
 extern unsigned sq_level;	/* opens below this noise reading */

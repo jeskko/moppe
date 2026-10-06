@@ -33,6 +33,7 @@
 #include "nv.h"
 #include "mem.h"
 #include "menu.h"
+#include "tone.h"
 #include "ui.h"
 
 #define ENTRY_MAX 8
@@ -97,6 +98,7 @@ static void apply(void)
 		other = cur.hz - cur.shift;
 	else if (cur.duplex == DUP_PLUS)
 		other = cur.hz + cur.shift;
+	tx_tone = cur.tone <= NTONES ? cur.tone : 0;
 	if (cur.reverse)
 		radio_tune(other, cur.hz);
 	else
@@ -166,6 +168,19 @@ static int entry_num(void)
 	return (entry[0] - '0') * 10 + entry[1] - '0';
 }
 
+/* the menu's Tone item: the channel on now (as duplex: a memory keeps
+   it only when stored again) */
+int ui_tone(void)
+{
+	return cur.tone;
+}
+
+void ui_set_tone(int t)
+{
+	cur.tone = t;
+	apply();
+}
+
 void ui_init(void)
 {
 	if (ui_step >= NSTEPS)
@@ -177,6 +192,8 @@ void ui_init(void)
 	if (vfo.shift % PLL_STEP || vfo.shift > 50000000L)
 		vfo.shift = 7600000L;
 	vfo.reverse = vfo.reverse != 0;
+	if (vfo.tone > NTONES)
+		vfo.tone = 0;
 	if (mem_mode && mem_get(mem_ch, &cur) == 0)
 		apply();
 	else
@@ -401,6 +418,8 @@ static void draw_top(void)
 		buf[10] = cur.duplex == DUP_MINUS ? '-' : '+';
 	if (cur.reverse && !nentry)
 		buf[11] = 'R';
+	if (cur.tone && !nentry)
+		buf[12] = 'T';
 	if (mem_mode && !nentry) {
 		buf[14] = 'M';
 		buf[15] = '0' + mem_ch / 10;

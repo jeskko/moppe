@@ -42,8 +42,12 @@
 	vec	fault		! 8C
 	vec	fault		! 90 FRT1 ICI
 	vec	tick		! 94 FRT1 OCIA: the 100 Hz tick
-	.rept	26
-	vec	fault		! 98-FC
+	.rept	10
+	vec	fault		! 98-BC
+	.endr
+	vec	ctcss		! C0 8-bit timer CMIA: the CTCSS tone
+	.rept	15
+	vec	fault		! C4-FC
 	.endr
 	.org	0x180		! 100-17F: DTC vectors (DTC unused)
 
@@ -133,3 +137,22 @@ _ei:	andc.w	#0xf8ff,sr
 	.global	_di
 _di:	orc.w	#0x0700,sr
 	rts
+
+! 8-bit timer compare match A, 8 kHz while a CTCSS tone is on: a phase
+! accumulator; its top bit is the level TMO takes at the next compare
+! (TCSR output select A: 01 = 0, 10 = 1).  Reading TCSR before the write
+! clears CMFA.
+	.align	1
+ctcss:
+	mov.w	r0,@-sp
+	mov.w	@_ctcss_phase,r0
+	add.w	@_ctcss_inc,r0
+	mov.w	r0,@_ctcss_phase
+	bmi	1f
+	tst.b	@0xffd1:8
+	mov.b	#0x01,@0xffd1:8
+	bra	2f
+1:	tst.b	@0xffd1:8
+	mov.b	#0x02,@0xffd1:8
+2:	mov.w	@sp+,r0
+	rte

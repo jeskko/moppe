@@ -28,7 +28,10 @@ pass. Work items:
 2. Test gaps if the firmware needs them: structs (arguments, returns;
    assignment works in the R40 firmware's memories), local arrays, recursion, `register` pressure with longs,
    bit-fields (16-bit), function pointers. `intgen.py` is the place.
-3. Code quality is unexamined (e.g. `mov.w @x,r3 / mov.w r3,r1` pairs).
+3. lcc drops a volatile read used as a statement (`(void)REG;`,
+   "reference elided"): store it instead (r40/tone.c). Fix in the front
+   end if it bites more.
+4. Code quality is unexamined (e.g. `mov.w @x,r3 / mov.w r3,r1` pairs).
 
 Run the tests: `tools/h8500/test/run.sh` (exit status 0 = all pass).
 Reduce an rcc crash: `test/reduce.py file.c 'assert text'` (line

@@ -105,6 +105,20 @@ The VFO keys are a first choice (digits + OK, UP/DOWN step, FNC +
 UP/DOWN volume); the keypad tests now read `key_down` from RAM for
 keys without a function.
 
+## 2026-10-06/07: CTCSS
+
+The tone source is TMO. OH5NXO's "final Hz = TMO / 8" does not fit the
+Nokia firmware: its CCIR table (8:2051, used by 0x1D2AB: phi/64, toggle
+on compare A) gives 1125 Hz for '1', 1000 for 'D' and so on directly on
+TMO. Timer division alone is too coarse for CTCSS (phi/1024: 88.5 Hz
+comes out 1.1 % off), so an 8 kHz compare interrupt runs a phase
+accumulator and sets TMO's next level. Two slips found by measuring:
+compare 124 gave 8064 Hz (the counter clears after compare + 1 counts),
+and a truncated increment ran 0.1 Hz low. The emulator showed TMO only
+to a bus callback the board did not hook: moppe-emu ee44234 counts its
+rising edges (`Radio.tmo_rises()`). lcc drops a bare volatile read
+(`(void)REG;`): the firmware stores such reads.
+
 ## 2026-10-06: transmit
 
 Nokia's PTT in simplex (emulator events, ~3 ms after /PTT): IC41 00,
