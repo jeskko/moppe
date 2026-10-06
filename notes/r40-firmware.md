@@ -13,7 +13,8 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 
 State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
 `python3 -m unittest test_r40fw` (in `tests/`) runs 38 scenarios; `make
--C r40 run` opens it in the emulator's TUI. A simplex VFO: boots
+-C r40 run` or plain `python3 emu/python/r40tui.py` opens it in the
+emulator's TUI (`--factory`: the Nokia firmware). A simplex VFO: boots
 on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
 channel), frequency entry (digits, OK; CLR deletes), UP/DOWN 12.5 kHz
 steps, FNC + UP/DOWN volume, duplex (FNC # simplex/-/+, FNC * shift
