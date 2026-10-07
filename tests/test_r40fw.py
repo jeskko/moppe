@@ -593,6 +593,57 @@ class Calibration(unittest.TestCase):
             self.assertEqual(r.sreg(0), audio, an1)
 
 
+class SelfCal(unittest.TestCase):
+    # the emulator's front end: RSSI peaks where RFC = MHz above 400 - 5,
+    # not where Nokia's table (nokia_nv: MHz above 400) puts it
+    OPT = [max(0, i - 5) for i in range(71)]
+
+    def radio(self, nv=None):
+        r = Radio(ROM, nv=nokia_nv() if nv is None else nv)
+        r.set_rf_opt(self.OPT)
+        r.run(1.0)
+        return r
+
+    def start(self, r):
+        fnc(r, "OK")
+        for _ in range(6):
+            r.press("OK")
+        self.assertEqual(r.display()[:2], ["RX self-cal", "Nokia"])
+        r.press("UP")
+
+    def test_sweep_interpolation_and_persistence(self):
+        r = self.radio()
+        self.assertEqual(r.dac()[2], 33)                    # Nokia's, 433.5
+        self.start(r)
+        r.run(1.0)
+        self.assertEqual(r.display()[0], "RX self-cal")
+        r.run(14.0)
+        self.assertEqual(r.display()[:2], ["RX self-cal", "own"])
+        r.press("CLR")
+        self.assertEqual((r.display()[0], r.dac()[2]), ("433.50000", 28))
+        for keys, rfc in (("4372", 32), ("4309875", 25), ("440", 35), ("441", 41)):
+            r.type(keys)
+            r.press("OK")
+            self.assertEqual(r.dac()[2], rfc, keys)       # 441: Nokia's again
+        r2 = self.radio(r.nv())
+        self.assertEqual(r2.dac()[2], 41)
+        r2.type("4335")
+        r2.press("OK")
+        self.assertEqual(r2.dac()[2], 28)
+        self.assertEqual(menu(r2, 6, downs=1), ["RX self-cal", "Nokia"])
+        self.assertEqual(r2.dac()[2], 33)
+        self.assertEqual(faults(r2), [])
+
+    def test_key_stops_it(self):
+        r = self.radio()
+        self.start(r)
+        r.run(3.0)
+        r.press("CLR")
+        r.run(0.5)
+        self.assertEqual(r.display()[:2], ["RX self-cal", "Nokia"])
+        self.assertEqual((r.pll(0)[-1], r.dac()[2]), (478.5e6, 33))
+
+
 class Ctcss(unittest.TestCase):
     def test_tone_on_tx(self):
         # 88.5 Hz (tone 9) on TMO through the Fii switch, only in TX

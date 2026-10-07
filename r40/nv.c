@@ -13,6 +13,7 @@
 #include "ui.h"
 #include "menu.h"
 #include "nv.h"
+#include "cal.h"
 
 static unsigned sum(const unsigned char *p, int n)
 {
@@ -26,7 +27,7 @@ static unsigned sum(const unsigned char *p, int n)
 int nv_load(void)
 {
 	struct nv_cfg *c = NV_CFG;
-	int n = (int)((char *)&c->sum - (char *)c);
+	int n = (int)((char *)&c->sum - (char *)c), i;
 
 	if (c->magic != NV_MAGIC || c->version != NV_VERSION ||
 	    c->size != sizeof(struct nv_cfg) ||
@@ -42,13 +43,15 @@ int nv_load(void)
 	beep_enabled = c->beep != 0;
 	tx_level = c->tx_level;
 	rx_trim = c->rx_trim;
+	for (i = 0; i < SC_N; i++)
+		rx_selfcal[i] = c->rx_selfcal[i];
 	return 0;
 }
 
 void nv_save(void)
 {
 	struct nv_cfg *c = NV_CFG;
-	int n = (int)((char *)&c->sum - (char *)c);
+	int n = (int)((char *)&c->sum - (char *)c), i;
 
 	c->magic = NV_MAGIC;
 	c->version = NV_VERSION;
@@ -63,5 +66,7 @@ void nv_save(void)
 	c->beep = beep_enabled;
 	c->tx_level = tx_level;
 	c->rx_trim = rx_trim;
+	for (i = 0; i < SC_N; i++)
+		c->rx_selfcal[i] = rx_selfcal[i];
 	c->sum = 0 - sum((unsigned char *)c, n);
 }

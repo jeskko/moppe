@@ -11,7 +11,8 @@
  * closes 16 above (the scale is a guess until a real radio's noise
  * readings are known).  TX power is Nokia's calibrated level 1-3 (low,
  * mid, high); RX tune a trim added to the calibrated RFC, shown with
- * the resulting DAC value.
+ * the resulting DAC value.  RX self-cal: UP runs cal.c's sweep (any
+ * key stops it), DOWN goes back to Nokia's table.
  */
 #include "hw.h"
 #include "lcd.h"
@@ -31,10 +32,12 @@
 #define M_BEEP    3
 #define M_TXPOWER 4
 #define M_RXTUNE  5
-#define NITEMS    6
+#define M_RXCAL   6
+#define NITEMS    7
 
 static const char *const names[NITEMS] = {
-	"Squelch", "Tone (CTCSS)", "Time-out", "Beep", "TX power", "RX tune"
+	"Squelch", "Tone (CTCSS)", "Time-out", "Beep", "TX power", "RX tune",
+	"RX self-cal"
 };
 static const unsigned tot_secs[] = { 0, 30, 60, 120, 180, 300, 600 };
 #define NTOT (sizeof tot_secs / sizeof tot_secs[0])
@@ -97,6 +100,12 @@ static void change(int d)
 	case M_RXTUNE:
 		if (rx_trim + d >= -RX_TRIM && rx_trim + d <= RX_TRIM)
 			rx_trim += d;
+		break;
+	case M_RXCAL:
+		if (d > 0)
+			cal_self();
+		else
+			cal_self_clear();
 		break;
 	}
 	settings_apply();
@@ -186,6 +195,9 @@ void menu_draw(void)
 		*p++ = ')';
 		*p = 0;
 		p = buf;
+		break;
+	case M_RXCAL:
+		p = cal_self_valid() ? "own" : "Nokia";
 		break;
 	}
 	lcd_puts(1, 0, p);

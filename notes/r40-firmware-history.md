@@ -162,3 +162,14 @@ Firmware: `cal.c`; menu TX power low/mid/high and RX tune as a trim;
 squelch "cal" the default. The emulator's idle AN1 was 512, below
 Nokia's default open level (532), so a "no signal" radio was open with
 Nokia's own levels too: moppe-emu now idles at 600.
+
+## 2026-10-07: RX self-calibration
+
+Assumption (user's call): with no signal the RSSI is highest where RFC
+tunes the front end. The emulator got a front-end model (optimum RFC
+per MHz, RSSI falling as 16 / (16 + d^2)); Nokia's automatic test 36
+(OK twice) found the model's peak, so Nokia's search is the same
+RSSI-peak idea (with a generator signal). `cal_self()` sweeps RFC at
+six points in 430-440 MHz and recovered an optimum curve offset from
+Nokia's table exactly, odd MHz by interpolation. A key stops it and
+keeps the previous table.

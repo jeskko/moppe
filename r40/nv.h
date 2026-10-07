@@ -6,7 +6,7 @@
 
 #define NV_BASE  0x3000		/* 0x83000 with P9.2 = 0 (page 8) */
 #define NV_MAGIC 0x5234		/* "R4" */
-#define NV_VERSION 6
+#define NV_VERSION 7
 
 struct nv_cfg {
 	unsigned magic;
@@ -18,6 +18,7 @@ struct nv_cfg {
 	unsigned char sq_index, tot_index, beep;
 	unsigned char tx_level;
 	signed char rx_trim;
+	unsigned char rx_selfcal[6];	/* cal.c SC_N */
 	unsigned sum;		/* 0 - (sum of the bytes before) */
 };
 

@@ -18,9 +18,23 @@
  * Without a valid copy (flat battery) the D-band defaults of Nokia's
  * test 190002 are used, with deviation 4 (the tuning instructions'
  * starting value; Nokia's defaults leave it 0).
+ *
+ * Self-calibration of RFC (cal_self): with no signal, the receiver's
+ * own noise is strongest where the front end is tuned, so at the centre
+ * of 430, 432 ... 440 MHz RFC is swept 0-63 and the RSSI peak kept
+ * (three-step smoothing, the middle of a flat top).  The six results
+ * (kept in our NV) replace Nokia's table for 430-440 MHz, the odd MHz
+ * interpolated; Nokia's table still serves outside it.  Untried on
+ * hardware: whether the peak is clear, and how long RFC takes to settle
+ * (one tick here).
  */
 #include "regs.h"
 #include "hw.h"
+#include "lcd.h"
+#include "keypad.h"
+#include "radio.h"
+#include "serbus.h"
+#include "ui.h"
 #include "cal.h"
 
 #define BLOCK   0x12C		/* block 0 with its checksum byte */
@@ -33,7 +47,11 @@
 #define NBANDS  71
 #define NV_SEL  0x04		/* P9.2 */
 
+#define SC_LO   30		/* self-cal: MHz above the 0-channel */
+#define SETTLE  3		/* ticks after a retune */
+
 static unsigned char blk[BLOCK];
+unsigned char rx_selfcal[SC_N] = { 0xFF };
 static unsigned long base_hz = 400000000L;
 unsigned char cal_ok;
 
@@ -107,9 +125,110 @@ static int mhz(unsigned long hz)
 	return n < NBANDS ? (int)n : NBANDS - 1;
 }
 
+int cal_self_valid(void)
+{
+	int i;
+
+	for (i = 0; i < SC_N; i++)
+		if (rx_selfcal[i] > 63)
+			return 0;
+	return 1;
+}
+
 unsigned char cal_rfc(unsigned long rx)
 {
-	return blk[RFC + mhz(rx)] & 0x3F;
+	int i = mhz(rx) - SC_LO, j = i / 2;
+
+	if (i < 0 || i > 2 * (SC_N - 1) || !cal_self_valid())
+		return blk[RFC + mhz(rx)] & 0x3F;
+	if (i & 1)
+		return (rx_selfcal[j] + rx_selfcal[j + 1] + 1) / 2;
+	return rx_selfcal[j];
+}
+
+static unsigned rssi_sum(void)
+{
+	unsigned s;
+
+	delay_ticks(1);		/* RFC settles */
+	s = ADDRA >> 6;
+	delay_ticks(1);
+	return s + (ADDRA >> 6);
+}
+
+static void show(unsigned long f, int rfc)
+{
+	char buf[8], *p;
+
+	p = utoa(f / 1000000L, buf, 1);
+	*p++ = '.';
+	*p++ = '5';
+	*p = 0;
+	lcd_puts(1, 0, buf);
+	lcd_puts(1, 6, "MHz  RFC");
+	utoa(rfc, buf, 2);
+	lcd_puts(1, 15, buf);
+	lcd_flush();
+}
+
+/* the RFC with the most noise at f; -1 if a key was pressed */
+static int sweep(unsigned long f)
+{
+	static unsigned s[64];
+	unsigned best = 0, v;
+	int r, a = 0, b = 0;
+
+	for (r = 0; r < 64; r++) {
+		dac_write(r, tpc, r, tpc);
+		s[r] = rssi_sum();
+		keypad_poll();
+		if (key_get() != K_NONE)
+			return -1;
+	}
+	for (r = 0; r < 64; r++) {
+		v = s[r] + s[r > 0 ? r - 1 : r] + s[r < 63 ? r + 1 : r];
+		if (v > best) {
+			best = v;
+			a = b = r;
+		} else if (v == best && b == r - 1)
+			b = r;
+	}
+	show(f, (a + b) / 2);
+	return (a + b) / 2;
+}
+
+int cal_self(void)
+{
+	unsigned long rx = rx_hz, tx = tx_hz, f;
+	unsigned char got[SC_N];
+	int i, r = 0;
+
+	lcd_clear();
+	lcd_puts(0, 0, "RX self-cal");
+	for (i = 0; i < SC_N && r >= 0; i++) {
+		f = base_hz + (SC_LO + 2L * i) * 1000000L + 500000L;
+		radio_tune(f, tx);
+		show(f, 0);
+		delay_ticks(SETTLE);
+		r = sweep(f);
+		got[i] = r;
+	}
+	if (r >= 0)
+		for (i = 0; i < SC_N; i++)
+			rx_selfcal[i] = got[i];
+	radio_tune(rx, tx);
+	radio_dac();
+	lcd_clear();
+	return r < 0 ? -1 : 0;
+}
+
+void cal_self_clear(void)
+{
+	int i;
+
+	for (i = 0; i < SC_N; i++)
+		rx_selfcal[i] = 0xFF;
+	radio_dac();
 }
 
 unsigned char cal_dev(unsigned long tx)
