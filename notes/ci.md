@@ -2,7 +2,8 @@
 
 Prepared locally 2026-10-01 (R58), 2026-10-07 for a **public**
 repository with both firmwares: the R58 and R40 pipelines run as two
-parallel jobs; a release carries both. Not on GitHub yet (no remote).
+parallel jobs; a release carries both. **Public since 2026-10-08:**
+<https://github.com/jeskko/moppe> (pushed: master, asm-final, v0.1.1).
 The licensing of the published tree: README "License" (MIT for our
 work; the R58 firmware and as80 keep their authors' unknown terms;
 patches to binutils and lcc under their licenses). Public repositories
@@ -69,11 +70,21 @@ actionlint (with shellcheck): clean on 2026-10-01; not rerun after the
 | 2026-10-07 | docker.sh r58 r40, `CPUS=4`, new layout | R58: 324 OK, verify OK, 99 s tests; R40: failed (no yacc) | |
 | 2026-10-08 | docker.sh r40, `CPUS=4`, after the yacc and fortify fixes | toolchain tests OK, 44 OK | toolchain 21 s (lcc warm, binutils rebuilt), tests 23 s |
 
+## First GitHub runs (2026-10-08)
+
+- master push: r40 1 min (toolchain from source, cold cache), r58 3 min,
+  publish 7 s; the nightly carries all six files, SHA256SUMS checks.
+- **Images byte-identical to local builds**: r40 to `make -C r40`; r58
+  and the bank test to a local build with the pinned SDCC
+  (`PATH=$(tools/ci/install-sdcc.sh):$PATH make -C r58`), not Arch's.
+- A tag pushed in the push that creates the repository starts no run:
+  v0.1.1 was deleted and pushed again, then built and published as a
+  pre-release with the release notes on top; its images equal the
+  nightly's.
+
 ## Open
 
-- First real run on GitHub (after the repository is created): check the
-  runner time and the minutes a run costs, the cache hit, the nightly
-  release replacement.
+- Cache hits and the nightly replacement on the next pushes.
 - Version naming (user, 2026-10-07): `v*` tags, nightlies
   `nightly-YYYYMMDD-<sha>`. **0.x = emulator-tested only**: `v0.*` tags
   publish as GitHub pre-releases (never "Latest"); the first is
