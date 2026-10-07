@@ -3,14 +3,19 @@
  * is parked 62.5 kHz (ten steps) above the TX frequency until PTT, as
  * the Nokia firmware does.
  *
+ * The DAC's RX tuning (RFC) and TX power (TPC) and the deviation bits
+ * come from Nokia's calibration (cal.c) for the frequency: RFC per MHz
+ * of the RX frequency plus the menu's trim, TPC for the TX frequency
+ * at the menu's level (Nokia's levels 1-3; it uses 2 in simplex).
+ *
  * PTT (P7.3 low, two ticks) in the Nokia firmware's order (emulator,
  * Cr 13.04 simplex): deviation bits, DAC (TPC), TX synthesizer to f,
  * TX ON (no lock wait: 0.6 ms later), microphone on, then the CTCSS
  * tone if the channel has one (tone.c).  Release: tone off, mic off,
  * TX OFF, synthesizer parked, receive state back.  The A/D
  * scans AN0 (RSSI) and AN1 (noise: high with no signal) continuously;
- * the squelch opens when the noise falls below sq_level and closes 16
- * counts above it, each after two ticks in a row.  A retune closes it
+ * the squelch opens when the noise falls below sq_on and closes when it
+ * reaches sq_off, each after two ticks in a row.  A retune closes it
  * and ignores the A/D for SETTLE ticks while the PLL locks (a guess:
  * the lock input is unknown, notes/r40.md gap 5).
  */
@@ -21,10 +26,10 @@
 #include "serbus.h"
 #include "menu.h"
 #include "tone.h"
+#include "cal.h"
 #include "radio.h"
 
 #define TX_PARK 62500L
-#define SQ_HYST 16
 #define SETTLE 3		/* ticks after a retune before the squelch looks */
 #define SQ_TICKS 2
 
@@ -33,12 +38,14 @@ unsigned char transmitting;
 unsigned char tx_locked;
 unsigned tot_limit;
 static unsigned tx_start;
+unsigned char tx_level = 1;
+signed char rx_trim;
 unsigned char rfc, tpc;
-unsigned char tx_tone;		/* DAC: RX tuning, TX power (uncalibrated) */
+unsigned char tx_tone;
 static unsigned char ptt_count;
 unsigned noise, rssi;
 unsigned char sq_open;
-unsigned sq_level = 480;
+unsigned sq_on = 480, sq_off = 496;
 static unsigned last_tick;
 static unsigned char sq_count;
 static unsigned char settle;
@@ -69,13 +76,26 @@ void radio_tune(unsigned long rx, unsigned long tx)
 	}
 	pll_vco(PLL_RX, rx + RX_IF);
 	pll_vco(PLL_TX, tx + TX_PARK);
+	radio_dac();
+}
+
+/* RFC and TPC for the current frequencies (not while transmitting) */
+void radio_dac(void)
+{
+	int v = cal_rfc(rx_hz) + rx_trim;
+
+	if (transmitting)
+		return;
+	rfc = v < 0 ? 0 : v > 63 ? 63 : v;
+	tpc = cal_tpc(tx_level, tx_hz);
+	dac_write(rfc, tpc, rfc, tpc);
 }
 
 static void tx_on(void)
 {
 	transmitting = 1;
 	tx_start = ticks;
-	audio_tx_prepare();
+	audio_tx_prepare(cal_dev(tx_hz));
 	dac_write(rfc, tpc, rfc, tpc);
 	pll_vco(PLL_TX, tx_hz);
 	out1(out1_shadow | OUT1_TXON);
@@ -155,9 +175,9 @@ void radio_poll(void)
 	rssi = ADDRA >> 6;
 	noise = ADDRB >> 6;
 	if (sq_open)
-		want = noise < sq_level + SQ_HYST;
+		want = noise < sq_off;
 	else
-		want = noise < sq_level;
+		want = noise < sq_on;
 	if (want == sq_open) {
 		sq_count = 0;
 		return;

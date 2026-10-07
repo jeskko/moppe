@@ -5,7 +5,7 @@
 #   make run        terminal UI on the emulator
 TOP  := ..
 H8CC := $(TOP)/tools/h8500/h8cc.py
-SRCS := start.s hw.c i2c.c lcd.c font.c keypad.c serbus.c audio.c pll.c radio.c ui.c nv.c mem.c menu.c tone.c main.c
+SRCS := start.s hw.c i2c.c lcd.c font.c keypad.c serbus.c audio.c pll.c radio.c cal.c ui.c nv.c mem.c menu.c tone.c main.c
 HDRS := $(wildcard *.h)
 
 all: build/r40.bin

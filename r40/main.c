@@ -8,6 +8,7 @@
 #include "radio.h"
 #include "ui.h"
 #include "nv.h"
+#include "cal.h"
 
 /* power off; with the supply held on (ignition), wait for PWR */
 static void off(void)
@@ -34,6 +35,7 @@ int main(void)
 	hw_init();
 	i2c_init();
 	lcd_init();
+	cal_load();		/* switches NV halves: before interrupts */
 	nv_load();		/* the defaults stay if NV is not valid */
 	audio_init();
 	keypad_init();

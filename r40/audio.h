@@ -4,7 +4,7 @@
 
 void audio_init(void);
 void audio_rx(int open);	/* squelch open: speaker on */
-void audio_tx_prepare(void);	/* the PTT sequence, radio.c */
+void audio_tx_prepare(unsigned char dev);	/* the PTT sequence, radio.c */
 void audio_mic(int on);
 void audio_tx_done(void);
 void audio_fii(int on);

@@ -6,11 +6,12 @@
  * Tone: the CTCSS tone sent with the current channel (VFO or memory,
  * like duplex), off or 67.0-254.1 Hz; experimental (tone.c).
  *
- * Squelch 0-9: 0 never closes; level n opens below a noise reading of
- * 600 - 20 n (level 6 = 480, the old default).  The scale is a guess
- * until a real radio's noise readings are known.  TX power and RX tune
- * are the raw DAC values (TPC, RFC) until Nokia's calibration data in NV
- * is mapped (notes/r40.md gap 3).
+ * Squelch: "cal" (the default) uses Nokia's calibrated levels (cal.c);
+ * 0 never closes; level n opens below a noise reading of 600 - 20 n and
+ * closes 16 above (the scale is a guess until a real radio's noise
+ * readings are known).  TX power is Nokia's calibrated level 1-3 (low,
+ * mid, high); RX tune a trim added to the calibrated RFC, shown with
+ * the resulting DAC value.
  */
 #include "hw.h"
 #include "lcd.h"
@@ -22,6 +23,7 @@
 #include "ui.h"
 #include "menu.h"
 #include "tone.h"
+#include "cal.h"
 
 #define M_SQUELCH 0
 #define M_TONE    1
@@ -39,20 +41,29 @@ static const unsigned tot_secs[] = { 0, 30, 60, 120, 180, 300, 600 };
 
 unsigned char menu_active;
 static unsigned char item;
-unsigned char sq_index = 6;
+unsigned char sq_index = SQ_CAL;
 unsigned char tot_index;
 
 void settings_apply(void)
 {
-	if (sq_index > 9)
-		sq_index = 6;
+	if (sq_index > SQ_CAL)
+		sq_index = SQ_CAL;
 	if (tot_index >= NTOT)
 		tot_index = 0;
-	sq_level = sq_index ? 600 - 20 * sq_index : 1100;
+	if (tx_level > 2)
+		tx_level = 1;
+	if (rx_trim < -RX_TRIM || rx_trim > RX_TRIM)
+		rx_trim = 0;
+	if (sq_index == SQ_CAL) {
+		sq_on = cal_sq_open();
+		sq_off = cal_sq_close() + 4;	/* 8-bit: closes above it */
+	} else if (sq_index) {
+		sq_on = 600 - 20 * sq_index;
+		sq_off = sq_on + 16;
+	} else
+		sq_on = sq_off = 1100;
 	tot_limit = tot_secs[tot_index];
-	rfc &= 0x3F;
-	tpc &= 0x3F;
-	dac_write(rfc, tpc, rfc, tpc);
+	radio_dac();
 }
 
 void menu_open(void)
@@ -65,7 +76,7 @@ static void change(int d)
 {
 	switch (item) {
 	case M_SQUELCH:
-		if (sq_index + d >= 0 && sq_index + d <= 9)
+		if (sq_index + d >= 0 && sq_index + d <= SQ_CAL)
 			sq_index += d;
 		break;
 	case M_TONE:
@@ -80,10 +91,12 @@ static void change(int d)
 		beep_enabled = !beep_enabled;
 		break;
 	case M_TXPOWER:
-		tpc = (tpc + d) & 0x3F;
+		if (tx_level + d >= 0 && tx_level + d <= 2)
+			tx_level += d;
 		break;
 	case M_RXTUNE:
-		rfc = (rfc + d) & 0x3F;
+		if (rx_trim + d >= -RX_TRIM && rx_trim + d <= RX_TRIM)
+			rx_trim += d;
 		break;
 	}
 	settings_apply();
@@ -122,7 +135,9 @@ void menu_draw(void)
 	lcd_puts(0, 0, names[item]);
 	switch (item) {
 	case M_SQUELCH:
-		if (sq_index)
+		if (sq_index == SQ_CAL)
+			p = "cal";
+		else if (sq_index)
 			utoa(sq_index, p, 1);
 		else
 			p = "open";
@@ -157,10 +172,20 @@ void menu_draw(void)
 		p = beep_enabled ? "on" : "off";
 		break;
 	case M_TXPOWER:
-		utoa(tpc, p, 1);
+		p = tx_level == 0 ? "low" : tx_level == 1 ? "mid" : "high";
 		break;
 	case M_RXTUNE:
-		utoa(rfc, p, 1);
+		if (rx_trim < 0)
+			*p++ = '-';
+		else if (rx_trim > 0)
+			*p++ = '+';
+		p = utoa(rx_trim < 0 ? -rx_trim : rx_trim, p, 1);
+		*p++ = ' ';
+		*p++ = '(';
+		p = utoa(rfc, p, 1);
+		*p++ = ')';
+		*p = 0;
+		p = buf;
 		break;
 	}
 	lcd_puts(1, 0, p);

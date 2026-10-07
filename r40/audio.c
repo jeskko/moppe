@@ -2,7 +2,8 @@
  * Audio paths as the Nokia firmware sets them (emulator, Cr 13.04):
  * receive with the squelch closed IC39 = 00001011, open 00001001;
  * transmit 00001010 then 00001000 (mic on), IC41 deviation bits 0111 in
- * receive, 0000 in transmit; IC40 volume in bits 6-4 with the amplifier
+ * receive, in transmit the calibration's (cal.c; Nokia's simplex sets
+ * them in receive too, which should not matter); IC40 volume in bits 6-4 with the amplifier
  * bit 3.  Power off: IC39 bit 2.
  *
  * Beeps as the Nokia firmware's key beep: the 8-bit timer on phi / 64,
@@ -98,14 +99,14 @@ void audio_poll(void)
 }
 
 /* before TX ON: the deviation bits; the receiver's audio off */
-void audio_tx_prepare(void)
+void audio_tx_prepare(unsigned char dev)
 {
 	if (beeping) {
 		T8_TCR = 0;
 		beeping = 0;
 		sw1 &= ~SW1_SIGNLSP;
 	}
-	sw1 &= ~SW1_DEV_MASK;
+	sw1 = (sw1 & ~SW1_DEV_MASK) | (dev & SW1_DEV_MASK);
 	sr_write(SR_SW1, sw1);
 	sw2 |= SW2_AFMUTE;
 	af &= ~AF_PWRAMP;

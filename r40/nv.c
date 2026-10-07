@@ -40,8 +40,8 @@ int nv_load(void)
 	sq_index = c->sq_index;
 	tot_index = c->tot_index;
 	beep_enabled = c->beep != 0;
-	rfc = c->rfc;
-	tpc = c->tpc;
+	tx_level = c->tx_level;
+	rx_trim = c->rx_trim;
 	return 0;
 }
 
@@ -61,7 +61,7 @@ void nv_save(void)
 	c->sq_index = sq_index;
 	c->tot_index = tot_index;
 	c->beep = beep_enabled;
-	c->rfc = rfc;
-	c->tpc = tpc;
+	c->tx_level = tx_level;
+	c->rx_trim = rx_trim;
 	c->sum = 0 - sum((unsigned char *)c, n);
 }

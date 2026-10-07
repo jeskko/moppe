@@ -138,3 +138,27 @@ MHz. The scan's dwell (3 ticks for the PLL, 2 for the squelch) is a
 guess until the lock timing is known (r40.md gap 5). Scan tests drive
 the noise input from the RX synthesizer's frequency in 5 ms slices
 (`run_with_signals`), as the emulator has no RF model.
+
+## 2026-10-07: Nokia's calibration
+
+Mapped in the emulator by diffing NV around the service tests (r40.md
+NV RAM table). 172 + 190002 wrote D-band defaults only to the working
+copy; FNC STO in 36 / 20x / 21 / 33 / 34 commits a test's whole table,
+plain STO does not, and power-on copies the committed copy over the
+working one. So the r40nv image had empty committed tables (the "DAC
+all 0" of the transmit entry below) and Nokia ran on zeros: r40nv now
+commits them with FNC STO in 36 and 201. Distinct values in the tables
+and `*55*30#` / `*55*31#` showed how Nokia indexes them: floor of the
+MHz above 400 (433.5 → 33, 434.9875 → 34), TX power level 2 in simplex
+TX, level 3 loaded in RX, deviation bits set in RX and TX alike. With
+the MC144111 datasheet (last word → Q1) Nokia's two-word loads put RFC
+on Q2 and TPC on Q1, which our `dac_write(rfc, tpc, rfc, tpc)` already
+matched. Sweeping AN1 in simplex: Nokia mutes above 0x6C and opens
+below 0x6D; its defaults (136 / 133) are hysteresis that way round, a
+real calibration (-114 / -118 dBm on a noise reading) would be the
+other way, so `cal.c` takes the lower as open and the higher as close.
+
+Firmware: `cal.c`; menu TX power low/mid/high and RX tune as a trim;
+squelch "cal" the default. The emulator's idle AN1 was 512, below
+Nokia's default open level (532), so a "no signal" radio was open with
+Nokia's own levels too: moppe-emu now idles at 600.

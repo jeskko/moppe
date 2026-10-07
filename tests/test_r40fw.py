@@ -201,7 +201,7 @@ class Tx(unittest.TestCase):
         order = [k for k, _ in ev]
         self.assertLess(order.index("DAC"), order.index("SYNTH"))
         self.assertLess(order.index("SYNTH"), order.index("TX_ON"))
-        self.assertEqual(ev[0], ("SR", 2 << 8 | 0x00))               # IC41: deviation 0
+        self.assertEqual(ev[0], ("SR", 2 << 8 | 0x04))               # IC41: deviation 4 (no NV)
         self.assertEqual(ev[-1], ("SR", 0 << 8 | 0x0A))              # IC39: mic on
         self.assertEqual((r.pll(1)[-1], r.out(1) & 1), (433.5e6, 1))
         self.assertEqual(r.display()[2][:4], "TX  ")
@@ -436,11 +436,16 @@ def menu(r, item, ups=0, downs=0):
 
 class Settings(unittest.TestCase):
     def test_squelch_levels(self):
+        # "cal": Nokia's levels, here (no NV) its defaults 133 / 136 x 4:
+        # opens below 532, closes above 547
         r = booted()
-        r.set_adc(1, 530)                       # opens at level 3 (540)
-        r.run(0.2)
-        self.assertEqual(r.sreg(0), 0x0B)
-        self.assertEqual(menu(r, 0, downs=3), ["Squelch", "3"])
+        self.assertEqual(menu(r, 0), ["Squelch", "cal"])
+        for an1, audio in ((535, 0x0B), (528, 0x09), (547, 0x09), (548, 0x0B)):
+            r.set_adc(1, an1)
+            r.run(0.2)
+            self.assertEqual(r.sreg(0), audio, an1)
+        r.set_adc(1, 530)                       # level 3 opens below 540
+        self.assertEqual(menu(r, 0, downs=7), ["Squelch", "3"])
         r.run(0.2)
         self.assertEqual(r.sreg(0), 0x09)
         menu(r, 0, downs=3)                     # 0: always open
@@ -477,19 +482,27 @@ class Settings(unittest.TestCase):
         r.key("5", False)
         self.assertFalse(on)
 
-    def test_dac_values_and_persistence(self):
+    def test_power_trim_and_persistence(self):
+        # no NV: Nokia's D-band defaults; 433.5 MHz is RFC band 33 (0x1E),
+        # TX power band 4 (mid 0x1D, high 0x29); DAC order RFC, TPC
         r = booted()
-        self.assertEqual(menu(r, 4, ups=5), ["TX power", "5"])
-        self.assertEqual(menu(r, 5, downs=1), ["RX tune", "63"])
-        self.assertEqual(r.dac(), [63, 5, 63, 5])
+        self.assertEqual(r.dac(), [30, 29, 30, 29])
+        self.assertEqual(menu(r, 4), ["TX power", "mid"])
+        self.assertEqual(menu(r, 4, ups=1), ["TX power", "high"])
+        self.assertEqual(menu(r, 5, downs=2), ["RX tune", "-2 (28)"])
+        self.assertEqual(r.dac(), [28, 41, 28, 41])
         r.ptt(True)
         r.run(0.2)
-        self.assertEqual(r.dac(), [63, 5, 63, 5])
+        self.assertEqual(r.dac(), [28, 41, 28, 41])
         r.ptt(False)
-        menu(r, 0, ups=2)
+        r.run(0.2)
+        r.type("441")                           # RFC band 41 (0x22), TX band 5
+        r.press("OK")
+        self.assertEqual(r.dac(), [32, 42, 32, 42])
+        menu(r, 0, downs=2)
         r2 = Radio(ROM, nv=r.nv())
         r2.run(1.0)
-        self.assertEqual(r2.dac(), [63, 5, 63, 5])
+        self.assertEqual(r2.dac(), [32, 42, 32, 42])
         self.assertEqual(menu(r2, 0), ["Squelch", "8"])
 
 
@@ -497,6 +510,87 @@ def tone_hz(r, seconds):
     n0, t0 = r.tmo_rises(), r.time()
     r.run(seconds)
     return (r.tmo_rises() - n0) / (r.time() - t0)
+
+
+def nokia_nv(copies=(0x0000, 0x2000), sq=(0x80, 0x7C)):
+    """Nokia's calibration block (cal.c) in the P9.2 = 1 half, which
+    nv() shows first: RFC = MHz above 400, TPC = 16 x level + band,
+    deviation = MHz mod 16"""
+    blk = bytearray(0x12C)
+    blk[0x64:0x68] = (64000).to_bytes(4, "big")
+    blk[0x6C], blk[0x6D] = sq
+    blk[0x74:0x92] = bytes(16 * lv + k for lv in range(3) for k in range(10))
+    blk[0x92:0xD9] = bytes(i % 16 for i in range(71))
+    blk[0xD9:0x120] = bytes(range(71))
+    blk[0x12B] = ~sum(blk[:0x12B]) & 0xFF
+    nv = bytearray(0x8000)
+    for c in copies:
+        nv[c:c + 0x12C] = blk
+    return nv
+
+
+class Calibration(unittest.TestCase):
+    def test_tables_follow_the_frequencies(self):
+        r = Radio(ROM, nv=nokia_nv())
+        r.run(1.0)
+        self.assertEqual(r.dac(), [33, 0x14, 33, 0x14])     # RFC 433, mid band 4
+        for keys, rfc, tpc in (("4349875", 34, 0x14), ("435", 35, 0x15)):
+            r.type(keys)
+            r.press("OK")
+            self.assertEqual(r.dac(), [rfc, tpc, rfc, tpc], keys)
+        r.type("4387")                          # RX 438.7, TX 431.1 MHz
+        r.press("OK")
+        fnc(r, "#")
+        self.assertEqual(r.dac(), [38, 0x14, 38, 0x14])     # TX band 4
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual(r.sreg(2) & 0x0F, 31 % 16)          # deviation, TX MHz
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual(r.sreg(2), 0x07)
+        self.assertEqual(menu(r, 4, downs=1), ["TX power", "low"])
+        self.assertEqual(r.dac(), [38, 0x04, 38, 0x04])
+        self.assertEqual(r.nv()[:0x4000], bytes(nokia_nv()[:0x4000]))  # read only
+
+    def test_second_copy_then_defaults(self):
+        nv = nokia_nv()
+        nv[0x10] ^= 1                           # first copy's checksum fails
+        r = Radio(ROM, nv=nv)
+        r.run(1.0)
+        self.assertEqual(r.dac(), [33, 0x14, 33, 0x14])
+        nv[0x2010] ^= 1                         # both: D-band defaults
+        r = Radio(ROM, nv=nv)
+        r.run(1.0)
+        self.assertEqual(r.dac(), [30, 29, 30, 29])
+
+    def test_squelch_levels(self):
+        # open below the lower level, close above the higher, whichever
+        # of 0x6C / 0x6D holds it
+        for sq in ((0x80, 0x7C), (0x7C, 0x80)):
+            r = Radio(ROM, nv=nokia_nv(sq=sq))
+            r.run(1.0)
+            for an1, audio in ((500, 0x0B), (495, 0x09), (515, 0x09), (516, 0x0B)):
+                r.set_adc(1, an1)
+                r.run(0.2)
+                self.assertEqual(r.sreg(0), audio, (sq, an1))
+
+    def test_nokia_service_mode_image(self):
+        # the NV RAM Nokia's own service mode writes (emu/python/r40nv.py:
+        # 190002 defaults committed, squelch 121 / 118)
+        sys.path.insert(0, os.path.join(ROOT, "emu", "tests", "r40"))
+        import roms
+        import r40nv
+        try:
+            nv = r40nv.default_nv(roms.rom())
+        except roms.Unavailable as e:
+            self.skipTest(str(e))
+        r = Radio(ROM, nv=nv)
+        r.run(1.0)
+        self.assertEqual(r.dac(), [30, 29, 30, 29])
+        for an1, audio in ((475, 0x0B), (471, 0x09), (487, 0x09), (488, 0x0B)):
+            r.set_adc(1, an1)
+            r.run(0.2)
+            self.assertEqual(r.sreg(0), audio, an1)
 
 
 class Ctcss(unittest.TestCase):
@@ -507,7 +601,7 @@ class Ctcss(unittest.TestCase):
         self.assertEqual(r.display()[0], "433.50000   T")
         r.ptt(True)
         r.run(0.2)
-        self.assertEqual(r.sreg(2), 0x20)                 # Fii on, deviation 0
+        self.assertEqual(r.sreg(2), 0x24)                 # Fii on, deviation 4
         self.assertAlmostEqual(tone_hz(r, 5.0), 88.5, delta=0.3)
         r.ptt(False)
         r.run(0.2)
@@ -519,7 +613,7 @@ class Ctcss(unittest.TestCase):
         r = booted()
         r.ptt(True)
         r.run(0.2)
-        self.assertEqual((r.sreg(2), tone_hz(r, 0.5)), (0x00, 0))
+        self.assertEqual((r.sreg(2), tone_hz(r, 0.5)), (0x04, 0))
         r.ptt(False)
         r.run(0.2)
         self.assertEqual(menu(r, 1, ups=60), ["Tone (CTCSS)", "254.1 Hz"])
