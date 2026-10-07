@@ -12,7 +12,9 @@
  * readings are known).  TX power is Nokia's calibrated level 1-3 (low,
  * mid, high); RX tune a trim added to the calibrated RFC, shown with
  * the resulting DAC value.  RX self-cal: UP runs cal.c's sweep (any
- * key stops it), DOWN goes back to Nokia's table.
+ * key stops it), DOWN goes back to Nokia's table.  Band: auto (Nokia's
+ * band byte), 2 m or 70 cm; a change restarts the firmware when the menu
+ * is left.
  */
 #include "hw.h"
 #include "lcd.h"
@@ -25,6 +27,7 @@
 #include "menu.h"
 #include "tone.h"
 #include "cal.h"
+#include "band.h"
 
 #define M_SQUELCH 0
 #define M_TONE    1
@@ -33,19 +36,29 @@
 #define M_TXPOWER 4
 #define M_RXTUNE  5
 #define M_RXCAL   6
-#define NITEMS    7
+#define M_BAND    7
+#define NITEMS    8
 
 static const char *const names[NITEMS] = {
 	"Squelch", "Tone (CTCSS)", "Time-out", "Beep", "TX power", "RX tune",
-	"RX self-cal"
+	"RX self-cal", "Band"
 };
 static const unsigned tot_secs[] = { 0, 30, 60, 120, 180, 300, 600 };
 #define NTOT (sizeof tot_secs / sizeof tot_secs[0])
 
 unsigned char menu_active;
 static unsigned char item;
+static unsigned char band_open;	/* band_choice when the menu opened */
 unsigned char sq_index = SQ_CAL;
 unsigned char tot_index;
+
+/* copies s to p, returns the end */
+static char *strcpy_end(char *p, const char *s)
+{
+	while ((*p = *s++) != 0)
+		p++;
+	return p;
+}
 
 void settings_apply(void)
 {
@@ -73,6 +86,7 @@ void menu_open(void)
 {
 	menu_active = 1;
 	item = 0;
+	band_open = band_choice;
 }
 
 static void change(int d)
@@ -107,6 +121,10 @@ static void change(int d)
 		else
 			cal_self_clear();
 		break;
+	case M_BAND:
+		if (band_choice + d >= BAND_AUTO && band_choice + d <= BAND_70CM)
+			band_choice += d;
+		break;
 	}
 	settings_apply();
 	nv_save();
@@ -127,6 +145,11 @@ void menu_key(int k)
 	case K_CLR:
 	case K_FNC:
 		menu_active = 0;
+		if (band_choice != band_open) {
+			nv_save();
+			di();
+			reset();	/* the new band from the start */
+		}
 		break;
 	}
 }
@@ -198,6 +221,16 @@ void menu_draw(void)
 		break;
 	case M_RXCAL:
 		p = cal_self_valid() ? "own" : "Nokia";
+		break;
+	case M_BAND:
+		if (band_choice == BAND_AUTO) {
+			p = strcpy_end(buf, "auto (");
+			p = strcpy_end(p, band->name);
+			*p++ = ')';
+			*p = 0;
+			p = buf;
+		} else
+			p = band_choice == BAND_2M ? "2 m" : "70 cm";
 		break;
 	}
 	lcd_puts(1, 0, p);

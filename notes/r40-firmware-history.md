@@ -173,3 +173,24 @@ RSSI-peak idea (with a generator signal). `cal_self()` sweeps RFC at
 six points in 430-440 MHz and recovered an optimum curve offset from
 Nokia's table exactly, odd MHz by interpolation. A key stops it and
 keeps the previous table.
+
+## 2026-10-08: 2 m on the RC40; an lcc register-allocator bug
+
+Nokia's PLL words on the C band (emulator, service test 154 at 145 MHz)
+differ from D only in the prescaler (SW = 1, 64/65); IF, parking and
+raster are the same. The band byte (0x63: C 0x40, D 0x80) and the
+0-channels are written straight to the committed copies by tests 15x
+and 18, so a first read of the working copy showed D values. 171 +
+190002 loads the same tables as 172: no C-band defaults in Cr 13.04.
+Nokia's cold-start working copy has deviation 7 everywhere: the earlier
+"defaults 0" was the committed copy without test 21; our fallback now
+uses 7.
+
+`band.c` selects the band (Nokia's byte, or the menu for a lost NV).
+The memory range check made rcc spin: lcc's `spillee` could not free a
+pair whose halves held single-register values (assertion in one case,
+endless spilling in another). Allowing temporaries in r4-r5 only hid
+the small case (300 random programs found another); the fix is in
+lcc's `spillee` (h8500-compiler.md). The 2 m self-cal test found an
+edge effect in the RFC smoothing (a peak at 1 came out as 0) and needed
+the emulator's front-end model to take a base frequency.

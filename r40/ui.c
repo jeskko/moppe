@@ -13,7 +13,10 @@
  * stays); 9 scan; OK the settings menu (menu.c).  FNC again or any
  * other key cancels.
  *
- * Scan: the VFO steps up through 430-440 MHz, the memories through the
+ * The band (band.c: 70 cm or 2 m) sets the tuning and transmit ranges,
+ * the first frequency and the default shift.
+ *
+ * Scan: the VFO steps up through the transmit range, the memories through the
  * stored ones; it stops while the squelch is open and goes on 2 s after
  * it closes.  Any key (taken by the scan, not acted on) or PTT ends it.
  *
@@ -35,6 +38,7 @@
 #include "menu.h"
 #include "tone.h"
 #include "ui.h"
+#include "band.h"
 
 #define ENTRY_MAX 8
 
@@ -43,7 +47,7 @@ static const unsigned long steps[] = {
 };
 #define NSTEPS (sizeof steps / sizeof steps[0])
 
-struct chan vfo = { 433500000L, 7600000L, DUP_SIMPLEX, 0 };
+struct chan vfo;			/* ui_init: the band's defaults if invalid */
 static struct chan cur;		/* what the radio is on */
 unsigned char mem_mode;
 unsigned char mem_ch;
@@ -62,8 +66,6 @@ unsigned char scanning;
 static unsigned scan_resume;	/* ticks: when to leave a busy channel */
 static unsigned char scan_held;
 
-#define SCAN_LO 430000000L
-#define SCAN_HI 440000000L
 #define SCAN_HOLD 200		/* ticks after the signal goes */
 
 /* v as decimal, at least `digits` digits; returns the end */
@@ -129,7 +131,7 @@ static void recall(int n)
 static void tune(unsigned long hz)
 {
 	hz -= hz % PLL_STEP;
-	if (hz < BAND_LO || hz > BAND_HI)
+	if (hz < band->lo || hz > band->hi)
 		return;
 	if (mem_mode) {
 		mem_mode = 0;
@@ -187,10 +189,12 @@ void ui_init(void)
 		ui_step = 1;
 	if (vfo.duplex > DUP_PLUS)
 		vfo.duplex = DUP_SIMPLEX;
-	if (vfo.hz < BAND_LO || vfo.hz > BAND_HI || vfo.hz % PLL_STEP)
-		vfo.hz = 433500000L;
+	if (vfo.hz < band->lo || vfo.hz > band->hi || vfo.hz % PLL_STEP) {
+		vfo.hz = band->boot;
+		vfo.shift = band->shift;
+	}
 	if (vfo.shift % PLL_STEP || vfo.shift > 50000000L)
-		vfo.shift = 7600000L;
+		vfo.shift = band->shift;
 	vfo.reverse = vfo.reverse != 0;
 	if (vfo.tone > NTONES)
 		vfo.tone = 0;
@@ -252,8 +256,8 @@ static void scan_step(void)
 		return;
 	}
 	hz = cur.hz + steps[ui_step];
-	if (hz < SCAN_LO || hz > SCAN_HI)
-		hz = SCAN_LO;
+	if (hz < band->tx_lo || hz > band->tx_hi)
+		hz = band->tx_lo;
 	tune(hz);
 }
 

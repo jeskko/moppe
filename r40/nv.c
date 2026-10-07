@@ -14,6 +14,7 @@
 #include "menu.h"
 #include "nv.h"
 #include "cal.h"
+#include "band.h"
 
 static unsigned sum(const unsigned char *p, int n)
 {
@@ -45,6 +46,8 @@ int nv_load(void)
 	rx_trim = c->rx_trim;
 	for (i = 0; i < SC_N; i++)
 		rx_selfcal[i] = c->rx_selfcal[i];
+	rx_selfcal_band = c->rx_selfcal_band;
+	band_choice = c->band_choice;
 	return 0;
 }
 
@@ -68,5 +71,7 @@ void nv_save(void)
 	c->rx_trim = rx_trim;
 	for (i = 0; i < SC_N; i++)
 		c->rx_selfcal[i] = rx_selfcal[i];
+	c->rx_selfcal_band = rx_selfcal_band;
+	c->band_choice = band_choice;
 	c->sum = 0 - sum((unsigned char *)c, n);
 }

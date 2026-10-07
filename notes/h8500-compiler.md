@@ -126,6 +126,17 @@ needed).
 
 ## Things learnt (asl, lcc; asl now only for check_asl.py)
 
+- lcc's register allocator and pairs (fixed 2026-10-08, `lcc.patch`,
+  `src/gen.c` `spillee`): to free a pair it looked only at registers
+  holding a value of the wanted kind. A pair blocked by single-register
+  values asserted ("Must be able to spill something": `v = (x < 1)`
+  then `1 << (int)(c + 5L)`), or two pairs were spilled in turn forever
+  (`h < q[0] || h > q[1]`: `q` live in one register). Now every allowed
+  register counts, judged by the next use of anything overlapping it.
+  Letting temporaries use r4-r5 only moved the problem (and would let a
+  register variable be spilled). Regression program
+  `tools/h8500/test/regalloc.c`; `run.sh 300` (random programs) passes.
+
 - asl: H8/500 is `cpu HD6475328` + `maxmode on`; needs `assume dp/br`;
   `@aa:16` operands are written as full 24-bit addresses in DP's page;
   it picks the shortest encoding itself; `&` binds tighter than `+`

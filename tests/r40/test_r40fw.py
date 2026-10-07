@@ -201,7 +201,7 @@ class Tx(unittest.TestCase):
         order = [k for k, _ in ev]
         self.assertLess(order.index("DAC"), order.index("SYNTH"))
         self.assertLess(order.index("SYNTH"), order.index("TX_ON"))
-        self.assertEqual(ev[0], ("SR", 2 << 8 | 0x04))               # IC41: deviation 4 (no NV)
+        self.assertEqual(ev[0], ("SR", 2 << 8 | 0x07))               # IC41: deviation 7 (no NV: Nokia's cold start)
         self.assertEqual(ev[-1], ("SR", 0 << 8 | 0x0A))              # IC39: mic on
         self.assertEqual((r.pll(1)[-1], r.out(1) & 1), (433.5e6, 1))
         self.assertEqual(r.display()[2][:4], "TX  ")
@@ -421,7 +421,7 @@ class Scan(unittest.TestCase):
 
 def menu(r, item, ups=0, downs=0):
     """FNC OK, OK to item (0 squelch, 1 tone, 2 time-out, 3 beep, 4 TX
-    power, 5 RX tune), UP / DOWN, CLR"""
+    power, 5 RX tune, 6 RX self-cal, 7 band), UP / DOWN, CLR"""
     fnc(r, "OK")
     for _ in range(item):
         r.press("OK")
@@ -512,12 +512,14 @@ def tone_hz(r, seconds):
     return (r.tmo_rises() - n0) / (r.time() - t0)
 
 
-def nokia_nv(copies=(0x0000, 0x2000), sq=(0x80, 0x7C)):
+def nokia_nv(copies=(0x0000, 0x2000), sq=(0x80, 0x7C), band=0x80, ch0=64000):
     """Nokia's calibration block (cal.c) in the P9.2 = 1 half, which
-    nv() shows first: RFC = MHz above 400, TPC = 16 x level + band,
-    deviation = MHz mod 16"""
+    nv() shows first: RFC = MHz above the 0-channel (400 MHz; ch0 in
+    6.25 kHz units), TPC = 16 x level + band, deviation = MHz mod 16;
+    band 0x80 = D (70 cm), 0x40 = C (2 m: ch0 22080 = 138 MHz)"""
     blk = bytearray(0x12C)
-    blk[0x64:0x68] = (64000).to_bytes(4, "big")
+    blk[0x63] = band
+    blk[0x64:0x68] = ch0.to_bytes(4, "big")
     blk[0x6C], blk[0x6D] = sq
     blk[0x74:0x92] = bytes(16 * lv + k for lv in range(3) for k in range(10))
     blk[0x92:0xD9] = bytes(i % 16 for i in range(71))
@@ -634,6 +636,21 @@ class SelfCal(unittest.TestCase):
         self.assertEqual(r2.dac()[2], 33)
         self.assertEqual(faults(r2), [])
 
+    def test_2m_two_points(self):
+        # 2 m: 144.5 and 146.5 MHz swept (indexes 6 and 8 above 138 MHz),
+        # 145 interpolated; Nokia's table (index 7 -> 7) is not used there
+        r = Radio(ROM, nv=nv_2m())
+        r.set_rf_opt(self.OPT, base_mhz=138)
+        r.run(1.0)
+        self.start(r)
+        r.run(4.0)
+        self.assertEqual(r.display()[:2], ["RX self-cal", "own"])
+        r.press("CLR")
+        for keys, rfc in (("1445", 1), ("145", 2), ("146", 3), ("150", 12)):
+            r.type(keys)
+            r.press("OK")
+            self.assertEqual(r.dac()[2], rfc, keys)
+
     def test_key_stops_it(self):
         r = self.radio()
         self.start(r)
@@ -644,6 +661,84 @@ class SelfCal(unittest.TestCase):
         self.assertEqual((r.pll(0)[-1], r.dac()[2]), (478.5e6, 33))
 
 
+def nv_2m():
+    return nokia_nv(band=0x40, ch0=22080)
+
+
+class Band2m(unittest.TestCase):
+    """An RC40 (Nokia's C band): 2 m, the PLL as Nokia loads it"""
+
+    def test_boot_and_synthesizers(self):
+        # Nokia at 145.000 MHz (emulator, Cr 13.04, test 154): SW = 1
+        # (64/65), RX 475/0 (190 MHz), TX parked 362/42, on PTT 362/32
+        r = Radio(ROM, nv=nv_2m())
+        r.run(1.0)
+        self.assertEqual(r.display()[:2], ["145.50000", "Vol 3         12.50k"])
+        r.type("145")
+        r.press("OK")
+        self.assertEqual(r.pll(0)[:4], (1024, 1, 475, 0))
+        self.assertEqual(r.pll(1)[:4], (1024, 1, 362, 42))
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual((r.pll(1)[:4], r.out(1) & 1), ((1024, 1, 362, 32), 1))
+        r.ptt(False)
+        r.run(0.2)
+        self.assertEqual(faults(r), [])
+
+    def test_ranges_and_shift(self):
+        r = Radio(ROM, nv=nv_2m())
+        r.run(1.0)
+        r.type("433")                           # outside 138-174: ignored
+        r.press("OK")
+        self.assertEqual(r.display()[0], "145.50000")
+        fnc(r, "#")                             # duplex -: 600 kHz below
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual((r.display()[0], r.pll(1)[-1]), ("144.90000 -", 144.9e6))
+        r.ptt(False)
+        fnc(r, "#")
+        fnc(r, "#")                             # simplex again
+        r.type("147")                           # receives, does not transmit
+        r.press("OK")
+        r.ptt(True)
+        r.run(0.2)
+        self.assertEqual((r.display()[2][:4], r.out(1) & 1), ("LOCK", 0))
+        r.ptt(False)
+
+    def test_calibration_from_the_0_channel(self):
+        # 145.5 MHz: RFC index 7 (MHz above 138), TX power band 1 (7 MHz)
+        r = Radio(ROM, nv=nv_2m())
+        r.run(1.0)
+        self.assertEqual(r.dac(), [7, 0x11, 7, 0x11])
+
+    def test_band_from_the_menu_without_nokia_nv(self):
+        # no Nokia data: 70 cm until the menu says 2 m (kept in our NV);
+        # leaving the menu restarts on the new band
+        r = booted()
+        self.assertEqual(menu(r, 7), ["Band", "auto (70 cm)"])
+        menu(r, 7, ups=1)
+        r.run(1.5)
+        self.assertEqual(r.display()[0], "145.50000")
+        self.assertEqual(r.pll(0)[1], 1)                 # SW = 1
+        r2 = Radio(ROM, nv=r.nv())
+        r2.run(1.0)
+        self.assertEqual(menu(r2, 7), ["Band", "2 m"])
+        self.assertEqual(faults(r2), [])
+
+    def test_memories_of_the_other_band_hidden(self):
+        r = booted()
+        fnc(r, "RCL")
+        r.type("01")                            # 433.500 into M01
+        menu(r, 7, ups=1)                       # 2 m
+        r.run(1.5)
+        r.press("RCL")                          # memory mode: nothing stored
+        self.assertEqual(r.display()[0][:9], "145.50000")
+        menu(r, 7, ups=1)                       # 70 cm again: M01 is back
+        r.run(1.5)
+        r.press("RCL")
+        self.assertEqual(r.display()[0], "433.50000     M01")
+
+
 class Ctcss(unittest.TestCase):
     def test_tone_on_tx(self):
         # 88.5 Hz (tone 9) on TMO through the Fii switch, only in TX
@@ -652,7 +747,7 @@ class Ctcss(unittest.TestCase):
         self.assertEqual(r.display()[0], "433.50000   T")
         r.ptt(True)
         r.run(0.2)
-        self.assertEqual(r.sreg(2), 0x24)                 # Fii on, deviation 4
+        self.assertEqual(r.sreg(2), 0x27)                 # Fii on, deviation 7
         self.assertAlmostEqual(tone_hz(r, 5.0), 88.5, delta=0.3)
         r.ptt(False)
         r.run(0.2)
@@ -664,7 +759,7 @@ class Ctcss(unittest.TestCase):
         r = booted()
         r.ptt(True)
         r.run(0.2)
-        self.assertEqual((r.sreg(2), tone_hz(r, 0.5)), (0x04, 0))
+        self.assertEqual((r.sreg(2), tone_hz(r, 0.5)), (0x07, 0))
         r.ptt(False)
         r.run(0.2)
         self.assertEqual(menu(r, 1, ups=60), ["Tone (CTCSS)", "254.1 Hz"])

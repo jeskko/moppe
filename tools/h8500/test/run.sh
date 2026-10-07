@@ -1,8 +1,10 @@
 #!/bin/sh
 # The H8/500 C toolchain's tests: lcc's own test programs (output compared
 # with lcc's x86 results, or with test/<name>.1bk where only type sizes
-# differ), the soft-float check against the host (floatgen.c) and random
-# integer programs with expected results (intgen.py; give a count as the
+# differ), the register-allocator regressions (regalloc.c; a regression
+# there used to hang rcc, hence the timeout), the soft-float check
+# against the host (floatgen.c) and random integer programs with
+# expected results (intgen.py; give a count as the
 # first argument for more than the default 20).
 # Needs tools/h8500/lcc/build.sh to have run.
 #
@@ -33,6 +35,9 @@ for seed in 1 2 3 4; do
     echo "float seed $seed: $r"
     [ "$r" = "0 mismatches" ] || fail=1
 done
+r=$(timeout 60 "$H8/h8cc.py" -o "$T/regalloc.bin" "$HERE/regalloc.c" 2>/dev/null && "$H8/h8run" "$T/regalloc.bin" | tail -1)
+echo "regalloc: $r"
+[ "$r" = "0 mismatches" ] || fail=1
 n=${1:-20}
 bad=0
 for seed in $(seq 1 "$n"); do

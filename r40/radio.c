@@ -27,6 +27,7 @@
 #include "menu.h"
 #include "tone.h"
 #include "cal.h"
+#include "band.h"
 #include "radio.h"
 
 #define TX_PARK 62500L
@@ -130,7 +131,7 @@ static void ptt_poll(void)
 		tx_locked = 0;
 	else if (tx_locked)
 		down = 0;
-	else if (tx_hz < TX_LO || tx_hz > TX_HI) {
+	else if (tx_hz < band->tx_lo || tx_hz > band->tx_hi) {
 		tx_locked = TXL_BAND;
 		down = 0;
 	} else if (transmitting && tot_limit &&

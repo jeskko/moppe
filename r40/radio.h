@@ -9,8 +9,6 @@ extern unsigned char tx_locked;	/* why PTT is not transmitting: */
 #define TXL_TOT  2			/* the time-out ran out */
 extern unsigned tot_limit;		/* seconds, 0 = none */
 
-#define TX_LO 430000000L		/* transmit only in the 70 cm band */
-#define TX_HI 440000000L
 extern unsigned char tx_level;	/* TX power: Nokia's level 1-3 as 0-2 */
 extern signed char rx_trim;	/* added to the calibrated RFC */
 extern unsigned char rfc, tpc;	/* the DAC values in use */

@@ -37,7 +37,11 @@ the RX frequency, TX power per 7 MHz at the menu's level (low/mid/high
 = Nokia's 1-3), deviation bits per MHz of the TX frequency, and squelch
 "cal" (the default) from Nokia's levels; read from Nokia's committed NV
 copies, else its D-band defaults; RX self-calibration of RFC by the
-RSSI peak (44 scenarios).
+RSSI peak. Both bands (2026-10-08, `band.c`): 70 cm on an RD40, 2 m on
+an RC40, from Nokia's band byte (NV 0x63) or the menu's Band item (for
+a radio whose Nokia NV is lost; a change restarts the firmware); the PLL
+prescaler, tuning / TX / scan ranges, start-up frequency and default
+shift per band; other-band memories hidden (50 scenarios).
 User guide (keys, menu, installing): [../r40/README.md](../r40/README.md); keep
 it in step with the key layout and menu.
 Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
@@ -83,13 +87,14 @@ restarts).
 | `r40/keypad.c` | CU43 matrix, PWR, hook; `key_get()` queue of presses; a key held at power-on is not a press |
 | `r40/serbus.c` | serial bus bit-banging: `sr_write(n, v)` (4094 + OUT1 strobe), `dac_write()` (MC144111, 4 x 6 bits; channel 1 = RFC) |
 | `r40/audio.c` | key beep (8-bit timer as Nokia: phi/64, compare 89 then 51, IC41 SIGN LSP + IC40 PWRAMP); the 4094 states: `audio_rx(open)`, `audio_tx_prepare()` / `audio_mic()` / `audio_tx_done()`, `audio_volume()`, `power_off()`; differs from Nokia in keeping RX audio muted in TX |
-| `r40/pll.c` | both synthesizers: `pll_init()` (R = 1024, SW = 0, both chips), `pll_vco(which, hz)` (N/A from the VCO frequency, 6.25 kHz steps) |
+| `r40/pll.c` | both synthesizers: `pll_init()` (R = 1024, SW from the band: 0 = 128/129 on 70 cm, 1 = 64/65 on 2 m, both chips), `pll_vco(which, hz)` (N/A from the VCO frequency, 6.25 kHz steps; A 7 or 6 bits) |
+| `r40/band.c` | `struct band` per band (2 m: tune 138-174, TX/scan 144-146, start 145.500, shift 600 kHz, 0-channel 138 MHz, SW 1; 70 cm: 400-470, 430-440, 433.500, 7.6 MHz, 400 MHz, SW 0); `band_select()` after `cal_load`/`nv_load`: `band_choice` (menu, our NV) or Nokia's byte 0x63 (0x40 = 2 m, else 70 cm) |
 | `r40/radio.c` | `radio_tune(rx, tx)` (a new RX frequency closes the squelch and waits `SETTLE` ticks; `radio_settled()`) (RX VCO rx + 45 MHz, TX parked tx + 62.5 kHz, then `radio_dac()`: RFC + trim, TPC from `cal.c`), `radio_poll()`: PTT (P7.3, two ticks) with the TX sequence (deviation bits from `cal.c`), A/D scan AN0/AN1, squelch (opens below `sq_on`, closes at `sq_off`, two ticks) |
-| `r40/cal.c` | `cal_self()`: the RFC sweep (above), `rx_selfcal[6]` used by `cal_rfc` in 430-440 MHz. Nokia's calibration: `cal_load()` copies block 0 (0x000-0x12B) of the committed copy at 0x80000 or 0x82000 with P9.2 = 1 (checksum checked), else Nokia's D-band defaults (deviation 4); `cal_rfc(rx)`, `cal_tpc(level, tx)`, `cal_dev(tx)`, `cal_sq_open/close()` (lower / higher of 0x6C, 0x6D, x 4) |
+| `r40/cal.c` | `cal_self()`: the RFC sweep (above; 1-2-1 smoothing) at every other MHz of the band's TX range, `rx_selfcal[6]` + `rx_selfcal_band` used by `cal_rfc` there. Nokia's calibration: `cal_load()` copies block 0 (0x000-0x12B) of the committed copy at 0x80000 or 0x82000 with P9.2 = 1 (checksum checked); `cal_band()` (once the band is known) fills Nokia's D-band defaults if there is none (deviation 7, Nokia's cold start; RFC flat 32 on 2 m); `cal_rfc(rx)`, `cal_tpc(level, tx)`, `cal_dev(tx)`, `cal_sq_open/close()` (lower / higher of 0x6C, 0x6D, x 4) |
 | `r40/ui.c` | VFO state (`vfo_hz`, duplex, shift, reverse → `radio_tune(rx, tx)`), screen (row 0 frequency or entry + `-`/`+`/`R`/`F`, row 1 volume and step, row 2 TX/LOCK/BUSY and RSSI / 4) and keys; the key layout is in its header comment |
-| `r40/nv.c` | settings block (`struct nv_cfg`, version 7: the VFO as a `struct chan`, memory mode/channel, volume, step, squelch level, time-out, beep, TX power level, RX trim, the six self-cal RFCs) at 0x83000 (P9.2 = 0 half, emulator `nv()[0x7000:]`): magic `R4`, version, size, 16-bit checksum; `nv_save()` on every change, defaults when invalid. Nokia's copies (the other half) are left alone |
+| `r40/nv.c` | settings block (`struct nv_cfg`, version 8: the VFO as a `struct chan`, memory mode/channel, volume, step, squelch level, time-out, beep, TX power level, RX trim, the six self-cal RFCs and their band, the band choice) at 0x83000 (P9.2 = 0 half, emulator `nv()[0x7000:]`): magic `R4`, version, size, 16-bit checksum; `nv_save()` on every change, defaults when invalid. Nokia's copies (the other half) are left alone |
 | `r40/mem.c` | memories 00-99 at 0x83100: `struct chan` (frequency, shift, duplex, reverse, CTCSS tone) + used byte + checksum byte per slot; `mem_get/put/clear/next` |
-| `r40/menu.c` | settings menu; `settings_apply()` (squelch "cal" = Nokia's levels, level n → threshold 600 - 20 n, 0 = open; time-out; DAC write); TX power low/mid/high, RX tune a trim -20..+20 on the calibrated RFC, RX self-cal (UP runs, DOWN clears) |
+| `r40/menu.c` | settings menu; `settings_apply()` (squelch "cal" = Nokia's levels, level n → threshold 600 - 20 n, 0 = open; time-out; DAC write); TX power low/mid/high, RX tune a trim -20..+20 on the calibrated RFC, RX self-cal (UP runs, DOWN clears), Band (auto / 2 m / 70 cm; leaving the menu after a change restarts) |
 | `r40/tone.c` | CTCSS: table (0.1 Hz), `ctcss_on(t)` (8-bit timer phi/8, compare 125 = 8 kHz, CMIA level 3), `ctcss_off()`; the interrupt is `ctcss` in start.s |
 | `r40/main.c` | start-up order, main loop, power off |
 | `tests/r40/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys (`key_down` while held), entry, steps, squelch, volume, synthesizer words, 4094 boot state, power off/on |

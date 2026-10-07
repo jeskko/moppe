@@ -2,8 +2,6 @@
 #ifndef UI_H
 #define UI_H
 
-#define BAND_LO 400000000L	/* tuning limits (the VCO's range is unknown) */
-#define BAND_HI 470000000L
 
 #define DUP_SIMPLEX 0
 #define DUP_MINUS   1

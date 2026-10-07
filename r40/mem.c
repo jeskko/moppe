@@ -6,6 +6,7 @@
  */
 #include "nv.h"
 #include "mem.h"
+#include "band.h"
 
 #define MEM_BASE (NV_BASE + 0x100)
 #define USED 0xA5
@@ -36,6 +37,8 @@ int mem_get(int n, struct chan *c)
 	s = SLOT(n);
 	if (s->used != USED || sum((unsigned char *)s, sizeof *s) != 0)
 		return -1;
+	if (s->c.hz < band->lo || s->c.hz > band->hi)
+		return -1;		/* another band's: hidden, kept */
 	if (c)
 		*c = s->c;
 	return 0;

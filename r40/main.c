@@ -9,6 +9,7 @@
 #include "ui.h"
 #include "nv.h"
 #include "cal.h"
+#include "band.h"
 
 /* power off; with the supply held on (ignition), wait for PWR */
 static void off(void)
@@ -37,6 +38,7 @@ int main(void)
 	lcd_init();
 	cal_load();		/* switches NV halves: before interrupts */
 	nv_load();		/* the defaults stay if NV is not valid */
+	band_select();		/* Nokia's band or the menu's: before the PLL */
 	audio_init();
 	keypad_init();
 	radio_init();

@@ -78,6 +78,41 @@ index 36739fc..9d53579 100755
  					} else
  						p = simplify(CVU, dst, p, NULL);
  					break;
+diff --git a/src/gen.c b/src/gen.c
+index cff0bd7..57964d7 100755
+--- a/src/gen.c
++++ b/src/gen.c
+@@ -664,19 +664,27 @@ static Symbol spillee(Symbol set, unsigned mask[], Node here) {
+ 	if (!set->x.wildcard)
+ 		bestreg = set;
+ 	else {
++		/* moppe (H8/500): any allowed register whose overlapping values
++		   (pairs or single registers) are next used farthest away; lcc
++		   looked only at registers holding a value of the wanted kind,
++		   so a pair blocked by single-register values could not be
++		   freed (assertion) or the same two pairs were spilled in turn
++		   forever.  spill() frees whatever overlaps the choice. */
+ 		for (i = 31; i >= 0; i--) {
+ 			Symbol ri = set->x.wildcard[i];
+ 			if (
+ 				ri != NULL &&
+-				ri->x.lastuse &&
+-				(ri->x.regnode->mask&tmask[ri->x.regnode->set]&mask[ri->x.regnode->set])
++				ri->x.regnode->vbl == NULL &&
++				(ri->x.regnode->mask&tmask[ri->x.regnode->set]&mask[ri->x.regnode->set]) ==
++					ri->x.regnode->mask &&
++				(ri->x.regnode->mask&~freemask[ri->x.regnode->set])
+ 			) {
+ 				Regnode rn = ri->x.regnode;
+ 				Node q = here;
+ 				int dist = 0;
+ 				for (; q && !uses(q, rn); q = q->x.next)
+ 					dist++;
+-				if (q && dist > bestdist) {
++				if (dist > bestdist) {
+ 					bestdist = dist;
+ 					bestreg = ri;
+ 				}
 diff --git a/src/lex.c b/src/lex.c
 index af8a78f..7c9da3c 100755
 --- a/src/lex.c
