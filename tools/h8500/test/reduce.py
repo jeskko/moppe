@@ -3,9 +3,13 @@
 reduce: shrink a C file that makes rcc fail, keeping the same message.
 
     reduce.py file.c 'assertion text' > small.c
+    reduce.py --hang [SECONDS] file.c > small.c    # rcc does not finish
 
 Deletes lines, then replaces parenthesized subexpressions by 1, as long
-as rcc -target=h8500/gas (after lcc's cpp) still prints the text.
+as rcc -target=h8500/gas (after lcc's cpp) still prints the text, or
+with --hang still runs longer than SECONDS (default 2; the endless
+spilling of 2026-10-08, h8500-compiler.md).  The result may be cut off
+mid-function: rcc's error recovery still reaches the bad code.
 """
 import os
 import re
@@ -17,25 +21,40 @@ LCC = os.path.join(TOP, "reference/toolchain/lcc/build")
 INC = os.path.join(TOP, "tools/h8500/lib/include")
 
 
-def fails(text, msg):
+def fails(text, msg, hang=None):
     pre = subprocess.run([os.path.join(LCC, "cpp"), "-D__H8500__", "-I" + INC],
                          input=text, capture_output=True, text=True).stdout
-    p = subprocess.run([os.path.join(LCC, "rcc"), "-target=h8500/gas"],
-                       input=pre, capture_output=True, text=True)
-    return msg in p.stderr
+    try:
+        p = subprocess.run([os.path.join(LCC, "rcc"), "-target=h8500/gas"],
+                           input=pre, capture_output=True, text=True, timeout=hang)
+    except subprocess.TimeoutExpired:
+        return True
+    return hang is None and msg in p.stderr
 
 
 def main():
-    path, msg = sys.argv[1], sys.argv[2]
+    args, hang = sys.argv[1:], None
+    if args and args[0] == "--hang":
+        args = args[1:]
+        hang = 2.0
+        if len(args) > 1:
+            hang = float(args.pop(0))
+        path, msg = args[0], None
+    else:
+        path, msg = args
     lines = open(path).read().splitlines()
-    assert fails("\n".join(lines), msg), "does not fail"
+
+    def check(text, msg):
+        return fails(text, msg, hang)
+
+    assert check("\n".join(lines), msg), "does not fail"
     # lines, in chunks halving down to one
     n = len(lines) // 2
     while n >= 1:
         i = 0
         while i < len(lines):
             trial = lines[:i] + lines[i + n:]
-            if fails("\n".join(trial), msg):
+            if check("\n".join(trial), msg):
                 lines = trial
             else:
                 i += n
@@ -48,7 +67,7 @@ def main():
             for m in reversed(list(re.finditer(r"\([^()]*\)", line))):
                 trial = lines[:]
                 trial[k] = line[:m.start()] + "1" + line[m.end():]
-                if trial[k] != line and fails("\n".join(trial), msg):
+                if trial[k] != line and check("\n".join(trial), msg):
                     lines = trial
                     changed = True
                     break
