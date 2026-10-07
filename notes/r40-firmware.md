@@ -12,7 +12,7 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 ## Start here (next session)
 
 State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
-`python3 -m unittest test_r40fw` (in `tests/`) runs 38 scenarios; `make
+`python3 tools/ci/runtests.py r40` (or `python3 -m unittest test_r40fw` in `tests/r40/`) runs 38 scenarios; `make
 -C r40 run` or plain `python3 emu/python/r40tui.py` opens it in the
 emulator's TUI (`--factory`: the Nokia firmware). A simplex VFO: boots
 on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
@@ -38,6 +38,8 @@ the RX frequency, TX power per 7 MHz at the menu's level (low/mid/high
 "cal" (the default) from Nokia's levels; read from Nokia's committed NV
 copies, else its D-band defaults; RX self-calibration of RFC by the
 RSSI peak (44 scenarios).
+User guide (keys, menu, installing): [../r40/README.md](../r40/README.md); keep
+it in step with the key layout and menu.
 Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
 Next, each checked in the emulator before the next:
@@ -90,7 +92,7 @@ restarts).
 | `r40/menu.c` | settings menu; `settings_apply()` (squelch "cal" = Nokia's levels, level n → threshold 600 - 20 n, 0 = open; time-out; DAC write); TX power low/mid/high, RX tune a trim -20..+20 on the calibrated RFC, RX self-cal (UP runs, DOWN clears) |
 | `r40/tone.c` | CTCSS: table (0.1 Hz), `ctcss_on(t)` (8-bit timer phi/8, compare 125 = 8 kHz, CMIA level 3), `ctcss_off()`; the interrupt is `ctcss` in start.s |
 | `r40/main.c` | start-up order, main loop, power off |
-| `tests/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys (`key_down` while held), entry, steps, squelch, volume, synthesizer words, 4094 boot state, power off/on |
+| `tests/r40/test_r40fw.py` | boot, tick, watchdog (bites without kicks), latches, LCD set-up, keys (`key_down` while held), entry, steps, squelch, volume, synthesizer words, 4094 boot state, power off/on |
 
 Conventions: C runs with DP = EP = TP = 8, BR = FF. Only `xin`/`xout`
 change EP; the interrupt entry saves it and sets 8 for C. Main loop

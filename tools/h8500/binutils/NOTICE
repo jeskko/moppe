@@ -1,0 +1,3 @@
+h8500.patch modifies GNU binutils 2.16.1 and is under binutils' license,
+the GNU GPL version 2 or later.  The other files here (build.sh,
+test_gas.py) are ours, under the MIT license (../../../LICENSE).

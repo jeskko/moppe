@@ -1,0 +1,6 @@
+r58.asm and the original code in r58.s are the R58 community ham
+firmware (OH5NXO et al.; v3_Z ALs by OH1E and OH5NXO, 2018), published
+without a license: its authors' rights apply, and this repository grants
+none for it.  c/ ports parts of it to C: our changes are under the MIT
+license (../LICENSE), the logic carried over is as above.  Details: the
+License section of ../README.md.

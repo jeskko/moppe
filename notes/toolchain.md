@@ -2,12 +2,12 @@
 
 ## Build (2026-09-28): cpp + asmpp + sdasz80 + sdldz80
 
-`firmware/r58.s` is the firmware source, in sdasz80 syntax. `make -C
+`r58/r58.s` is the firmware source, in sdasz80 syntax. `make -C
 firmware`:
 
 ```
-r58.s --cpp -traditional--> --tools/asmpp.py--> r58.pp.s --sdasz80--> r58.rel
-      --tools/link.py (sdldz80)--> r58.ihx, r58.map --tools/ihx2bin.py--> r58.bin
+r58.s --cpp -traditional--> --tools/r58/asmpp.py--> r58.pp.s --sdasz80--> r58.rel
+      --tools/r58/link.py (sdldz80)--> r58.ihx, r58.map --tools/r58/ihx2bin.py--> r58.bin
 ```
 
 `make verify` checks the toolchain against the released v3_Z ALs binary
@@ -16,12 +16,12 @@ built with this toolchain) and `build-as80/` (`r58.asm` with as80). Both
 must be byte-identical. `build-release` is also the reference build of the
 differential tests against the release (`test_diff.py`). `r58.s` itself
 differs from the release since Phase 2 (notes/hybrid-plan.md). `r58.s` was
-produced from `r58.asm` by `tools/as80tosdas.py` (one-shot converter, kept
+produced from `r58.asm` by `tools/r58/as80tosdas.py` (one-shot converter, kept
 for re-running on other as80 sources such as the ALr variant), then edited
 by hand; `r58.asm` is now reference only.
 
 `make ref` builds `build-ref/` from git tag `asm-final` (`git archive` of
-firmware/ and tools/ into `build-ref/src`): the last commit with the
+`firmware/` and `tools/` of that tag, which has the old layout, into `build-ref/src`; the recipe keeps those names): the last commit with the
 assembler alternative to every C module, including the bug fixes. It is the
 reference of the module differential tests (`test_*_diff.py`,
 `test_diff.DiffTest`). The C modules became the only build on 2026-09-29;
@@ -36,7 +36,7 @@ Plain sdasz80 (`(mem)`, `#imm`, `;` comments, `.db/.dw/.ds/.ascii`) plus:
 | `#define`, `#if`, macros with arguments | GNU `cpp -traditional` (as before; params are substituted inside strings, e.g. `STR("dHz")`) |
 | `@` statement separator (macro bodies, since cpp cannot emit newlines) | asmpp |
 | as80 local labels `1:` … `1b` / `1f` (digits 1-9, nearest before/after, no scoping by other labels) | asmpp |
-| `HI(x)` = `x >> 8` (unmasked, as as80), `LO(x)` = `x & 0xFF` | `firmware/asm.h` |
+| `HI(x)` = `x >> 8` (unmasked, as as80), `LO(x)` = `x & 0xFF` | `r58/asm.h` |
 | `ALIGN(bits, fill)`, `FILL(n, v)` | asm.h (`.rept`) |
 | `ASSERT_EQ/LT/LE/GT/GE(a, b)`, `ASSERT_NZ(x)` → `.iif ..., .error 1` | asm.h |
 | `name: BYTE` / `WORD` / `FREQ` / `STRING` / `BUF(n)` | `#define`s in r58.s (`.ds n`) |
@@ -70,7 +70,7 @@ the macro processor; `.bndry` does not fill; makebin/ihx2bin gaps are 0xFF.
 
 `make SRC=... BUILD=...` builds another source into another directory.
 asmpp also writes `build/r58.labels` (label names) and `build/r58.linemap`
-(listing line → source file:line) for tools; `tools/jp2jr.py` uses the
+(listing line → source file:line) for tools; `tools/r58/jp2jr.py` uses the
 listing, `r58.sym` and the line map to shorten `jp` to `jr` in r58.s.
 
 ### Bank 1
@@ -97,7 +97,7 @@ symbols C only compares as numbers.
 ### C modules
 
 `c/*.c` → `sdcc -mz80 --sdcccall 1 --reserve-regs-iy --opt-code-size -c` →
-`.rel`, linked with the firmware by `tools/link.py`:
+`.rel`, linked with the firmware by `tools/r58/link.py`:
 
 - `_CODE` is placed at `rom_end` (after the assembler ROM image and its
   checksum byte), `_DATA` at `c_bss`, a block reserved in firmware RAM
@@ -111,7 +111,7 @@ symbols C only compares as numbers.
   official 4.6.0 binary tarball and Arch's package of the same revision
   (#16555) allocate registers differently (found 2026-10-01). Release
   images use the tarball (`tools/ci/install-sdcc.sh`, notes/ci.md).
-- C → firmware names: C `x` is `_x`; `tools/cglue.py` emits `_x = x` for
+- C → firmware names: C `x` is `_x`; `tools/r58/cglue.py` emits `_x = x` for
   every `_x` the C objects reference (`build/cglue.inc`, included by
   r58.s).
 - Firmware → C: a `#define squelch _squelch` block at the top of r58.s.
@@ -128,7 +128,7 @@ from equates. A label's size is the distance to the next label. A `.lst`
 path is still accepted (as80 listings; for an sdas listing the `.map` next
 to it is used).
 
-## as80 (tools/as80) — reference only
+## as80 (tools/r58/as80) — reference only
 
 The original assembler from `reference/old-devkit/as80` ("jas", 1996-97,
 yacc grammar + GNU `cpp -traditional` as macro preprocessor). Dialect:
@@ -153,7 +153,7 @@ Changes needed to reproduce the released binaries on modern Linux:
 | `reference/r58.asm.alr` (3_Z ALr 23.09.2018) | `reference/r58p8x3Z.bin` | identical |
 | `reference/oh3tr/r58p8x3Zi.asc` (3_Z ALi, posted 2011) | `reference/r58p8x3Zi.bin` (2005) | same size, 212 bytes differ — address shifts; the .asc is a slightly different revision than the .bin |
 
-`make -C firmware verify` re-checks the ALs build against its sha256.
+`make -C r58 verify` re-checks the ALs build against its sha256.
 
 Note: `r58p8x3Zi.bin` is **older** (ALi, 17.04.2005) than the ALs source
 (24.09.2018), despite being "3.Zi, recommended production version" on the

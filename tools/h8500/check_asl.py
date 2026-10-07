@@ -3,7 +3,7 @@
 Round-trip check of Alfred Arnold's AS (asl) for the H8/500 against the
 patched binutils decoder (reference/r40work/bin/dis2, which agrees with
 moppe-emu's h8500.c): every instruction the emulator executed in the
-Nokia R40 ROM (reference/ghidra-r40/coverage.bin, tools/ghidra-r40/
+Nokia R40 ROM (reference/ghidra-r40/coverage.bin, tools/r40/ghidra/
 coverage.py) is disassembled, rewritten in asl syntax, assembled at its
 own address, and the bytes asl produced are disassembled again.  The
 two disassemblies must say the same thing; asl may choose a shorter

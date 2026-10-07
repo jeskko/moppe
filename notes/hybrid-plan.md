@@ -11,17 +11,17 @@ concept), notes/hardware.md (memory decode), notes/emulator.md.
 
 ## Start here (next session, written 2026-10-01)
 
-**Waiting (user, 2026-10-01):** the original authors' reply on usage and
-licence (OH1E asked; OH5NXO's address unknown). Publishing to GitHub and
-the first real CI run (notes/ci.md) come after it; nothing is pushed yet
-(no remote). Check the reply's terms against `LICENSE` and the README's
-licence section first.
+**Publishing (user, 2026-10-07):** the repository is prepared for a
+public GitHub repo without waiting for the authors' reply: parts with
+unknown terms (the R58 firmware, as80) stay under their authors'
+rights, our work is MIT (README "License"); CI covers R58 and R40
+(notes/ci.md). If OH1E / OH5NXO reply, record their terms there.
 
 **State (2026-09-30).** Phase 4 is done as far as the plan's rule goes
 ("assembler only for what is timing critical or awkward in C"), and the
 **C modules are the only build**: `make` links r58.s with `c/*.c`. The
 last commit with the assembler alternatives is git tag **`asm-final`**;
-`make ref` builds it into `firmware/build-ref/`, the reference of the
+`make ref` builds it into `r58/build-ref/`, the reference of the
 module differential tests (`test_*_diff.py`, `test_diff.DiffTest`); it
 differs from the release by the bug fixes and the removed Aisin Seiki
 GPS path. `make verify` still rebuilds the release from `r58.asm`.
@@ -36,7 +36,7 @@ shared header `c/r58.h` (163 symbols had been declared in several modules,
 28 of them inconsistently) with the layout constants; duplicates merged
 (`copy3`, `mprs_degmin_pack` ×3, `nibbles`, the locator mirror/count-down
 blocks, `menu_next/prev`, repeater state tails); `FAR()` for the bank stubs
-and shims named for what they do; `tools/fwlink.py` for .map/.rel parsing;
+and shims named for what they do; `tools/r58/fwlink.py` for .map/.rel parsing;
 `emu/tests/helpers.py` and `difftest.DiffCase` for the test boilerplate.
 Kept on purpose: the `#x` command switch's four roger tails (a goto for 12
 bytes), `freq.c locate_band`'s write-then-overwrite (as the asm; the
@@ -55,7 +55,7 @@ and sent APRS (reproduced with a behaviour-identical display.c change; the
 same race exists in the asm). Change a setting, run a little, then the
 edge.
 
-**What stays assembler** (`python3 tools/asmleft.py` after `make`:
+**What stays assembler** (`python3 tools/r58/asmleft.py` after `make`:
 fixed-ROM asm 0x0100-0x2BBA, ~10.7 KB: data 1826, reachable from
 interrupts 3146, mainline hardware 2365, mainline plain 3600):
 | Part | Why |
@@ -79,7 +79,7 @@ logger time 000000 before a fix; busy settling, SAnE DYN and the APRS
 timing kept. Mutants of the new code (edge_step, the slice merge, TBEEPMAX,
 the logger) are all caught but one equivalent (.99 vs .98 when a minute
 borrows: the same 0.25' cell). How a fix goes (for the next ones): a test that fails on
-the release (`R58_ROM=firmware/build-release/r58.bin R58_LST=...r58.map`
+the release (`R58_ROM=r58/build-release/r58.bin R58_LST=...r58.map`
 runs a standalone test against it), the fix in C (the asm is gone), the
 entry moved to "Firmware behaviour the tests pinned down" below. A fix
 makes the differential tests differ from `build-ref` where their
@@ -104,8 +104,8 @@ vs R58bis, P8E I/O wait states; IC27 and the modem CLK settled on paper
 by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
 
 **Rules learned this session (details in Phase 3/4 below):**
-- Moving code to a bank: `tools/bankxref.py` (external users),
-  `tools/isrreach.py` (must say "none"; it skips cpp lines), no stored bank
+- Moving code to a bank: `tools/r58/bankxref.py` (external users),
+  `tools/r58/isrreach.py` (must say "none"; it skips cpp lines), no stored bank
   addresses used by fixed code, block edges end in ret/jp.
 - **Bank duty:** anything polled on every mainloop pass enters a bank only
   when it has work (see `far_repeater_run`: once per systick), and long
@@ -152,7 +152,7 @@ by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
   only when stopped. Loops that run per channel or per memory slot must
   not call helpers per item (a library divide and multiply per memory
   slot cost ~0.3 ms each; the port skips unscanned memory blocks whole).
-- `tools/mutate.py --jobs N` builds each mutant in its own temporary copy
+- `tools/r58/mutate.py --jobs N` builds each mutant in its own temporary copy
   of the firmware tree (TMPDIR), so mutants run in parallel and the repo
   is never modified; `R58_NV_CACHE` gives each its own SAnE NV cache.
   **A new differential test file needs its `R58_X_CAND` prefix in
@@ -173,7 +173,7 @@ by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
   "all rejected" scan: asm 7.4 ms, `C=1` 9.2 ms before the RFC port).
   C's 32-bit arithmetic is slow: the RFC slot in C added 1.2 ms, so it
   stayed asm.
-- `tools/link.py` now removes its .ihx/.map when a check fails (the
+- `tools/r58/link.py` now removes its .ihx/.map when a check fails (the
   `c_bss` overflow left an .ihx behind and the next make did nothing).
 - From the PTT port: the digit buffer survives a CCIR call (clear it
   between scenario cases); set a report due only after the condition it
@@ -189,7 +189,7 @@ by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
 - **The emulator test suite is the safety net.** Every phase ends with
   `python3 -m unittest discover -s emu/tests` passing on the new build. Add
   tests *before* porting a module whose behaviour is not yet covered.
-- **Keep the stock build reproducible.** `make -C firmware verify` must keep
+- **Keep the stock build reproducible.** `make -C r58 verify` must keep
   passing (byte-identical to the release) until a change is meant to alter
   the binary; from then on the differential tests are the check.
 - **NV layout stays v3_Z compatible** (0xC000-0xCFFF, asserted field offsets)
@@ -246,7 +246,7 @@ typematic timings.
   compared at checkpoints. OUT2 and the PIO ports are not compared: they are
   bit-banged buses, so a checkpoint catches them at an arbitrary phase and
   they differ between two correct builds. Candidate: `R58_CAND_ROM`/`_LST`,
-  default `firmware/build-c`. Stock vs `C=1`: no differences.
+  default `r58/build-c`. Stock vs `C=1`: no differences.
 - **Added 2026-09-28:** `test_scan_rptr.py` (scanner: default mask, memory
   block, stop/resume on signal, mask toggle, perm reject; repeater: menu
   enable + 60 s boot lockout, access by 1750 Hz / DTMF * / carrier, greet,
@@ -454,7 +454,7 @@ notes/open-bugs.md):
   (user, 2026-10-01).
 
 ### Phase 1: one toolchain (SDCC's sdas + sdld) — done 2026-09-28
-- `firmware/r58.s` (sdasz80 syntax, converted by `tools/as80tosdas.py`)
+- `r58/r58.s` (sdasz80 syntax, converted by `tools/r58/as80tosdas.py`)
   links **byte-identical** to r58p8x3Z.bin.als; `make verify` checks it.
   C modules are linked SDCC objects; `sdcc2as80.py` and `crt.inc` are gone.
   Details and the sdas pitfalls found: notes/toolchain.md.
@@ -471,7 +471,7 @@ notes/open-bugs.md):
 
 ### Phase 2: OUT2 shadow and bank infrastructure (still 32 KB) — done 2026-09-28
 - **Space first.** The fixed ROM had 47 bytes free, too few for this
-  phase: `tools/jp2jr.py` turned 318 `jp` into `jr` outside the timing-
+  phase: `tools/r58/jp2jr.py` turned 318 `jp` into `jr` outside the timing-
   critical code (its exclusion list is the "stays in assembler" table),
   freeing 318 bytes. After Phase 2: 142 bytes free in the stock build
   (0x7F72), more in `C=1`. Watch page-aligned tables: 12 bytes added before
@@ -527,7 +527,7 @@ notes/open-bugs.md):
   on the display).
 - **Bench test ROM — built 2026-09-28, waiting for a real board** (now
   also checks bank 2, see below):
-  `make -C firmware banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
+  `make -C r58 banktest` → `build-banktest/r58-banktest.bin`, a 64 KB
   image for a 27C512 in the EPROM0 socket (EPROM1 socket as usual). It is
   the normal firmware plus `bank_test` early at boot. The lower row shows
   `b1b2 PASS` (on a CU53AN the S look like 5, B like b) when both window
@@ -545,10 +545,10 @@ notes/open-bugs.md):
   card (P8E /H or P8N) and the display.
 - **How to move the next block to bank 1** (what worked for the menu):
   1. Pick a contiguous block of r58.s, first label to the first label after
-     it. `python3 tools/bankxref.py firmware/r58.s FIRST AFTER` lists every
+     it. `python3 tools/r58/bankxref.py r58/r58.s FIRST AFTER` lists every
      symbol of the block used outside it and local labels crossing its
      edges.
-  2. `python3 tools/isrreach.py firmware/r58.s FIRST AFTER` must say
+  2. `python3 tools/r58/isrreach.py r58/r58.s FIRST AFTER` must say
      "none". Classify each bankxref hit. A routine called from mainline gets a stub
      `far_X: call bank1_call / .dw X` in fixed ROM, and the outside
      `call`/`jp` sites are renamed to `far_X`. Keep in fixed ROM: data that
@@ -619,13 +619,13 @@ notes/open-bugs.md):
     longjmp (`ld sp, (repeater_cw_jmpbuf)`) stays in bank 1 code, after
     the wait has restored the bank.
   `test_banking.BankDuty` checks < 5 % in normal mode and repeater idle
-  (fails at 46 % without the guard) and runs `tools/isrreach.py` over all
+  (fails at 46 % without the guard) and runs `tools/r58/isrreach.py` over all
   of bank 1 (nothing reachable from interrupts).
 - **Not moved: the scanner** (1.2 KB, does not fit in the 785 bytes left).
   It is interrupt-free (`load_num_tmp_rejects`/`unreject_timer` stay
   fixed) and a coroutine through `scanner_state`; it would need the same
   kind of guard as the repeater (it runs on every pass while scanning).
-- `tools/isrreach.py FILE [FIRST AFTER]`: routines reachable from the IM2
+- `tools/r58/isrreach.py FILE [FIRST AFTER]`: routines reachable from the IM2
   handlers and dosir (textual call graph, `.dw` tables, fall-through);
   run it on a block before moving it (step 2 of the procedure above).
 - Repeater tests are P8E-only: on a P8N the fixture pokes the 60 s boot
@@ -994,7 +994,7 @@ first, port, differential test against stock, size check, commit.
   lengths, scanner key, star with 0/1/4 digits and refused, menu letters,
   keys that stop the scanner (incl. a menu digit), CU58AF (30 ms
   tolerance: key releases are seen once per 25 ms display refresh), P8N.
-  Mutation run (`tools/mutants/keys.py`): 70 mutants, 69 caught, 1
+  Mutation run (`tools/r58/mutants/keys.py`): 70 mutants, 69 caught, 1
   equivalent (`go_mem_a`'s `set_channel_step`, which `locate_band`
   already calls, in the asm too). The first round had 7 survivors, each
   a scenario gap (listed above as the "incl." cases), after a first run
@@ -1033,7 +1033,7 @@ first, port, differential test against stock, size check, commit.
   interval 0, not while the repeater transmits), P8N, CU58AF. difftest:
   a leading one-sample tone run folds into the next; trace `settle` drops
   a leading transient; `ignore` takes NV field names. Mutation run
-  (`tools/mutants/ptt.py`): 49 mutants, 48 caught, 1 equivalent
+  (`tools/r58/mutants/ptt.py`): 49 mutants, 48 caught, 1 equivalent
   (`close_squelch` before `tx_on_legal_or_not`, whose
   `tx_cut_local_audio` closes the squelch anyway). The first round had
   22 survivors, all scenario gaps (the SAnE bands, stale digits, a
@@ -1049,7 +1049,7 @@ first, port, differential test against stock, size check, commit.
   restarts, junk, a batch piled up while PTT holds the mainloop), hook
   scripts (incl. a stale `key_time` after a long press), the idle
   function, the MBUS→RF relay, light dimming (traced), the CCIR ding,
-  P8N. Mutation run (`tools/mutants/mainloop.py`): 41 mutants, 39 caught,
+  P8N. Mutation run (`tools/r58/mutants/mainloop.py`): 41 mutants, 39 caught,
   2 equivalent (a 10-character sentence processed or not: junk either
   way; `key = 0xFF` before a script key: `keycheck` ran earlier in the
   pass). The first round's 5 real survivors were scenario gaps (the
@@ -1064,7 +1064,7 @@ first, port, differential test against stock, size check, commit.
   asserted in r58.s. 284 bytes of C for ~238 of asm. Safety net:
   `test_display_diff.py` (3 tests, both handsets and P8N; a TX differing
   from RX only in its top byte is poked: the TX grid never produces one).
-  Mutation run (`tools/mutants/indicators.py`): 16 mutants, all caught.
+  Mutation run (`tools/r58/mutants/indicators.py`): 16 mutants, all caught.
 - **Done: the RFC table fill in C** (2026-09-29), `c/freq.c`:
   `rfc_fill_blanks` (dF:rFcFIL; the REC points at C through the
   `#define`) and the line interpolation `rfc_fill_one_hole` (a C-only
@@ -1072,7 +1072,7 @@ first, port, differential test against stock, size check, commit.
   the 16-bit sum). The lookup stayed asm (see the per-step rule). Safety
   net: `test_rfc_diff.py` (4 tests: the fill's slopes, 8-bit wrap, the
   barrier, random tables; the lookup per frequency into the DAC, P8N).
-  Mutation run (`tools/mutants/rfc.py`): 13 fill mutants, 11 caught, 2
+  Mutation run (`tools/r58/mutants/rfc.py`): 13 fill mutants, 11 caught, 2
   equivalent (`dx <= dy`: both branches draw the same line when equal;
   an extra outer iteration). `c_bss` 224 → 256 bytes.
   Test fixes: `test_ptt_diff.test_aprs_local` waits 1.2 s after /LOCAL
@@ -1085,7 +1085,7 @@ first, port, differential test against stock, size check, commit.
   compiled out there. 108 bytes of C for 133 of asm. `test_keys_diff`
   `test_duplex_key` gained a split from a memory with RX ≠ TX and
   negative shifts that carry (256, 65536); mutation run
-  (`tools/mutants/split.py`) 9/9.
+  (`tools/r58/mutants/split.py`) 9/9.
 - **What is left, and what gates it:**
   - See "What is left" in "Start here".
   - The real-board bench test still has to confirm both window pages.

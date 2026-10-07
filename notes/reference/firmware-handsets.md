@@ -5,8 +5,8 @@
 
 # R58 firmware ↔ control unit (handset) interface — emulator spec
 
-Source: `firmware/r58.asm` (line numbers `Lnnnn` refer to this file). Addresses come from
-`firmware/build/r58.lst` (build `-DP8x`). This document uses only what the firmware does.
+Source: `r58/r58.asm` (line numbers `Lnnnn` refer to this file). Addresses come from
+`r58/build/r58.lst` (build `-DP8x`). This document uses only what the firmware does.
 Anything about device behaviour that the firmware cannot tell us is marked **[DEVICE]**.
 
 Key addresses (P8x build):

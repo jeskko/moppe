@@ -1,0 +1,58 @@
+# c/ptt.c: PTT/TX flow (tools/r58/mutate.py; tests: test_ptt_diff
+# test_keys_diff.KeysDiff.test_ptt_remembers_vip test_keys_diff.KeysDiff.test_star test_rptr_diff)
+MUTANTS = [
+    # pttcheck
+    ("\topen_selective();\n\trepeater_ptt_seen = 1;", "\trepeater_ptt_seen = 1;"),
+    ("\trepeater_ptt_seen = 1;\n", "\n"),
+    ("if (cfg_function == 1)", "if (cfg_function == 2)"),
+    ("\tcu_manipulated();\n", "\n"),
+    ("\tctcss_maybe();\n", "\n"),
+    ("if (!menu_active && digidx)", "if (digidx)"),
+    ("if (!menu_active && digidx)", "if (!menu_active && digidx > 1)"),
+    ("\tmic_on();\n\ttx_tune_tone_maybe();", "\ttx_tune_tone_maybe();"),
+    ("\tmic_on();\n\ttx_tune_tone_maybe();", "\tmic_on();"),
+    ("\t\tcase 1:\n", "\n"),
+    ("\t\tcase 0xFF:\n", "\n"),
+    ("\t\t\tbattcheck();\n\t\t\tredraw();\n\t\t\tbatt = ad_batt;", "\t\t\tredraw();\n\t\t\tbatt = ad_batt;"),
+    ("\t\tif (menu_active)\n\t\t\tredraw();", ""),
+    ("\t\tif (k != 0xFF)", "\t\tif (k != 0xFF && k != '+')"),
+    ("\t\tif (!is_key_down())\n\t\t\tstop_dtmf_tone();", ""),
+    ("\tctcss_off();\t\t/* no tone", "\t/* no tone"),
+    ("\tif (menu_active)\n\t\tfar_send_remote_config_packets();", "\tif (!menu_active)\n\t\tfar_send_remote_config_packets();"),
+    ("\tfar_send_mprs_report_packet_maybe();\n\ttx_off();", "\ttx_off();"),
+    ("\tredraw();\n\tremember_vip();", "\tredraw();"),
+    # tx_error, beep1750
+    ("\tptt_error_tone();\n", "\n"),
+    ("\tdo\n\t\twaitkey();\n\twhile (is_ptt_pressed());", "\twaitkey();"),
+    ("\tptt_1750_tone();\n", "\n"),
+    ("\tccir_on();\n\twaitkey();\n\tccir_off();", "\tccir_on();\n\tccir_off();\n\twaitkey();"),
+    ("\tccir_off();\n\ttx_off();\n}", "\tccir_off();\n}"),
+    # tune tone
+    ("menu_ptr != tune_tone_position", "menu_ptr == tune_tone_position"),
+    ("|| !cfg_txtune_hz)", ")"),
+    ("(4032000UL / cfg_txtune_hz)", "(4032000UL / cfg_txtune_hz + 1)"),
+    ("\tmic_off();\n\tccir_on();\n}", "\tccir_on();\n}"),
+    # APRS frequency
+    ("return cfg_aprs_tx_freq[0] | cfg_aprs_tx_freq[1] | cfg_aprs_tx_freq[2];", "return cfg_aprs_tx_freq[0] | cfg_aprs_tx_freq[1];"),
+    ("\tcopy3(tx_freq, cfg_aprs_tx_freq);\n\tupdate_tx_vco_band();\n", "\tcopy3(tx_freq, cfg_aprs_tx_freq);\n"),
+    ("\tptt_tx_band_step();\n", "\n"),
+    ("\tclose_squelch();\n\ttx_on_legal_or_not();", "\ttx_on_legal_or_not();"),
+    ("\ttx_bstep_cfg = save_bstep;\n", "\n"),
+    ("\ttx_refdiv = save_refdiv;\n", "\n"),
+    ("\tcopy3(tx_divisor, save_div);\n", "\n"),
+    ("\tcopy3(tx_freq, save_freq);\n\tupdate_tx_vco_band();\n}", "\tcopy3(tx_freq, save_freq);\n}"),
+    # spontaneous MPRS
+    ("\tif (txon)\n\t\treturn;", "\tif (0)\n\t\treturn;"),
+    ("\tif (idle_timer < cfg_idlefn_delay)\n\t\treturn;\t\t\t\t/* not idle enough */\n\tif (mprs_timer_not_yet())", "\tif (mprs_timer_not_yet())"),
+    ("\tif (mprs_timer_not_yet())\n\t\treturn;", ""),
+    ("\tif (squelch_open)\n\t\treturn;", ""),
+    ("\tif (!aprs_freq_set())\n\t\treturn;\t\t\t\t/* not configured */\n\tto_aprs_freq();", "\tto_aprs_freq();"),
+    ("\tfar_send_mprs_report_packet();\n", "\n"),
+    # APRS on /LOCAL
+    ("\tif (!cfg_aprs_tx)\n\t\treturn;", ""),
+    ("\tif (!(sio_bctrl_mirror & SB_LOCAL))\n\t\treturn;", ""),
+    ("\tif (idle_timer < cfg_idlefn_delay)\n\t\treturn;\t\t\t\t/* not idle enough */\n\tif (!aprs_freq_set())\n\t\treturn;\n", "\tif (!aprs_freq_set())\n\t\treturn;\n"),
+    ("\tif (!aprs_freq_set())\n\t\treturn;\n\tto_aprs_freq();\n\tmic_on();", "\tto_aprs_freq();\n\tmic_on();"),
+    ("\tto_aprs_freq();\n\tmic_on();", "\tto_aprs_freq();"),
+    ("\twhile (sio_bctrl_mirror & SB_LOCAL)\n\t\t;", ""),
+]

@@ -3,7 +3,7 @@
 Known v3_Z bugs and quirks that are **not** fixed. Fixed bugs are listed
 in hybrid-plan.md under "Firmware behaviour the tests pinned down"; decided
 entries move to open-bugs-history.md. When fixing one: a test that fails
-on the release (`R58_ROM=firmware/build-release/r58.bin R58_LST=...r58.map`),
+on the release (`R58_ROM=r58/build-release/r58.bin R58_LST=...r58.map`),
 the fix in C, then move the entry. Ordered by likely user impact.
 
 The 2026-10-01 decisions are done (entries and answers in

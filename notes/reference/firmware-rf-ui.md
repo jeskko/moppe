@@ -5,8 +5,8 @@
 
 # R58 firmware (v3_Z "ALs", 24.09.2018): RF, TX/RX and UI spec for an emulator
 
-Source: `firmware/r58.asm`. `L1234` means that line of the source. `@0xNNNN` is an address from
-`firmware/build/r58.lst`, built with `-DP8x` as in the Makefile. All firmware frequencies are **integer kHz**, stored
+Source: `r58/r58.asm`. `L1234` means that line of the source. `@0xNNNN` is an address from
+`r58/build/r58.lst`, built with `-DP8x` as in the Makefile. All firmware frequencies are **integer kHz**, stored
 as 24-bit little-endian values ("FREQ", 3 bytes, L446). TCXO = 12800 kHz (L397-398). Nothing in the Makefile overrides it.
 
 ---------------------------------------------------------------------------------------------------------------------

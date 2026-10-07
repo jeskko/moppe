@@ -35,8 +35,12 @@ V=binutils-2.16.1
 mkdir -p "$TC"
 cd "$TC"
 [ -f $V.tar.bz2 ] || curl -sfLO https://ftp.gnu.org/gnu/binutils/$V.tar.bz2
-# a changed patch: fresh sources and build
-SUM=$(md5sum < "$HERE/h8500.patch")
+# -U_FORTIFY_SOURCE: Ubuntu's gcc fortifies by default, and 2.16.1's ar
+# then aborts ("buffer overflow detected": bfd's archive headers are
+# written with sprintf, whose NUL lands one past each field)
+CFLAGS_BU="-O1 -g -std=gnu89 -fcommon -w -U_FORTIFY_SOURCE"
+# a changed patch or flags: fresh sources and build
+SUM=$( (cat "$HERE/h8500.patch"; echo "$CFLAGS_BU") | md5sum)
 if [ "$(cat $V/.moppe-patched 2>/dev/null)" != "$SUM" ]; then
     rm -rf $V binutils-h8500/build
     tar xjf $V.tar.bz2
@@ -45,7 +49,7 @@ if [ "$(cat $V/.moppe-patched 2>/dev/null)" != "$SUM" ]; then
 fi
 mkdir -p binutils-h8500/build
 cd binutils-h8500/build
-[ -f Makefile ] || CFLAGS="-O1 -g -std=gnu89 -fcommon -w" ../../$V/configure \
+[ -f Makefile ] || CFLAGS="$CFLAGS_BU" ../../$V/configure \
     --target=h8500-hms --disable-nls --disable-werror >configure.log 2>&1
 make -j8 all-gas all-ld all-binutils >make.log 2>&1 || { tail -20 make.log; exit 1; }
 mkdir -p ../bin

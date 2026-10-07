@@ -5,8 +5,8 @@
 
 # R58 firmware: timers, audio, ADC/DAC, modem, interrupts. A spec for emulator writers
 
-Source: `firmware/r58.asm` (v3_Z ALs, 24.09.2018). Build `-DP8x` defines both P8N and P8E (r58.asm:384-387).
-Line numbers are `r58.asm` lines. Addresses come from `firmware/build/r58.lst` (symbol table at the end, `# name l 0xADDR`).
+Source: `r58/r58.asm` (v3_Z ALs, 24.09.2018). Build `-DP8x` defines both P8N and P8E (r58.asm:384-387).
+Line numbers are `r58.asm` lines. Addresses come from `r58/build/r58.lst` (symbol table at the end, `# name l 0xADDR`).
 "FW expects" means the firmware assumes this but does not prove it. Anything marked (inferred) is my own reading.
 
 ---------------------------------------------------------------------------

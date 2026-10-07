@@ -1,6 +1,6 @@
 #!/bin/sh
 # sdcc with an object cache, for CI: `make SDCC=tools/ci/sdcc-cached.sh`
-# (an absolute path: make runs in firmware/ and build-ref/).  The key is
+# (an absolute path: make runs in r58/ and build-ref/).  The key is
 # the compiler's version line, the arguments and the contents of the
 # source and of every header beside it; a hit copies the .rel and its
 # .asm/.lst/.sym, which are what sdcc would have written.  The pinned
@@ -30,7 +30,7 @@ base=${out%.rel}
 hit=$cache/$key
 
 if [ -f "$hit/o.rel" ]; then
-	touch "$hit"			# used: kept by check.sh's pruning
+	touch "$hit"			# used: kept by check-r58.sh's pruning
 	for x in rel asm lst sym; do
 		[ -f "$hit/o.$x" ] && cp "$hit/o.$x" "$base.$x"
 	done

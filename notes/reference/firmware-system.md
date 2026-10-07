@@ -5,8 +5,8 @@
 
 # R58 firmware (v3_Z ALs 24.09.2018): system spec for emulator writers
 
-Source: `firmware/r58.asm`. Every "Lnnnn" below is a line number in that file.
-Addresses come from `firmware/build/r58.lst`, built with `as80 -DP8x` (Makefile).
+Source: `r58/r58.asm`. Every "Lnnnn" below is a line number in that file.
+Addresses come from `r58/build/r58.lst`, built with `as80 -DP8x` (Makefile).
 With `-DP8x` both `P8N` and `P8E` are defined (L387-390). One binary runs on both
 CPU cards. It detects which card it is on at runtime (`check_for_P8E_cpu`, L14791).
 

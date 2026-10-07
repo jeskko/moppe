@@ -165,7 +165,7 @@ our notes or assumptions.
 | SDCC interrupt code did not save the alternate set (README:93,129) | Our rule already: alternate set belongs to PIO-A (hybrid-plan.md:229). Checked: no `exx`/`ex af,af'` in `/usr/share/sdcc/lib/src/z80/*.s` (4.6 library sources) |
 | `p->rx_freq & 0xFFFFFF` "SDCC-3.0 has fixed a bug (?)" (`r58bis.c:805`) | Old 24-bit masking issue; nothing to do |
 | `--funsigned-char` | Our code uses `uint8_t`; SDCC 4.x defaults to unsigned char anyway (from memory, not checked) |
-| NMI during a P8N NV copy (he restarts the save from a ROM-safe stack) | **Ours has a one-byte hole**: `save_nvmisc_and_restart` (`firmware/r58.s:7821`) does its first `ld a,(hl)` with whatever OUT2 the interrupted `save_nvdata` left; if the NMI lands between `out (c),d` and `out (c),e` (`r58.s:7872-7874`), the first byte (`nvstart` = `audio_dst`, 0xC000) is copied battery→battery and its work-RAM value is lost. A window of a few µs per byte, so rare and minor. Fix: `out (c),e` before the loop. DI does not mask NMI |
+| NMI during a P8N NV copy (he restarts the save from a ROM-safe stack) | **Ours has a one-byte hole**: `save_nvmisc_and_restart` (`r58/r58.s:7821`) does its first `ld a,(hl)` with whatever OUT2 the interrupted `save_nvdata` left; if the NMI lands between `out (c),d` and `out (c),e` (`r58.s:7872-7874`), the first byte (`nvstart` = `audio_dst`, 0xC000) is copied battery→battery and its work-RAM value is lost. A window of a few µs per byte, so rare and minor. Fix: `out (c),e` before the loop. DI does not mask NMI |
 | ON/OFF bounces (`r58bis.c:1584`) | Our NMI always saves and restarts; a bounce reboots the radio (start re-checks PA3). Acceptable |
 | "poks poks from speaker was caused by forgotten MTC (or CCIRC)" (`bis/XXX`) | General audio-path hint |
 
@@ -207,7 +207,7 @@ our notes or assumptions.
    incl. a test with a deliberately hung loop. Evidence: `boot.s:618-627`.
 6. **Close the NMI one-byte hole** in `save_nvmisc_and_restart` (`out (c),e`
    before the copy loop), with an emulator test that fires NMI between the two
-   OUTs on P8N. Effort: 1 h. Evidence: §5, `firmware/r58.s:7821-7874`.
+   OUTs on P8N. Effort: 1 h. Evidence: §5, `r58/r58.s:7821-7874`.
 7. **DCS encoder** as a new feature in bank 2, after the licence answer or as
    an own implementation from the DCS spec (his Golay parity equations,
    `util.s:1958-2060`, are the standard ones). Effort: 1-2 days incl. an

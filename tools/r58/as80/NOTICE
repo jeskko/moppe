@@ -1,0 +1,3 @@
+The "jas" assembler (1996-97) from the old R58 development kit, with our
+patches to build it on modern systems.  No license is known: its
+authors' rights apply.  See the License section of ../../../README.md.

@@ -23,7 +23,7 @@ def c_sizes(flags):
         sizes[n] = nxt - a
     return sizes
 
-sym = load_symbols('../../firmware/build/r58.lst')
+sym = load_symbols('../../r58/build/r58.lst')
 code = sorted(v for v in sym.values() if v < 0x8000)
 def asm_size(name):
     a = sym[name]

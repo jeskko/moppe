@@ -1,0 +1,7 @@
+lcc.patch modifies lcc 4.2 (https://github.com/drh/lcc) and, like
+../test/cq.1bk (an expected output of lcc's test program cq.c), is under
+lcc's license (its CPYRIGHT file: free use and redistribution with the
+notice, not for sale).  h8500.md, the back end, is our work under the MIT
+license (../../../LICENSE), written against lcc's back-end interface; a
+few interface lines and short idioms follow lcc's own back ends.  The
+compiler built from it is lcc, under lcc's license.

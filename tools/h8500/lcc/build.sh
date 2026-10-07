@@ -4,7 +4,9 @@
 # (asl, kept for check_asl.py).
 #
 #   tools/h8500/lcc/build.sh
+#   H8_NO_ASL=1 tools/h8500/lcc/build.sh       # without asl (CI)
 #
+# Needs a C compiler, make, curl, git and yacc (byacc or bison: lcc's lburg).
 # Sources, fetched on first use into reference/toolchain/ (gitignored):
 #   lcc 4.2   https://github.com/drh/lcc   (licence: lcc's CPYRIGHT: free
 #             to use and redistribute with acknowledgement, not to sell)
@@ -18,7 +20,8 @@ TOP=$(cd "$HERE/../../.." && pwd)
 TC=$TOP/reference/toolchain
 mkdir -p "$TC"
 [ -d "$TC/lcc" ] || git clone -q https://github.com/drh/lcc "$TC/lcc"
-if [ ! -x "$TC/asl-current/asl" ]; then
+# asl is only for check_asl.py: H8_NO_ASL=1 (CI) skips it
+if [ -z "${H8_NO_ASL:-}" ] && [ ! -x "$TC/asl-current/asl" ]; then
     [ -d "$TC/asl-current" ] || (cd "$TC" &&
         curl -sfL http://john.ccac.rwth-aachen.de:8000/ftp/as/source/c_version/asl-current.tar.gz | tar xz)
     cp "$TC/asl-current/Makefile.def-samples/Makefile.def-x86_64-unknown-linux" "$TC/asl-current/Makefile.def"

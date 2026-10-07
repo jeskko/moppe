@@ -1,0 +1,4 @@
+ghidra-h8.patch modifies OZVR4's Ghidra-H8-Processor
+(https://github.com/OZVR4/Ghidra-H8-Processor), which gives no license:
+the patch's context lines are under its author's rights; our changes, and
+the other files here, are under the MIT license (../../../LICENSE).

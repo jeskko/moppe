@@ -1,7 +1,11 @@
-# Build, verify and test on every push and pull request (tools/ci/check.sh;
-# tools/ci/docker.sh runs the same locally).  A v* tag publishes a release,
-# a push to master replaces the "nightly" pre-release: the EPROM images,
-# the link map, the setup map and SHA256SUMS (tools/ci/package.sh).
+# Build, verify and test on every push and pull request: the R58 firmware
+# (tools/ci/check-r58.sh) and the R40 firmware with its H8/500 toolchain
+# (tools/ci/check-r40.sh), in parallel; tools/ci/docker.sh runs the same
+# locally.  A v* tag publishes a release (v0.*: a pre-release, the
+# firmwares are emulator-tested only), a push to master replaces the
+# "nightly" pre-release: both firmwares' images and link maps, the R58
+# setup map and SHA256SUMS (tools/ci/package.sh), with the notes of
+# tools/ci/release-notes.md.
 name: CI
 
 on:
@@ -15,7 +19,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  r58:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -44,24 +48,49 @@ jobs:
         run: tools/ci/install-sdcc.sh >> "$GITHUB_PATH"
 
       - name: Build, verify, test
-        run: tools/ci/check.sh
+        run: tools/ci/check-r58.sh
 
       - name: Package
-        run: |
-          case "$GITHUB_REF" in
-          refs/tags/*) v=$GITHUB_REF_NAME ;;
-          *) v=nightly-$(date -u +%Y%m%d)-$(git rev-parse --short HEAD) ;;
-          esac
-          tools/ci/package.sh "$v"
+        run: tools/ci/package.sh r58 "$(tools/ci/version.sh)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          name: firmware-r58
+          path: dist/
+          retention-days: 30
+
+  r40:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Packages
+        run: sudo apt-get install -qq -y --no-install-recommends byacc   # lcc's lburg
+
+      - name: Cache the H8/500 toolchain
+        uses: actions/cache@v4
+        with:
+          path: reference/toolchain
+          key: h8500-${{ hashFiles('tools/h8500/lcc/*', 'tools/h8500/binutils/*', 'emu/h8500.c', 'tools/h8500/h8run.c') }}
+          restore-keys: h8500-
+
+      - name: Toolchain, build, test
+        run: tools/ci/check-r40.sh
+
+      - name: Package
+        run: tools/ci/package.sh r40 "$(tools/ci/version.sh)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-r40
           path: dist/
           retention-days: 30
 
   publish:
-    needs: check
+    needs: [r58, r40]
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     permissions:
@@ -70,14 +99,25 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/ci
+
       - uses: actions/download-artifact@v4
         with:
-          name: firmware
+          pattern: firmware-*
+          merge-multiple: true
           path: dist
+
+      - name: Checksums
+        run: cd dist && rm -f SHA256SUMS && sha256sum -- * > SHA256SUMS
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes dist/*
+        run: |
+          case "$GITHUB_REF_NAME" in v0.*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "$GITHUB_REF_NAME" $pre --title "$GITHUB_REF_NAME" \
+            --notes-file tools/ci/release-notes.md --generate-notes dist/*
 
       - name: Nightly
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -85,4 +125,4 @@ jobs:
           gh release delete nightly --yes --cleanup-tag || true
           gh release create nightly --prerelease --target "$GITHUB_SHA" \
             --title "Nightly $(date -u +%Y-%m-%d) ($(echo "$GITHUB_SHA" | cut -c1-7))" \
-            --notes "Latest build of ${GITHUB_REF_NAME}, not a release: untested on a real radio." dist/*
+            --notes-file tools/ci/release-notes.md dist/*
