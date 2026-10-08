@@ -3,7 +3,8 @@
 # runs it in a clean Ubuntu container): build the emulator and the
 # firmware, rebuild the release byte-identical (make verify), the asm
 # reference of the differential tests (make ref, needs the git tag
-# asm-final), the bank test image, then the test suite.  Run from the
+# asm-final), the bank test image, the RB58VY (L8M) image, then the
+# test suite.  Run from the
 # repository root, with sdcc (tools/ci/install-sdcc.sh) on PATH.
 set -eu
 
@@ -20,4 +21,5 @@ step make -C emu test
 step make -C r58 -j"$(nproc)"
 step make -C r58 -j"$(nproc)" verify ref
 step make -C r58 -j"$(nproc)" banktest
+step make -C r58 -j"$(nproc)" l8m
 step python3 tools/ci/runtests.py r58

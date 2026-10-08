@@ -31,6 +31,9 @@ extern void gpsc_sentence(uint8_t len);
 extern void cu_lights_off(void);
 /* the per-pass checks of other modules */
 extern void fskcheck(void), far_repeater_run(void);
+#ifdef L8M
+extern void ee_sync(void);
+#endif
 
 void gps_check(void), script_check(void), idlefn_check(void), bus_rf_relay(void),
 	dim_lights_if_idle(void), redrawcheck(void), ccircheck(void);
@@ -55,6 +58,9 @@ void mainloop(void)
 			bus_rf_relay();		/* only if configured */
 		if (cfg_spontaneous_mprs)
 			spontaneous_mprs_check();
+#ifdef L8M
+		ee_sync();			/* the essentials into the EEPROM */
+#endif
 	}
 }
 

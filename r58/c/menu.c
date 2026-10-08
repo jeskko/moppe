@@ -272,7 +272,9 @@ void menu_rfc_change(uint8_t d)
 		rfc += d;
 	else
 		rfc = a2i_byte();
+#ifndef L8M				/* L8M: the one DAC is TPC */
 	da_rfc = rfc;
+#endif
 	save_rfc();
 }
 
@@ -691,6 +693,9 @@ static void set_defaults_band(void)
 {
 	card = cfg_synth_card;
 	reset_menurecords();			/* keep the radio type */
+#ifdef L8M
+	card = S8B;				/* RB58VY: low VHF, 45 MHz IF */
+#endif
 	cfg_synth_card = card;
 	if (card == S8B)
 		s = defaults_6m;

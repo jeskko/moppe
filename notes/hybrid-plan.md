@@ -295,6 +295,12 @@ notes/open-bugs.md):
   packet stored across the end of the ring was sent with the
   `gps_history` bytes that follow it. **Fixed 2026-09-28** (obvious bug:
   `inc l`, in asm and C); `test_fsk.test_relay_across_ring_end`.
+- The CU53AN keypad read saved `out2_last` ("bus idle state, for
+  set_bank") after A had become the LDR bit (`and #PB_DCU`), so the next
+  `set_bank` left the handset bus in keypad select instead of LCD1. No
+  visible effect on P8x; on L8M, where the same latch carries TXOFF, the
+  next synth load keyed the transmitter. **Fixed 2026-10-08** (obvious
+  bug: stored right after the LCD1 write); `test_l8m.test_keys_keep_txoff`.
 - CW messages cut CTCSS: `send_cw_prolog` began with `xor h` (meant
   `ld h, #0`), so `ctcss_custom_flag` got the caller's H (0xD0 after
   `repeater_txon`) and `send_cw_epilog` called `ctcss_off` after every

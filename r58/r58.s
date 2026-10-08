@@ -453,7 +453,10 @@
 #endif
 
 #ifdef L8M
-#error Sorry, L8M missing in action
+;  Mobira RB58VY system logic L8M (notes/rb58vy.md): one board, I/O decoded
+;  from A6..A4 only, the synth and handset lines in one latch, EEPROM for
+;  the essentials, S8M synthesizer (MC145156).  No FX429 (FFSK), no
+;  multiboard, no CTCSS encoder/decoder.
 #endif
 ;----------------------------------------------------------------------
 
@@ -554,6 +557,7 @@
 ;
 ;	I/O map
 ;
+#ifdef P8x
 #define PIO   0x00
 #define SIO   0x10
 #define TMR   0x20
@@ -567,6 +571,21 @@
 #define MDM   0xA0
 
 #define CSMEM 0xB0	/* P8E SMEM flipflop  */
+#endif
+#ifdef L8M
+/* manual's names: 0x50 "OUT 0" (synth and handset), 0x60 "OUT 1" (audio,
+ * the P8x OUT0 layout).  OUT1 and OUT2 are the same latch here; ports that
+ * do not exist are left undefined, so that every use needs an L8M case */
+#define PIO   0x00
+#define SIO   0x10
+#define TMR   0x20
+#define DA1   0x30	/* the only DAC: TPC (the manual's RFC/TPC) */
+#define AD    0x40
+#define OUT0  0x60
+#define OUT1  0x50
+#define OUT2  0x50
+#define WD    0x70
+#endif
 
 #define ADATA 0
 #define BDATA 1
@@ -575,6 +594,7 @@
 
 #define TMRCTRL 3
 
+#ifdef P8x
 #define AD_RSSI  (AD + 0)
 #define AD_SQL   (AD + 1)
 #define AD_BATT  (AD + 2)
@@ -585,6 +605,17 @@
 #define AD_IN7   (AD + 7)
 
 #define DA_RFC   DA0
+#endif
+#ifdef L8M
+#define AD_RSSI  (AD + 0)	/* IN0 RCL */
+#define AD_FPM   (AD + 1)	/* IN1 TPL */
+#define AD_BATT  (AD + 2)	/* IN2 +V */
+#define AD_TPC   (AD + 3)	/* IN3 RFC, TPC */
+#define AD_RPM   (AD + 4)	/* IN4 TRPL */
+#define AD_TP4   (AD + 5)
+#define AD_IN7   (AD + 6)
+#define AD_SQL   (AD + 7)	/* IN7 SQ, R8G noise squelch */
+#endif
 #define DA_TXPWR DA1
 
 ;----------------------------------------------------------------------
@@ -619,6 +650,27 @@
 #define TMR_0		0x00
 #define TMR_1		0x40
 #define TMR_2		0x80
+
+/* counter roles: LPF = switched-capacitor filter clock, MT = the tone pin
+ * (CCIR, DTMF, marker, AFSK), CT = P8x counter 2 (CLK 1968.75 Hz: CTCSS
+ * encoder, FX614).  L8M: counter 0 clocks SIO B (MBUS), 1 is the LPF,
+ * 2 the tones, all at 4.032 MHz; there is no CT */
+#ifdef P8x
+#define TMR_LPF		(TMR + 0)
+#define TMR_LPF_SEL	TMR_0
+#define TMR_MT		(TMR + 1)
+#define TMR_MT_SEL	TMR_1
+#define TMR_CT		(TMR + 2)
+#define TMR_CT_SEL	TMR_2
+#endif
+#ifdef L8M
+#define TMR_BRG		(TMR + 0)
+#define TMR_BRG_SEL	TMR_0
+#define TMR_LPF		(TMR + 1)
+#define TMR_LPF_SEL	TMR_1
+#define TMR_MT		(TMR + 2)
+#define TMR_MT_SEL	TMR_2
+#endif
 #define TMR_INTTC	0x00	/* mode 0, intr on terminal cnt */
 #define TMR_ONESHOT	0x02	/* mode 1, one shot */
 #define TMR_RATEGEN	0x04	/* mode 2, rate generator */
@@ -723,6 +775,7 @@
 #define O0_MICM   0x80
 #define O0_MTCBIT 6
 
+#ifdef P8x
 #define O1_SRE    0x01
 #define O1_SCE    0x02
 #define O1_STE    0x04
@@ -731,12 +784,22 @@
 #define O1_RAS    0x20
 #define O1_TPS    0x40
 #define O1_TXOFF  0x80
+#endif
+#ifdef L8M
+#define O1_SD     0x01	/* = O2_DP */
+#define O1_CLK    0x02	/* = O2_CLK */
+#define O1_SRE    0x04	/* RX synth load, rising edge */
+#define O1_STE    0x08	/* /STE: TX synth load on the fall, low = TX VCO on */
+#define O1_TPS    0x40	/* TX power range (RFS) */
+#define O1_TXOFF  0x80
+#endif
 
 ;
 ;	Bits 0-3 select the memory bank (see set_bank); every writer keeps the
 ;	current ones from out2_bank.  CS1/CS2/CLK/DP are the handset bus.
 ;
 
+#ifdef P8x
 #define O2_RA14   0x01
 #define O2_RA15   0x02
 #define O2_RS     0x04
@@ -748,6 +811,21 @@
 
 #define O2_BANK   (O2_SMEM | O2_RS | O2_RA15 | O2_RA14)
 #define O2_XXX    O2_SMEM	/* bank 0, the power-on state */
+#endif
+#ifdef L8M
+/* the handset bits of the one latch; out2_bank keeps the radio side
+ * (O2_BANK), which every handset write carries along */
+#define O2_DP     0x01
+#define O2_CLK    0x02
+#define O2_CS1    0x10
+#define O2_CS2    0x20
+
+#define O2_BANK   (O1_TXOFF | O1_TPS | O1_STE | O1_SRE)
+#define O2_XXX    (O1_TXOFF | O1_STE)	/* TX off, TX VCO off */
+
+/* out2_bank = (out2_bank & andm) | orm, to the latch (l8m_radio) */
+#define L8M_RADIO(andm, orm) push bc @ ld bc, #(((andm) & 0xFF) << 8) | (orm) @ call l8m_radio @ pop bc
+#endif
 
 /* handset bus states, without the bank bits */
 #define O2_KEYPAD 0
@@ -763,11 +841,12 @@
 ;	PIO and SIO controls
 ;
 #define PA_CLK2   0x01
-#define PA_HOOK   0x02
+#define PA_HOOK   0x02	/* L8M: SLOCK; systick puts the hook (SIO A DCD) here */
 #define PA_WDR    0x04
 #define PA_PWR    0x08
 #define PA_CCIR   0xf0	/* all inputs */
 
+#ifdef P8x
 #define PB_RAMA12 0x01	/*                         out */
 #define PB_EXIN1  0x02	/* aka /POR                out 0 if SERV */
 #define PB_EXIN2  0x04  /* aka /IGN aka /EMG       out 0 if GPio2b 0 */
@@ -778,6 +857,19 @@
 #define PB_PWROFF 0x80	/*                         out */
 
 #define PB_INPUTS 0x2E
+#endif
+#ifdef L8M
+#define PB_EEA10  0x01	/* EEPROM block (A10)      out */
+#define PB_EXIN1  0x02
+#define PB_EXIN2  0x04
+#define PB_DCU    0x08
+#define PB_SL     0x10	/* EPROM1 A14 (bank)       out */
+#define PB_SMEM   0x20	/* 1 RAM, 0 EEPROM         out, never 0 but in eeprom.s */
+#define PB_EXAL   0x40
+#define PB_PWROFF 0x80
+
+#define PB_INPUTS 0x0E
+#endif
 #define PB_BIT_EXIN1 1
 #define PB_BIT_EXIN2 2
 #define PB_BIT_DCU   3
@@ -941,6 +1033,10 @@
 v_nmi:
 	di				; IFF1 and IFF2 cleared
 	out (WD), a
+#ifdef L8M
+	ld a, #PB_SMEM			; RAM back, if the EEPROM code had it out
+	out (PIO+BDATA), a
+#endif
 
 	jp save_nvmisc_and_restart
 
@@ -960,6 +1056,10 @@ version:
 #ifdef P8x
 	.ascii "P8E/P8N "
 	.ascii "S8B/S8C/S8D "
+#endif
+#ifdef L8M
+	.ascii "L8M "
+	.ascii "S8M "
 #endif
 	.ascii "CU53xx/CU58AF"
 	.db 0x0A
@@ -983,7 +1083,11 @@ PIOA_INIT = . - 1b
 1:
 	.db LO(piob_base)	; load interrupt vector
 	.db 0xCF			; set operating mode 3
+#ifdef L8M
+	.db PB_INPUTS			; i/o selection, 1 for input, 0 for output
+#else
 	.db 0x3E			; i/o selection, 1 for input, 0 for output
+#endif
 	.db 0x97			; set interrupt control, IE, OR, LOW, MASK
 	;.byte 0xDF			! input bit monitoring mask, only B5 (TMR0)
 	.db 0xFF			; input bit monitoring mask, nothing
@@ -1141,8 +1245,10 @@ start:
 	ld a, #O2_XXX		; select ram 0, i hope, on P8N
 	out (OUT2), a
 
+#ifdef P8x
 	ld a, #1
 	out (CSMEM), a		; select full 16k page of ram on P8E, nop on P8N
+#endif
 
 	out (WD), a
 
@@ -1150,8 +1256,10 @@ start:
 	;  Disable NMT modem
 	;
 
+#ifdef P8x
 	ld a, #MDM_XXX
 	out (MDM + MDMCTRL), a
+#endif
 
 	;
 	;  PIO, SIO and 8254
@@ -1160,7 +1268,11 @@ start:
 	ld a, #PB_INPUTS
 	ld (piob_mode), a
 
+#ifdef L8M
+	ld a, #PB_SMEM		; RAM, not the EEPROM; bank 0, EXAL and OFF low
+#else
 	xor a
+#endif
 	out (PIO+BDATA), a	; B0, EXAL, /RXON, OFF all zero. SDA low but direction read.
 
 	ld hl, #init_chips   ; few runs of 'otir' below -------------
@@ -1177,7 +1289,11 @@ start:
 
 	; Set output bits, and check if restarted from powerdown nmi.
 
+#ifdef L8M
+	ld a, #PB_SMEM
+#else
 	xor a
+#endif
 	out (PIO+BDATA), a	; B0, EXAL, /RXON, OFF all zero, again ?
 
 	in a, (PIO+ADATA)
@@ -1196,7 +1312,21 @@ start:
 	otir                       ; last otir -------------------
 	out (WD), a
 
+#ifdef L8M
+	xor a
+	ld (cpu_is_P8E), a	; 4.032 MHz, no waits, as P8N
+
+	; 8254 counter 0 clocks SIO B (MBUS): 4.032 MHz / 26 = 155 kHz,
+	; x16 = 9692 bd (P8x: 153.6 kHz, 9600 bd)
+	ld a, #TMR_BRG_SEL | TMR_BOTH | TMR_SQWAVE
+	out (TMR + TMRCTRL), a
+	ld a, #26
+	out (TMR_BRG), a
+	xor a
+	out (TMR_BRG), a
+#else
 	call check_for_P8E_cpu     ; timers messed up
+#endif
 
 	out (WD), a
 
@@ -1862,9 +1992,11 @@ sioa_esc:
 	push hl
 
 	call cu_handler_stub
+#ifdef P8x
 	call modem_handler
 
 	in a, (TMR+TMRCTRL)		; dummy read to raise PIO B5 (remove int)
+#endif
 
 	ld a, #WR0_RESET_ESCINT
 	out (SIO+ACTRL), a
@@ -1926,6 +2058,7 @@ cu_handler_cu58af:
 
 
 modem_handler:
+#ifdef P8x
 
 	in a, (MDM + MDMCTRL)
 	and #MDM_SYNC | MDM_RXRDY
@@ -1963,6 +2096,7 @@ modem_handler:
 	out (MDM + MDMCTRL), a
 
 	jp mute_fsk_at_tag_maybe
+#endif
 
 ;
 ;	SIO A special receive condition
@@ -2077,7 +2211,9 @@ ctcss_enc_entry:
 	ld l, h
 	ld h, #HI(ctcss_sintab)
 	ld a, (hl)
-	out (DA_RFC), a
+#ifdef P8x
+	out (DA_RFC), a		; L8M: no RFC DAC, no CTCSS generator
+#endif
 
 ctcss_enc_skip:
 
@@ -2132,6 +2268,18 @@ systick:
 	;
 	ld hl, (pioa_data)      ; old bits to L
 	in a, (PIO+ADATA)
+#ifdef L8M
+	; PA1 is SLOCK here; the hook is on SIO A DCD (set while the
+	; handset is on its holder): PA_HOOK as on P8x, 1 = lifted
+	and #~PA_HOOK
+	ld h, a
+	in a, (SIO+ACTRL)
+	and #RR0_DCD
+	ld a, h
+	jr nz, 1f
+	or #PA_HOOK
+1:
+#endif
 	ld (pioa_data), a       ; save PIO ADATA, check CCIR decode again at end
 	xor l					; extract change
 	and #PA_HOOK
@@ -2196,6 +2344,14 @@ systick:
 	;
 	;  Decrement MBUS activity timer
 	;
+#ifdef L8M
+	ld a, (ee_timer)		; EEPROM write cycle wait
+	or a
+	jr z, 2f
+	dec a
+	ld (ee_timer), a
+2:
+#endif
 	ld a, (mbus_timer)
 	or a
 	jp z, 1f
@@ -2399,6 +2555,13 @@ update_gpio12:
 			ASSERT_EQ(PB_EXAL, 0x40)
 	ld h, a
 
+#ifdef L8M
+	; GPIO2's b bit has no pin on L8M: PB4 is the EPROM1 bank
+	ld a, (piob_out)
+	and #~PB_EXAL
+	or h
+	ld (piob_out), a
+#else
 	ld a, (cfg_gpio2_state)         ; ____ __cb
 	and #1
 	rlca                            ; ____ __b_
@@ -2407,6 +2570,7 @@ update_gpio12:
 	rlca                            ; ___b ____
 			ASSERT_EQ(PB_RXOFF, 0x10)
 	or h                            ; _a_b ____
+#endif
 	out (PIO+BDATA), a
 
 	ld a, (cfg_gpio2_state)         ; third bit is open collector like EXIN1
@@ -2418,6 +2582,9 @@ pulse_gpio1:
 
 	; EXAL -> 1 -> 0 without disturbing EXIN2
 
+#ifdef L8M
+	ld a, (piob_out)
+#else
 	ld a, (cfg_gpio2_state)         ; ____ __cb do not touch this
 	and #1
 	rlca                            ; ____ __b_
@@ -2425,6 +2592,7 @@ pulse_gpio1:
 	rlca                            ; ____ b___
 	rlca                            ; ___b ____
 			ASSERT_EQ(PB_RXOFF, 0x10)
+#endif
 
 	or #PB_EXAL                      ; _a_b ____
 	out (PIO+BDATA), a
@@ -2449,6 +2617,10 @@ pulse_gpio1:
 ; NZ = detecting
 
 read_ctcss_detect:
+#ifdef L8M
+	xor a              ; no CTCSS detector input (PB5 is SMEM): never
+	ret
+#else
 
 	ld a, (cfg_ctcss_input_method)
 	dec a              ; funny 3-way test
@@ -2463,6 +2635,7 @@ read_ctcss_detect:
 	ld a, (ctcss_dec_status)
 	or a
 	ret                ; NZ if status "1"
+#endif
 
 read_squelcher_value:
 	ld a, (squelch_tightening)
@@ -2937,6 +3110,9 @@ dtmf_decoder_init:
 	ret
 
 dtmf_decoder:
+#ifdef L8M
+	ret               ; no multiboard: 0x8000 is EPROM1 code
+#endif
 	ld a, (cur_bank)
 	or a
 	ret nz            ; multiboard not in the window: skip this sample
@@ -3511,6 +3687,11 @@ init_modem:
 	;
 	;  Initialize NMT modem
 	;
+#ifdef L8M
+re_enable_modem:
+enable_modem:
+	ret			; no FX429; the FX419 on SIO A is not used
+#else
 
 	ld a, #0x04
 	out (MDM + MDMCTRL), a		; Write 04 to control register
@@ -3544,6 +3725,7 @@ enable_modem: ;  Enable modem receiver
 	ld a, #MDM_RXENB
 	out (MDM + MDMCTRL), a
 	ret
+#endif
 
 ;----------------------------------------------------------------------
 
@@ -3742,8 +3924,10 @@ check_short_packet:
 	cp (ix + 6)
 	jr nz, 1f
 
+#ifdef P8x
 	ld a, #MDM_RXENB
 	out (MDM + MDMCTRL), a
+#endif
 
 	ld hl, #packet
 	ld (pkt_ptr), hl		; its short, rewind packet pointer
@@ -3809,8 +3993,10 @@ check_long_packet:
 	ld hl, #packet
 	ld (pkt_ptr), hl		; short or long, rewind packet pointer
 
+#ifdef P8x
 	ld a, #MDM_RXENB
 	out (MDM + MDMCTRL), a
+#endif
 
 	ret
 
@@ -3850,6 +4036,9 @@ check_packet:
 	ret
 
 send_packet_buffer:
+#ifdef L8M
+	ret			; no FX429: FFSK packets are not sent
+#else
 
 	push bc                     ; length in b
 
@@ -3903,6 +4092,7 @@ send_some_data:
 	out (MDM + MDMDATA), a
 	djnz 1b
 	ret
+#endif
 
 mdm_delay:
 	nop
@@ -3968,9 +4158,9 @@ ptt_tone_count:			; HL = 8254 counter 1 count
 	xor a
 	ld (mt_timer), a
 	ld a, l
-	out (TMR + 1), a
+	out (TMR_MT), a
 	ld a, h
-	out (TMR + 1), a
+	out (TMR_MT), a
 	ei
 	ret
 ptt_tx_band_step:		; the TX band's channel step into the synth set-up
@@ -4072,9 +4262,9 @@ ccir_from_digbuf:
 	di                  ; change the tone
 	ld a, (hl)
 	inc hl
-	out (TMR + 1), a
+	out (TMR_MT), a
 	ld a, (hl)
-	out (TMR + 1), a
+	out (TMR_MT), a
 	ei
 
 	call ccir_tx_timer_wait_100msec
@@ -4201,14 +4391,27 @@ step_txpwr_down:
 powerdown_now:
 
 	di
+#ifdef L8M
+	L8M_RADIO(0xFF, O1_TXOFF | O1_STE)
+#else
 	ld a, #O1_TXOFF
 	out (OUT1), a
+#endif
 
+#ifdef L8M
+	call ee_flush            ; everything into the EEPROM first
+#endif
 	ld a, (cfg_function)
 	or a
 	jr nz, 1f                ; Not Std Function -> keep power relay on
 
+#ifdef L8M
+	ld a, (piob_out)
+	and #PB_SL | PB_EXAL
+	or #PB_SMEM | PB_PWROFF
+#else
 	ld a, #PB_PWROFF
+#endif
 	out (PIO+BDATA), a       ; B0, EXAL /RXON low OFF high.
 1:
 	halt
@@ -4343,6 +4546,9 @@ keypad:
 
 	LD_A_OUT2(O2_LCD1)
 	out (OUT2), a
+	ld (out2_last), a	; bus idle state, for set_bank (was stored after
+				; A had become the LDR bit: on L8M that dropped
+				; TXOFF from the latch at the next synth load)
 	call slight_delay
 	call slight_delay
 
@@ -4353,7 +4559,6 @@ keypad:
 	;
 	;	shift 5 keycode bits to l
 	;
-	ld (out2_last), a	; bus idle state, for set_bank
 	ld c, #0		; collect bits here
 	ld b, #5		; this many
 1:
@@ -4533,12 +4738,12 @@ init_LPF:
 	call div248_full         ; Hz/20 reaches 128 from 2560 Hz (v3_Z: div248,
 				 ; so 3600 Hz loaded 8, a 5 kHz cutoff, and 5100 Hz 0)
 
-	ld a, #TMR_0 | TMR_BOTH | TMR_SQWAVE
+	ld a, #TMR_LPF_SEL | TMR_BOTH | TMR_SQWAVE
 	out (TMR + TMRCTRL), a
 	ld a, l
-	out (TMR + 0), a
+	out (TMR_LPF), a
 	ld a, h
-	out (TMR + 0), a
+	out (TMR_LPF), a
 	ret
 
 update_LPF:
@@ -4555,14 +4760,14 @@ update_LPF:
 ;  marker and tx tones
 
 init_timer1:
-	ld a, #TMR_1 | TMR_BOTH | TMR_SQWAVE
+	ld a, #TMR_MT_SEL | TMR_BOTH | TMR_SQWAVE
 	out (TMR + TMRCTRL), a
 	; and ...
 silence_timer1:
 	ld a, #0x04
-	out (TMR + 1), a	; But it leaks anyway, highest possible
+	out (TMR_MT), a	; But it leaks anyway, highest possible
 	ld a, #0x00
-	out (TMR + 1), a	; tone causes the least harm... brrh.
+	out (TMR_MT), a	; tone causes the least harm... brrh.
 	ret
 
 blip:                                  ; from keypad 
@@ -4694,9 +4899,9 @@ start_marker_tone:
 	ld (mt_timer), a
 
 	ld a, l
-	out (TMR + 1), a
+	out (TMR_MT), a
 	ld a, h
-	out (TMR + 1), a	; pitch
+	out (TMR_MT), a	; pitch
 
 	ld hl, #output_0
 	set O0_MTCBIT, (hl)
@@ -5684,14 +5889,22 @@ i2c_delay:
 NUM_BANKS = 3
 	.globl ___sdcc_bcall_ehl	; link the trampoline from the SDCC library
 
+#ifdef P8x
 bank_bits_p8e:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14, O2_XXX | O2_RS
 bank_bits_p8n:	.db O2_XXX, O2_XXX | O2_RS | O2_RA14, O2_XXX | O2_RS
+#endif
 
 bank_init:
 	ld a, #O2_XXX			; bank 0 (cur_bank is 0), as set at reset
 	ld (out2_bank), a
 	ld (out2_last), a
+#ifdef L8M
+	ld a, #PB_SMEM
+	ld (piob_out), a		; bank 0: S/L 0
+	ld hl, #ctcss_idle_sample	; no multiboard
+#else
 	ld hl, #0x8000			; multiboard visible
+#endif
 	ld (ctcss_dec_src), hl
 	ret
 
@@ -5699,6 +5912,32 @@ get_bank:
 	ld a, (cur_bank)
 	ret
 
+#ifdef L8M
+;  L8M: the window is always EPROM1, S/L (PB4) its A14.  The image keeps
+;  the P8x layout: bank 1 at 0xC000 (S/L 1), bank 2 at 0x8000 (S/L 0) of
+;  the 64 KB file, whose upper half is EPROM1.
+set_bank:
+	push hl
+	ld (cur_bank), a
+	ld h, a
+	ld a, i
+	di
+	push af			; P/V = IFF
+	ld a, (piob_out)
+	and #~PB_SL
+	dec h
+	jr nz, 1f
+	or #PB_SL		; bank 1
+1:
+	ld (piob_out), a
+	out (PIO+BDATA), a
+	pop af
+	jp po, 2f
+	ei
+2:
+	pop hl
+	ret
+#else
 set_bank:
 	push hl
 	push de
@@ -5733,6 +5972,7 @@ set_bank:
 	pop de
 	pop hl
 	ret
+#endif
 
 ;----------------------------------------------------------------------
 ;
@@ -6187,6 +6427,13 @@ channel_step_parms:
 
 	ld hl, #TCXO / 25 * 2  ; phys 12.5
 	ld bc, #25 | (1 << 8)
+#ifdef L8M
+	ld de, #25             ; S8M: R fixed at 12.5 kHz; 25 or 12.5 shown
+	cp #STEP_25
+	ret z
+	ld de, #12
+	ret
+#endif
 
 	ld de, #25             ; user visible 25, 12.5 phys.
 	cp #STEP_25
@@ -6298,6 +6545,138 @@ check_and_clamp_divisor:
 	ret
 
 
+#ifdef L8M
+;----------------------------------------------------------------------
+;
+;  L8M: the radio side of the 0x50 latch (TXOFF, TPS, /STE, SRE) lives in
+;  out2_bank, so that the handset writes carry it.  l8m_radio:
+;  out2_bank = (out2_bank & B) | C, written with the handset bus state;
+;  keeps BC DE HL and the interrupt state.
+
+l8m_radio:
+	push de
+	ld a, i
+	di
+	push af			; P/V = IFF
+	ld a, (out2_bank)
+	and b
+	or c
+	ld d, a
+	call out2_set_bank
+	pop af
+	jp po, 1f
+	ei
+1:
+	pop de
+	ret
+
+;  S8M (MC145156, 12.8 MHz TCXO, R = 1024 by its RA pins: 12.5 kHz;
+;  40/41 prescaler).  A frame is SW1 SW2 (1 1), N (10 bits), A (7 bits),
+;  MSB first on SD/CLK; then a pulse on SRE loads RX, /STE falling loads
+;  TX and keeps its VCO on (OH5NXO r58bis.c load_MC145156).  The
+;  divisors are in 12.5 kHz units (channel_step_parms).  CLK and SD are
+;  the handset's too: the frame runs with interrupts off.
+
+load_rxsynth:
+	load_ahl(rx_divisor)
+	ld d, #O1_SRE
+	jr s8m_load
+
+load_txsynth:
+	load_ahl(tx_divisor)
+	ld d, #O1_STE
+
+s8m_load:			; AHL divisor, D = O1_SRE or O1_STE
+	ld c, #40
+	call div248		; HL = N, A = A
+	add a, a
+	ld e, a			; A left-aligned, 7 bits
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl		; N left-aligned, 10 bits
+
+	ld a, i
+	di
+	push af			; P/V = IFF
+
+	ld a, (out2_last)
+	and #~(O2_DP | O2_CLK)
+	or #O1_STE		; a new TX load needs a falling /STE
+	ld b, a
+	ld a, d
+	cp #O1_STE
+	ld a, b
+	jr z, 1f
+	ld b, a
+	ld a, (out2_bank)
+	and #O1_STE		; RX load: /STE as it was
+	ld c, a
+	ld a, b
+	and #~O1_STE
+	or c
+1:
+	out (OUT1), a
+
+	ld c, #0xC0		; SW1 SW2
+	ld b, #2
+	call s8m_bits
+	ld c, h
+	ld b, #8
+	call s8m_bits
+	ld c, l
+	ld b, #2
+	call s8m_bits
+	ld c, e
+	ld b, #7
+	call s8m_bits
+
+	bit 3, d		; O1_STE ?
+	jr nz, 2f
+	or d			; SRE pulse
+	out (OUT1), a
+	nop
+	xor d
+	out (OUT1), a
+	jr 3f
+2:
+	and #~O1_STE		; TX: load, VCO on
+	out (OUT1), a
+3:
+	ld (out2_last), a
+	and #O2_BANK
+	ld (out2_bank), a
+
+	pop af
+	jp po, 4f
+	ei
+4:
+	ret
+
+s8m_bits:			; B bits of C, MSB first; A = latch, SD CLK low
+	rl c
+	jr nc, 1f
+	or #O1_SD
+1:
+	out (OUT1), a
+	or #O1_CLK
+	out (OUT1), a
+	and #~(O1_CLK | O1_SD)
+	out (OUT1), a
+	djnz s8m_bits
+	ret
+
+halt_txsynth:			; TX VCO off
+	L8M_RADIO(0xFF, O1_STE)
+	ret
+
+change_to_signalling_deviation:	; S8M has no deviation control
+shift_external_serial_A:		; no external serial strobes (RAS, TPS)
+shift_external_serial_B:
+	ret
+#else
 halt_txsynth:
 	ld a, (synth_ctrl)
 	set 2, a                ; cut supply, prediv & pll
@@ -6601,6 +6980,7 @@ shift_external_serial_B:
 	out (OUT1), a           ; SD returned 0 just for fun
 
 	ret
+#endif
 
 ;======================================================================
 
@@ -6662,8 +7042,12 @@ tx_on_legal_or_not:
 	call tx_cut_local_audio
 	ei
 
+#ifdef L8M
+	L8M_RADIO(0xFF, O1_TXOFF)
+#else
 	ld a, #O1_TXOFF
 	out (OUT1), a
+#endif
 	call zero_txpwr
 	call load_txsynth
 
@@ -6679,8 +7063,12 @@ tx_on_legal_or_not:
 
 	; /TXON and TPC=pwr
 
+#ifdef L8M
+	L8M_RADIO(~O1_TXOFF, 0)
+#else
 	xor a
 	out (OUT1), a
+#endif
 	call update_txpwr
 
 	call light_transmit_led
@@ -6691,8 +7079,12 @@ tx_on_legal_or_not:
 tx_off:
 	call ctcss_off                ; XXX potentially CTCSS-less tail of some msec
 
+#ifdef L8M
+	L8M_RADIO(0xFF, O1_TXOFF)
+#else
 	ld a, #O1_TXOFF
 	out (OUT1), a
+#endif
 	call zero_txpwr
 
 	xor a
@@ -7028,6 +7420,9 @@ ctcss_off_nohang:
 
 	xor a
 	ld (ctcss_is_on), a   ; clear the flag
+#ifdef L8M
+	ret                   ; no CTCSS encoder on L8M
+#else
 
 	; 12 cycles of ctcss in systicks is 1200 / Hz.
 
@@ -7039,12 +7434,13 @@ ctcss_off_nohang:
 
 	; and else, default, plain and simple i8253 generator off
 
-	ld a, #TMR_2 | TMR_LSB | TMR_INTTC
+	ld a, #TMR_CT_SEL | TMR_LSB | TMR_INTTC
 	out (TMR + TMRCTRL), a
 	ld a, #1
-	out (TMR + 2), a     ; low for one clock, then rise and stay
+	out (TMR_CT), a     ; low for one clock, then rise and stay
 
 	ret
+#endif
 
 ctcss_fx465_off:
 
@@ -7055,6 +7451,9 @@ ctcss_fx465_off:
 
 
 ctcss_maybe:
+#ifdef L8M
+	jr ctcss_off_nohang
+#else
 
 	call get_ctcss_tx_hz
 	or a
@@ -7079,13 +7478,14 @@ ctcss_maybe:
         add hl, bc
         add hl, bc                  ; index by words
 
-        ld a, #TMR_2 | TMR_BOTH | TMR_SQWAVE
+        ld a, #TMR_CT_SEL | TMR_BOTH | TMR_SQWAVE
         out (TMR + TMRCTRL), a      ; control register
 
-        ld c, #TMR + 2               ; count register
+        ld c, #TMR_CT               ; count register
         outi                        ; out [c], [hl++]; b--
         outi                        ; and msbyte
 	ret
+#endif
 
 #define CTCSS_TONES \
         CTCSS_RECORD(670) \
@@ -7347,8 +7747,10 @@ ctcss_enc_stop:
 	ld hl, #ctcss_enc_skip
 	ld (ctcss_enc_jump), hl
 
+#ifdef P8x
 	ld a, (rfc)
 	out (DA_RFC), a
+#endif
 
 	ret
 
@@ -7491,10 +7893,10 @@ ctcss_dec_periodic:
 
 fx614_bit_edge:               ;  AF and HL trashed.
 
-	in a, (TMR + 2)           ; 11T get the count
+	in a, (TMR_CT)           ; 11T get the count
 	ld h, a                   ;  4T
 	xor a                     ;  4T start downcount again
-	out (TMR + 2), a          ; 11T good to have constant lag to this point.
+	out (TMR_CT), a          ; 11T good to have constant lag to this point.
 	sub h                     ;  4T got the negate for free ! so nice.
 
 	ld hl, (fx614_bufptr)     ; 16T abort() needs H, too.
@@ -7606,11 +8008,11 @@ init_fx614:
 	or a
 	ret z                     ; only if wanted
 
-	ld a, #TMR_2 | TMR_MSB | TMR_INTTC
+	ld a, #TMR_CT_SEL | TMR_MSB | TMR_INTTC
 	out (TMR + TMRCTRL), a
 
 	xor a
-	out (TMR + 2), a
+	out (TMR_CT), a
 
 	; XXX special siob_esc for this and not cases.
 
@@ -7771,14 +8173,18 @@ lookup_rfc:
 	call get_rfc_hl
 	ld a, (hl)
 	ld (rfc), a
-	out (DA_RFC), a
+#ifdef P8x
+	out (DA_RFC), a		; L8M: no RFC tuning DAC (the DAC is TPC)
+#endif
 	ret
 
 save_rfc:
 	call get_rfc_hl
 	ld a, (rfc)
 	ld (hl), a
+#ifdef P8x
 	out (DA_RFC), a
+#endif
 	call save_nvdata
 	ret
 
@@ -7886,6 +8292,10 @@ save_nvdata:
 2:
 	ret
 
+#ifdef L8M
+load_nvdata:
+	jp ee_boot
+#else
 load_nvdata:
 
 #ifdef P8N
@@ -7911,6 +8321,367 @@ load_nvdata:
 #endif
 
 	ret
+#endif
+
+
+#ifdef L8M
+;======================================================================
+;
+;  L8M EEPROM (NMC9817, 2 KB; notes/rb58vy.md).  The NV data stays in RAM
+;  (powered from Vm: kept while the radio is off, lost when the supply is
+;  cut).  The essentials are copied into the EEPROM: the setup block, the
+;  VIP list and RFC table and the first EE_MEMS memories in the background
+;  (ee_sync, one byte written per >= 20 ms), the state block (frequency,
+;  volume, ...) only at power-down (ee_flush), which keeps a scanning radio
+;  from wearing the EEPROM out.  At boot (ee_boot) a RAM without
+;  RAM_MAGIC gets them back, if the EEPROM has its header.
+;
+;  With PB5 (SMEM) low the EEPROM is seen over the whole RAM area, A9..A0
+;  from the address and A10 from PB0: offset DE is at 0xC000 | (DE & 0x3FF)
+;  with PB0 = bit 10.  Meanwhile there is no RAM and so no stack:
+;  interrupts are off and SP points into the ROM window (an NMI pushes
+;  into EPROM1, and v_nmi brings the RAM back).
+
+RAM_MAGIC  = 0x5A58
+
+EE_BG      = 1			; region flags: synced in the background
+EE_RESTORE = 2			; copied back at boot
+
+EE_MISC    = 4			; offsets: the header first
+EE_MISC_N  = ram_magic - nvstart
+EE_VIP     = EE_MISC + EE_MISC_N
+EE_VIP_N   = memories - vip_list
+EE_CFG     = EE_VIP + EE_VIP_N
+EE_CFG_N   = cfg_end - cfg_function
+EE_MEM     = EE_CFG + EE_CFG_N
+EE_MEMS    = (2048 - EE_MEM) / mem_SIZE
+	ASSERT_LE(EE_MEM + EE_MEMS * mem_SIZE, 2048)
+	ASSERT_LE(48, EE_MEMS)
+
+ee_header:	.ascii "R58"
+		.db 1				; layout version
+
+;  RAM (or ROM) address, length, EEPROM offset, flags; the header last,
+;  so that a first copy is valid only once complete
+ee_regions:
+	.dw vip_list,     EE_VIP_N,            EE_VIP
+	.db EE_BG | EE_RESTORE
+	.dw _cfg_function, EE_CFG_N,           EE_CFG
+	.db EE_BG | EE_RESTORE
+	.dw memories,     EE_MEMS * mem_SIZE,  EE_MEM
+	.db EE_BG | EE_RESTORE
+	.dw nvstart,      EE_MISC_N,           EE_MISC
+	.db EE_RESTORE
+	.dw ee_header,    4,                   0
+	.db EE_BG
+	.dw 0
+EE_REC = 7
+
+;  DE offset -> HL address, C = PIO B with the EEPROM in, B = with RAM
+ee_addr:
+	ld a, d
+	and #0x03
+	or #0xC0
+	ld h, a
+	ld l, e
+	ld a, (piob_out)
+	or #PB_SMEM
+	ld b, a
+	and #~(PB_SMEM | PB_EEA10)
+	bit 2, d
+	jr z, 1f
+	or #PB_EEA10
+1:
+	ld c, a
+	ret
+
+;  A = EEPROM[DE]; keeps DE, uses BC HL
+ee_get:
+	call ee_addr
+	ld a, i
+	di
+	push af				; P/V = IFF
+	ld (ee_sp), sp
+	ld sp, #0xC000
+	ld a, c
+	out (PIO+BDATA), a
+	ld c, (hl)
+	ld a, b
+	out (PIO+BDATA), a
+	ld sp, (ee_sp)
+	pop af
+	jp po, 1f
+	ei
+1:
+	ld a, c
+	ret
+
+;  EEPROM[DE] = A, starting its write cycle (10 ms); keeps DE, uses BC HL
+ee_put:
+	push de
+	push af
+	call ee_addr
+	pop af
+	ld e, a
+	ld a, i
+	di
+	push af
+	ld (ee_sp), sp
+	ld sp, #0xC000
+	ld a, c
+	out (PIO+BDATA), a
+	ld (hl), e
+	ld a, b
+	out (PIO+BDATA), a
+	ld sp, (ee_sp)
+	pop af
+	jp po, 1f
+	ei
+1:
+	pop de
+	ret
+
+;  IX = region A; Z if A is past the last
+ee_region:
+	ld ix, #ee_regions
+	ld de, #EE_REC
+	or a
+	jr z, 2f
+	ld b, a
+1:
+	add ix, de
+	djnz 1b
+2:
+	ld a, (ix + 0)
+	or (ix + 1)
+	ret
+
+;  ee_off in region IX: HL = source, DE = EEPROM offset; C if past its end
+ee_where:
+	ld hl, (ee_off)
+	ld e, (ix + 2)
+	ld d, (ix + 3)
+	ex de, hl
+	scf
+	sbc hl, de			; len - 1 - off: borrow when off >= len
+	ret c
+	ld hl, (ee_off)
+	ld e, (ix + 4)
+	ld d, (ix + 5)
+	add hl, de
+	ex de, hl			; DE = EEPROM offset
+	ld hl, (ee_off)
+	ld c, (ix + 0)
+	ld b, (ix + 1)
+	add hl, bc			; HL = source
+	or a
+	ret
+
+;  background, from the mainloop: compares up to 16 bytes and writes at
+;  most one, then leaves the EEPROM alone for two or three ticks
+ee_sync:
+	ld a, (ee_timer)
+	or a
+	ret nz
+	push ix
+	ld b, #16
+1:
+	push bc
+	ld a, (ee_reg)
+	call ee_region
+	jr nz, 2f
+	xor a				; past the last: wrap
+	ld (ee_reg), a
+	ld hl, #0
+	ld (ee_off), hl
+	jr 5f
+2:
+	bit 0, (ix + 6)			; EE_BG
+	jr z, 4f
+	call ee_where
+	jr c, 4f
+	ld a, (hl)
+	push af
+	call ee_get
+	pop bc
+	cp b
+	jr z, 3f
+	ld a, b
+	call ee_put
+	ld a, #3
+	ld (ee_timer), a
+	ld hl, (ee_off)
+	inc hl
+	ld (ee_off), hl
+	pop bc
+	pop ix
+	ret
+3:
+	ld hl, (ee_off)
+	inc hl
+	ld (ee_off), hl
+	jr 5f
+4:
+	ld hl, #ee_reg			; next region
+	inc (hl)
+	ld hl, #0
+	ld (ee_off), hl
+5:
+	pop bc
+	djnz 1b
+	pop ix
+	ret
+
+;  ~12 ms with interrupts off (a write cycle), the watchdog kept
+ee_wait:
+	push bc
+	ld bc, #1900
+1:
+	out (WD), a
+	dec bc
+	ld a, b
+	or c
+	jr nz, 1b
+	pop bc
+	ret
+
+;  after ee_put of A at DE: until two reads agree and give A back (the
+;  write cycle has ended; Nokia's and OH5NXO's code poll the same way),
+;  at most ~15 ms; keeps DE, uses BC HL
+ee_settle:
+	push de
+	ld d, a
+	ld e, #0
+	ld (ee_try), de
+	pop de
+1:
+	out (WD), a
+	call ee_get
+	push af
+	call ee_get
+	pop bc
+	cp b
+	jr nz, 2f
+	ld bc, (ee_try)
+	cp b
+	ret z
+2:
+	ld hl, #ee_try
+	dec (hl)			; 256 tries, ~60 us each
+	jr nz, 1b
+	ret
+
+;  power-down: every region, synchronously; only from a RAM that holds
+;  the NV data
+ee_flush:
+	ld hl, (ram_magic)
+	ld de, #RAM_MAGIC
+	or a
+	sbc hl, de
+	ret nz
+	push ix
+	call ee_wait			; a background write may be running
+	xor a
+	ld (ee_reg), a
+1:
+	ld hl, #0
+	ld (ee_off), hl
+	ld a, (ee_reg)
+	call ee_region
+	jr z, 4f
+2:
+	out (WD), a
+	call ee_where
+	jr c, 3f
+	ld a, (hl)
+	push af
+	call ee_get
+	pop bc
+	cp b
+	jr z, 5f
+	ld a, b
+	push af
+	call ee_put
+	pop af
+	call ee_settle
+5:
+	ld hl, (ee_off)
+	inc hl
+	ld (ee_off), hl
+	jr 2b
+3:
+	ld hl, #ee_reg
+	inc (hl)
+	jr 1b
+4:
+	xor a
+	ld (ee_reg), a
+	ld hl, #0
+	ld (ee_off), hl
+	pop ix
+	ret
+
+;  boot (interrupts off, after the bss clear): a RAM without RAM_MAGIC
+;  lost its supply; the essentials come from the EEPROM if it has its
+;  header
+ee_boot:
+	ld hl, (ram_magic)
+	ld de, #RAM_MAGIC
+	or a
+	sbc hl, de
+	ret z
+	ld de, #0			; the header
+	ld hl, #ee_header
+1:
+	push hl
+	call ee_get
+	pop hl
+	cp (hl)
+	jr nz, 6f			; no copy in the EEPROM
+	inc hl
+	inc e
+	ld a, e
+	cp #4
+	jr nz, 1b
+
+	push ix
+	xor a
+	ld (ee_reg), a
+2:
+	ld hl, #0
+	ld (ee_off), hl
+	ld a, (ee_reg)
+	call ee_region
+	jr z, 5f
+	bit 1, (ix + 6)			; EE_RESTORE
+	jr z, 4f
+3:
+	out (WD), a
+	call ee_where
+	jr c, 4f
+	push hl
+	call ee_get
+	pop hl
+	ld (hl), a
+	ld hl, (ee_off)
+	inc hl
+	ld (ee_off), hl
+	jr 3b
+4:
+	ld hl, #ee_reg
+	inc (hl)
+	jr 2b
+5:
+	xor a
+	ld (ee_reg), a
+	ld hl, #0
+	ld (ee_off), hl
+	pop ix
+6:
+	ld hl, #RAM_MAGIC
+	ld (ram_magic), hl
+	ret
+#endif
 
 ;========================================================================
 ;
@@ -8081,7 +8852,7 @@ dtmf_bang_tone:
 
 	; temporary mode change in timer 1
 
-	ld a, #TMR_1 | TMR_LSB | TMR_INTTC
+	ld a, #TMR_MT_SEL | TMR_LSB | TMR_INTTC
 	out (TMR + TMRCTRL), a
 
 	ld a, (cpu_is_P8E)
@@ -8102,7 +8873,7 @@ dtmf_bang_tone:
 	exx                    ;  4T     bc de hl  swapped
 	add a, e                  ;  4T
 
-	out (TMR + 1), a       ; 11T  70T here down
+	out (TMR_MT), a       ; 11T  70T here down
 	ld a, #WR0_RESET_ESCINT ;  7T 
 	out (SIO+ACTRL), a     ; 11T
 	out (WD), a            ; 11T
@@ -8142,7 +8913,7 @@ dtmf_bang_tone:
 		out (WD), a ;  9 * 12T = 108T
 		ld e, a     ;    +  5T = 113T
 
-	out (TMR + 1), a       ; 12T  77T here down
+	out (TMR_MT), a       ; 12T  77T here down
 	ld a, #WR0_RESET_ESCINT ;  8T 
 	out (SIO+ACTRL), a     ; 12T
 	out (WD), a            ; 12T
@@ -8219,7 +8990,7 @@ emit_ax25_packet:        ; already stuffed bits in hl, terminates in 0xFF byte
 	or #O0_CCIRC | O0_MICM              ; Pass tones, cut mic
 	out (OUT0), a
 
-	ld a, #TMR_1 | TMR_LSB | TMR_INTTC  ; temporary mode change in timer 1
+	ld a, #TMR_MT_SEL | TMR_LSB | TMR_INTTC  ; temporary mode change in timer 1
 	out (TMR + TMRCTRL), a
 
 	call emit_ax25_loop
@@ -8288,7 +9059,7 @@ emit_ax25_loop_P8N:
 	add hl, de            ;; 11T 11T xy phacc += phinc
 	ld c, h               ;;  4T  4T xy
 	ld a, (bc)            ;;  7T  7T xy a = sin(phacc)
-	out (TMR + 1), a      ;; 11T 11T xy start pwm unit <=========================
+	out (TMR_MT), a      ;; 11T 11T xy start pwm unit <=========================
 	exx                   ;;  4T  4T xy back from dds regset.
 
 	dec e                  ;  4T  4T xy
@@ -8351,7 +9122,7 @@ emit_ax25_loop_P8E:
 	add hl, de            ;; 12T xy phacc += phinc
 	ld c, h               ;;  5T xy
 	ld a, (bc)            ;;  8T xy a = sin(phacc)
-	out (TMR + 1), a      ;; 12T xy start pwm unit
+	out (TMR_MT), a      ;; 12T xy start pwm unit
 	exx                   ;;  5T xy back from dds regset.
 
 	call burn_p8e_89T      ; 89T xy loop must be 280T long.
@@ -8418,11 +9189,11 @@ check_for_P8E_cpu:
 
 	out (WD), a
 
-	ld a, #TMR_1 | TMR_LSB | TMR_INTTC
+	ld a, #TMR_MT_SEL | TMR_LSB | TMR_INTTC
 	out (TMR+TMRCTRL), a
 
 	ld a, #65         ; see below
-	out (TMR+1), a   ; go!
+	out (TMR_MT), a   ; go!
 
 	nop
 	nop
@@ -8445,7 +9216,7 @@ check_for_P8E_cpu:
 	nop
 	nop ; 20 nops, 4T each without waitstates
 
-	in a, (TMR+1)    ; not counted (11T), some error
+	in a, (TMR_MT)    ; not counted (11T), some error
 	out (WD), a
 
 	;
@@ -9286,7 +10057,9 @@ size_menurec = 16
 	ASSERT_EQ(S8B, 2)
 	ASSERT_EQ(SIZE_STR, 8)
 	ASSERT_EQ(MEM_VALID, 1)
+#ifdef P8x
 	ASSERT_EQ(DA_RFC, 0x30)
+#endif
 	ASSERT_EQ(EOS, 0xFF)
 
 	ALIGN(4, 0)
@@ -9967,7 +10740,12 @@ mem_ctcss_tx_hz: BYTE     ; brothers
 
 band_autoreject: BYTE
 
+#ifdef L8M
+ram_magic:       WORD     ; L8M: RAM_MAGIC while the RAM holds the NV data
+				.ds 92 ; carve out future nv variables from here
+#else
 				.ds 94 ; carve out future nv variables from here
+#endif
 
 ASSERT_EQ(., 0xC07C)    ; keep below unchanged, just append stuff to cfg_xxx
 
@@ -10389,6 +11167,9 @@ num_bandrecs = 6
 
 	repeater_cfg_msg_cold_alert:       STRING
 
+#ifdef L8M
+cfg_end:
+#endif
 ;== END SETUP BLOCK ===================================================
 
 chk_size_nvdata = . - nvstart
@@ -10466,7 +11247,9 @@ tmp_rejects:		BUF((SIZE_FREQ + 1) * NUM_TMP_REJECTS) ; freq(3) + timer(1)
 	ASSERT_EQ(MEM_VALID, 0x01)
 	ASSERT_EQ(MEM_SCANNABLE, 0x04)
 	ASSERT_EQ(num_bandrecs, 6)
+#ifdef P8x
 	ASSERT_EQ(MDM + MDMCTRL, 0xA3)
+#endif
 	ASSERT_EQ(MDM_DCD, 0x04)
 	ASSERT_EQ(cfg_reject_9 + 3 - cfg_reject_0, 30)
 	ASSERT_EQ(cfg_reject_19 + 3 - cfg_reject_10, 30)
@@ -10610,6 +11393,7 @@ gps_speed:         BYTE      ; binary km/h
 gps_course:        WORD      ; binary degrees
 
 
+#ifdef P8x
 ad_bytes:                ; this must be aligned LO(ad_bytes) == AD
 ad_rssi:		BYTE         ; 0
 ad_sql:		BYTE         ; 1
@@ -10619,6 +11403,25 @@ ad_fpm:      BYTE         ; 4
 ad_rpm:      BYTE         ; 5
 ad_tp4:      BYTE         ; 6
 ad_in7:      BYTE         ; 7
+#endif
+#ifdef L8M
+	.ds (0x100 + AD - (. & 0xFF)) & 0xFF
+ad_bytes:                ; in the L8M input order
+ad_rssi:	BYTE
+ad_fpm:		BYTE
+ad_batt:	BYTE
+ad_tpc:		BYTE
+ad_rpm:		BYTE
+ad_tp4:		BYTE
+ad_in7:		BYTE
+ad_sql:		BYTE
+piob_out:	BYTE	; L8M: PIO B output bits; SMEM always 1
+ee_timer:	BYTE	; ticks until the EEPROM may be accessed again
+ee_reg:		BYTE	; EEPROM sync: region index
+ee_off:		WORD	; and the offset in it
+ee_sp:		WORD	; SP while the EEPROM is in
+ee_try:		WORD	; ee_settle: tries left, value written
+#endif
 ad_select:	BYTE     ; 0...15 index in ad_list[]
 
 ASSERT_EQ(LO(ad_bytes), AD)    ; ioaddr must equal memaddr offset, silly optim
@@ -10661,6 +11464,9 @@ ctcss_dec_phacc:        WORD
 
 fx614_bufptr:           WORD    ; pointer to fx614_buffer[]
 
+#ifdef L8M
+	.ds (0x100 - (. & 0xFF)) & 0xFF	; ALIGN below pads with .db (data)
+#endif
 	slack_at_this_yyy_hole = ccir_history - .
 
 	ALIGN(8, 0) ; ------------------------

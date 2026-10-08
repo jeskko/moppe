@@ -4,6 +4,9 @@
 #                   and build/r58.setup, the setup map (tools/r58/setupmap.py)
 #   make banktest - build-banktest/r58-banktest.bin: 64 KB EPROM image that
 #                   checks the banked ROM window at boot (bank_test in r58.s)
+#   make l8m      - build-l8m/r58.bin for the RB58VY's L8M logic board
+#                   (notes/rb58vy.md): 64 KB, EPROM0 = 0x0000-0x7FFF,
+#                   EPROM1 = 0x8000-0xFFFF (banks 2 and 1)
 #   make verify   - the released v3_Z ALs binary, byte-for-byte, twice:
 #                   build-release/ (r58.asm converted by as80tosdas.py, built
 #                   with this toolchain) and build-as80/ (r58.asm, as80).
@@ -35,7 +38,7 @@ all: $(BUILD)/r58.bin $(BUILD)/r58.setup
 
 $(BUILD)/%.rel: c/%.c c/r58.h
 	@mkdir -p $(BUILD)
-	$(SDCC) $(CFLAGS) -c $< -o $@
+	$(SDCC) $(CFLAGS) $(CDEFS) -c $< -o $@
 
 $(BUILD)/cglue.inc: $(CMODS) $(TOOLS)/cglue.py
 	@mkdir -p $(BUILD)
@@ -66,6 +69,9 @@ $(BUILD)/r58.bin: $(BUILD)/r58.ihx $(TOOLS)/ihx2bin.py
 $(BUILD)/r58.setup: $(SRC) $(TOOLS)/setupmap.py
 	@mkdir -p $(BUILD)
 	python3 $(TOOLS)/setupmap.py $(SRC) > $@
+
+l8m:
+	$(MAKE) BUILD=build-l8m DEFS=-DL8M CDEFS=-DL8M
 
 # sha256 of the released r58p8x3Z.bin (v3_Z ALs 24.09.2018)
 ALS_SHA256 = cdfe7016a991766454f1b3aa49e9a1eac0978f42e9a5638bf8828b1f725d8fb7
@@ -108,6 +114,6 @@ build-ref/r58.bin:
 	$(MAKE) -C build-ref/src/firmware BUILD=$(CURDIR)/build-ref
 
 clean:
-	rm -rf build build-c build-as80 build-release build-banktest build-ref
+	rm -rf build build-l8m build-c build-as80 build-release build-banktest build-ref
 
-.PHONY: all verify release as80 banktest ref clean print-cpp-flags
+.PHONY: all l8m verify release as80 banktest ref clean print-cpp-flags

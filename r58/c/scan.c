@@ -36,7 +36,9 @@
 #define S_LISTEN	4		/* on a channel: patience, signal */
 #define S_TAIL		5		/* the tail after the signal */
 
+#ifndef L8M
 __sfr __at(0xA3) mdm_ctrl;			/* MDM + MDMCTRL */
+#endif
 
 extern uint8_t scan_slicecnt, cfg_unreject_mins, cfg_scan_skip_fsk_channels,
 	reject_idx;
@@ -379,8 +381,10 @@ static uint8_t b_signal(void)
 	redraw();
 	if (band_sclisten != 255)
 		scan_patience = band_sclisten;	/* N seconds, signal or not */
+#ifndef L8M				/* L8M: no FX429 */
 	if (cfg_scan_skip_fsk_channels && (mdm_ctrl & MDM_DCD))
 		return B_STEP;
+#endif
 	return YIELD(S_LISTEN);
 }
 

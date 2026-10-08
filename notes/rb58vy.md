@@ -1,11 +1,12 @@
 # RB58VY (L8M logic board)
 
-Status (2026-10-08): **the emulator runs the L8M board** (`card=L8M`,
-emu commit 8885af5; details and limits in `emu/notes/r58.md`, tests in
-`emu/tests/l8m`). OH5NXO's R58bis built for L8M works in it: keypad,
-display, setup menu, 6 m RX/TX synthesizer frames and TX keying. Our own
-firmware does not build for L8M yet (`r58.s`: `#error Sorry, L8M missing
-in action`); the port plan is below.
+Status (2026-10-08): **our firmware runs on L8M** in the emulator:
+`make -C r58 l8m` builds `r58/build-l8m/r58.bin` (64 KB: EPROM0 =
+0x0000-0x7FFF, EPROM1 = 0x8000-0xFFFF). Tested in `tests/r58/test_l8m.py`
+(SAnE, 6 m RX/TX synthesizer, TX keying and power, setup menu, the EEPROM
+copy and its restore after a supply cut). Not tried on a real radio. The
+P8x build is unchanged by the `#ifdef L8M` code (its image changed only by
+the keypad fix below). The emulator side: `emu/notes/r58.md` "L8M".
 
 ## The radio
 
@@ -26,44 +27,56 @@ in `emu/notes/r58.md` "L8M".
 | OH5NXO R58bis (C) for L8M | `reference/oh5nxo/mods/R58bis/R58/L8M.bin`, source in the same directory (`-DL8M`) | runs in the emulator; 6 m defaults; config and 40 memories in the EEPROM; FFSK via the FX419 on SIO A (sync mode) |
 | OH5NXO asm R58 v4.0 L8M port (2000-12) | `reference/oh5nxo/mods/R58/r58.asm.pre4.0`, `r58.asm.vy.rx.sorta.better`, `r58l8m40b.inf` | alpha: RX and TX worked, S8M synth, NV lost when the supply is cut, no FSK. Dropped again in 3G..3Z, which our firmware descends from |
 
-## Porting our firmware (assessment)
+## Our firmware on L8M (done 2026-10-08)
 
-The hardware layer of `r58.s` is compact: the port block (`r58.s:557-600`),
-the chip init tables (`init_chips`), OUT1/OUT2 bit use (~94 places),
-`set_bank` (16), the 8254 counters (19), ADC channels (14). The C modules
-hardly touch ports. Work items, in order:
+`r58.s` with `-DL8M` (the C modules get `-DL8M` too). Ports that do not
+exist on L8M (FX429, CSMEM, the RFC DAC, 8254 counter 2 as CTCSS) are left
+undefined there, so every use has an L8M case. What changed:
 
-1. **Port map and latches**: `#ifdef L8M` port block (I/O 0x00..0x70,
-   ADC order), one shadow for the 0x50 latch with the O1_/O2_ bits
-   redefined to its layout (OH5NXO's way: `OUT_1 == OUT_2`), 0x60 as OUT0.
-2. **Timers**: LPF counter 0 -> 1, tone (MT) counter 1 -> 2; counter 0 is
-   free (MBUS clock on the board).
-3. **Hook**: SIO A DCD (ext/status interrupt) instead of PIO A1.
-4. **Synth**: an S8M type (MC145156 frames, 40/41 prescaler, fixed R:
-   12.5 kHz raster unless the RA pins are rewired; OH5NXO's S8M_10 mod
-   gives 10 kHz). PA1 is the TX VCO buffer enable / lock input.
-5. **ROM banks**: EPROM0 holds 32 KB (27C256 socket); our two 16 KB banks
-   go into EPROM1's halves, selected by PB4 (S/L) in `set_bank`. The build
-   makes two images.
-6. **NV storage**: see the decision below.
-7. Watchdog port 0x70. No P8E/P8N detection, no CSMEM.
+| Area | L8M |
+|---|---|
+| I/O map | PIO 00, SIO 10, 8254 20, DAC 30 (TPC only), ADC 40 (L8M order; `ad_bytes` realigned), "OUT 0" latch 50 = OUT1 = OUT2, audio latch 60 = OUT0, watchdog 70 |
+| 0x50 latch | the O1_/O2_ bits redefined to its layout; `out2_bank` holds the radio side (TXOFF, TPS, /STE, SRE) so every handset write carries it; `l8m_radio` / `L8M_RADIO()` change those bits |
+| Synth | S8M (`s8m_load`): MC145156 frames SW1 SW2, N (10), A (7); N = div / 40, A = div mod 40; divisors always in 12.5 kHz (`channel_step_parms`): 12.5 and 25 kHz steps only; RX loads on an SRE pulse, TX on /STE falling (low = TX VCO on, `halt_txsynth` raises it); no control register, no deviation switching |
+| Timers | `TMR_LPF` counter 1, `TMR_MT` (tones) counter 2, counter 0 = SIO B clock (26: 155 kHz, MBUS 9692 bd) |
+| Hook | SIO A DCD, put into `pioa_data` bit 1 by `systick` (P8x semantics) |
+| PIO B | `piob_out` shadow (S/L, EEA10, EXAL, SMEM always 1); GPIO2's b bit has no pin |
+| Banks | `set_bank`: PB4 (S/L): bank 1 = EPROM1 upper half (image 0xC000), bank 2 = lower half (image 0x8000); no bank 0 multiboard |
+| SAnE | always the 6 m defaults (S8B: 45 MHz IF) |
+| CPU | no P8E detection: `cpu_is_P8E` = 0 (4.032 MHz, no waits) |
 
-Lost or to be redone on L8M:
+**NV: RAM plus the essentials in the EEPROM** (user's choice 2026-10-08;
+`r58.s` "L8M EEPROM"). The NV block stays in RAM (Vm-powered: kept while
+switched off, lost on a supply cut). EEPROM layout (2 KB): header
+`R58` + layout 1 (written last), state block (`nvstart..ram_magic`,
+30 B), VIP list + RFC table (130 B), setup block (902 B), the first 81
+memories.
+- `ee_sync` (mainloop): compares 16 bytes per call, writes at most one,
+  then leaves the EEPROM 2-3 ticks for its write cycle; setup, VIP/RFC,
+  memories and the header. A full pass takes ~1.3 s.
+- `ee_flush` (`powerdown_now`, so also after the switch-off NMI and SAnE):
+  every region including the state block, polling each write until two
+  reads agree (`ee_settle`, at most ~15 ms each). Only when `ram_magic` is
+  valid.
+- `ee_boot` (`load_nvdata`): `ram_magic` != 0x5A58 means the RAM lost its
+  supply; then every region comes back from the EEPROM if its header is
+  there. A fresh EEPROM leaves the RAM alone (SAnE as before).
+- While the EEPROM is in (SMEM low) there is no RAM: interrupts are off
+  and SP is in the ROM window; `v_nmi` sets SMEM high first.
+- Wear: the state block (frequency, volume, scanning) is written only at
+  power-down. Memories past 81 live in RAM only.
+
+Not on L8M (first cut):
 - **FFSK** (FX429 code: packets, remote config, MPRS): the FX419 is a
-  bit-sync modem on SIO A. It needs SIO sync/hunt support in our firmware
-  and in the emulator's SIO; first cut without it.
-- **GPS input**: SIO A belongs to the modem. SIO B (MBUS) could take NMEA:
-  its clock is 8254 counter 0, 4800 baud x16 = count 52 (0.8 % fast).
-- **DTMF and CTCSS decoders**: no multiboard window, and PB5 (the P8x
-  CTCSS input) is SMEM on L8M.
-- AFSK APRS out (tone pin), CCIR, scanner, repeater, setup menu: unchanged
-  apart from the hardware layer.
+  bit-sync modem on SIO A; `send_packet_buffer` sends nothing, nothing is
+  received. Needs SIO sync/hunt in the firmware and the emulator.
+- **GPS on SIO A** (the modem's channel); SIO B could take NMEA.
+- **CTCSS** encoder and decoder, **DTMF decoder** (no multiboard), the FX465
+  and external serial strobes, RFC tuning (no RFC DAC).
+- **CU58AF** untested on L8M (the emulator's L8M card drives a CU53 only).
+- PA1 (TX VCO buffer enable / lock) is left an input; OH5NXO drove it high
+  in RX. Check on a real radio.
 
-**Decision needed: where NV lives.** Ours keeps ~4 KB in battery RAM
-(130 memories x 12 B + config). On L8M the RAM is powered from Vm, so it
-survives power-off but not a supply cut (OH5NXO 4.0's complaint). The
-EEPROM holds 2 KB (two 1 KB copies in Nokia's use), or 8 KB with an
-8 KB chip and the TP4 jumper. Options: (a) RAM only, as 4.0; (b) RAM,
-plus config and a reduced memory set copied to the EEPROM on change
-(byte writes ~10 ms each, so not in the power-off NMI); (c) everything in
-an 8 KB EEPROM.
+Open for a real radio: the latch bit polarities of /SRE and TPS, the PA1
+handling, the EEPROM write time (`ee_settle` gives up after ~15 ms), the
+MBUS clock.
