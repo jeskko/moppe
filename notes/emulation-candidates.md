@@ -1,5 +1,7 @@
 # Emulation candidates in the reference mirrors
 
+Status: #1 done, emulated since 2026-10-08 ([rb58vy.md](rb58vy.md)).
+
 Survey of `reference/` (mainly `reference/oh5nxo/mods/`) on 2026-10-08:
 which radios not yet emulated have enough material. Paths are under
 `reference/oh5nxo/mods/` unless noted. "Checked" = verified in the files
@@ -44,5 +46,5 @@ From `iomap_L8M.h`, `iomap_L8TM.h`, README2 and the RB58VY manual:
 - The original RB58VY uses a separate control unit on MBUS (SIO B, 8254
   OUT0 155 kHz), not documented here; OH5NXO's firmware uses the CU53, so
   start with his `L8M.bin`/`L8TM.bin`.
-- `R58vy/rom.0` is EPROM0 only; the manual says 48 KB of program, so
-  EPROM1 (IC15) may be missing.
+- `R58vy/rom.0` is EPROM0 only, and EPROM1 is needed: five of the 16
+  scheduler tasks start in it (checked in the emulator, rb58vy.md).
