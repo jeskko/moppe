@@ -16,7 +16,7 @@ years, unsorted, built on FreeBSD; it may contain material once marked
 |---|---|
 | `R58bis/` | **OH5NXO's own R58 firmware in C (SDCC 2.7-2.9, 2007-2014)** for P8x (P8E/P8N), L8M and L8TM boards: `R58/*.c` (~4000 lines: `r58bis.c`, `setup.c`, `nmea.c`, `cu58af.c`, `dcspat.c`), asm parts (`boot.s`, `afsk*.s`, `dtmf.s`, `morse.s`, `i2c.s`), `iomap_*.h` per board. `README2`: board part lists, banking (see notes/hardware.md), handset connector pinout with Z80 port bits, task timings measured on P8E and L8TM. Also Computec RB660 / AD1200F (DT1200F) notes |
 | `R58/` | His asm R58 firmware history (versions 3F..3Z, `old/` back to r58p8x11), changes files, CTCSS/DDS includes |
-| `R58vy/` | `rom.0` (32 KB) and a full disassembly: an RB58VY ROM, presumably original Nokia firmware (not yet checked) |
+| `R58vy/` | `rom.0` (32 KB) and a full disassembly: an RB58VY (L8M board) ROM, original Nokia firmware; see notes/emulation-candidates.md |
 | `R58-manuals/`, `R58_sioa/` | R58 manuals (same as reference/), RB660 synth pictures, SIO A GPS wiring |
 | `MAS.registers` | MAS modem register bits, "seems valid for MAS7205 and MAS7825" |
 | `Mx5x/`, `MD50bis/` | MD5x/ME59 source history from 1997 (`old/`), OH1E-era `md50.asm` work tree with C helper tools (see notes/md5x.md) |
