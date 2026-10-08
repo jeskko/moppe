@@ -3,6 +3,19 @@
 Superseded "Start here" handoffs and session narrative moved out of
 hybrid-plan.md (which keeps the current state).
 
+Paths below are as of the time written: since 2026-10-08 the R58 build is
+`r58/` (`firmware/build-ref` = `r58/build-ref`, `c/` = `r58/c/`), tools
+are `tools/r58/`, tests `tests/r58/` (were `tools/x.py`, `emu/tests/`).
+
+## Superseded lines of the 2026-10-01 handoff (replaced 2026-10-09)
+
+- "Not on GitHub yet: publishing waits for the original authors (OH1E
+  asked 2026-10-01)." Dropped 2026-10-07 (user); public 2026-10-08.
+- "Next, options: the first GitHub run (private repository, or public after
+  the authors' reply ...)": done. Differential-test candidate default was
+  `r58/build-c`, now `r58/build`.
+- Test count 322 (2026-10-01); 332 `def test_` in `tests/r58` on 2026-10-09.
+
 ## Handoff after the asm was dropped, before the review clean-up (written 2026-09-29)
 
 **State (2026-09-29).** Phase 4 is done as far as the plan's rule goes

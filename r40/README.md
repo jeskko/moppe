@@ -48,7 +48,7 @@ not deleted, and come back with that band.
 433.50000 -  T        frequency (or what you are typing), duplex - / + / R,
                       T = CTCSS tone on, F = FNC pressed, M05 = memory 05
 Vol 3         12.50k  volume, tuning step
-BUSY             75   TX / BUSY (squelch open) / LOCK / TOT, signal strength
+BUSY             75   TX / BUSY (squelch open) / SCAN / LOCK / TOT, signal strength
 ```
 
 ## Keys

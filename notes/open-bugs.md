@@ -15,12 +15,12 @@ open-bugs-history.md).
 (TENTATIVE, found 2026-10-02, not yet tried through the menu).
 - Scripts (`GE:onHoo` 09, `GE:oFFHoo` 010, `cfg_onhook_script` /
   `cfg_offhook_script`) are up to 8 key codes; digits are the values 0-9,
-  other keys their codes (`#`, `+`, `K`, ...; `c/keys.c:21`). The runner
-  (`script_check`, `c/mainloop.c:104`) feeds them to `dokey_not_menu`:
+  other keys their codes (`#`, `+`, `K`, ...; `r58/c/keys.c:21`). The runner
+  (`script_check`, `r58/c/mainloop.c:104`) feeds them to `dokey_not_menu`:
   with key codes `4 3 3 5 5 0 #` lifting the handset sets 433.550 MHz
   (checked in the emulator).
-- The menu stores a STR value from the digit-entry buffer (`c/menu.c:488`),
-  and only digit keys enter that buffer (`insdig`, `c/keys.c:423`). So a
+- The menu stores a STR value from the digit-entry buffer (`r58/c/menu.c:490`),
+  and only digit keys enter that buffer (`insdig`, `r58/c/keys.c:423`). So a
   script typed in the menu holds digits only: no `#` to finish a frequency
   or memory entry, no volume or other function keys. Other scripts only
   through an MBUS config load (CFGGEt) or an NV image. Same in v3_Z.

@@ -5,10 +5,11 @@ developed and tested in an emulator instead of an EPROM burner:
 
 - **Mobira/Nokia R58** (RB58 6 m, RC58 2 m, RD58 70 cm, Z80): the
   community ham firmware (OH5NXO et al., v3_Z "ALs", 24.09.2018), here
-  rebuilt byte-identical and moved step by step into C (`r58/`).
-- **Nokia R40** (RC40/RD40, H8/532): a new 70 cm firmware written from
-  scratch in C (`r40/`), with its own H8/500 C toolchain (`tools/h8500/`).
-  Not yet tried on a real radio.
+  rebuilt byte-identical and moved step by step into C (`r58/`). The
+  same source also builds for the RB58VY's L8M logic board.
+- **Nokia R40** (RC40/RD40, H8/532): a new 2 m / 70 cm firmware written
+  from scratch in C (`r40/`), with its own H8/500 C toolchain
+  (`tools/h8500/`). Not yet tried on a real radio.
 
 Every push builds both and runs their tests in the emulator
 ([moppe-emu](https://github.com/jeskko/moppe-emu), the `emu/` submodule);
@@ -19,27 +20,28 @@ R40 firmware) have run only in the emulator, never on a real radio, hence
 the 0.x versions. Trying one is low-risk: you burn a new EPROM and fit it,
 and the original EPROM put back restores the radio. The only state the
 firmware changes is the battery-backed NV RAM: the R58 build keeps the
-released v3_Z NV layout (the first-time setup, SAnE, resets it), the R40
+released v3_Z NV layout (the first-time setup, SAnE, resets it; the
+RB58VY build also writes its essentials into the L8M board's EEPROM,
+over what the original firmware kept there), the R40
 firmware keeps its settings where the Nokia firmware does not look and
 only reads Nokia's calibration. TX power, deviation and CTCSS are not yet
 measured on hardware: transmit into a dummy load or a service monitor
 first. Reports from real radios are welcome.
 
-## Status (2026-09-29)
+## Status (2026-10-09)
 
 | Area | State |
 |---|---|
 | Toolchain | SDCC's **sdasz80 + sdldz80** (with cpp and a small preprocessor). The source was converted from the original as80 dialect and rebuilds **byte-identical** to the released ALs binary (`make -C r58 verify`, which also checks the as80 build of the old source). |
-| Emulator | Separate public repo **[moppe-emu](https://github.com/jeskko/moppe-emu)**, here as the `emu/` submodule. Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. Since 2026-10-02 also the **Talkman MD50/MD59/ME59** (CDP1802/1806 core), running OH3NWQ's and OH1E's firmware ([notes/md5x.md](notes/md5x.md)), the **MC25 TVL/PTL** ([notes/mc25.md](notes/mc25.md)) and the **TMF-1/TMN-1** (uPD7810 core; radio and HSN-2/HSF-2 handset each on its own CPU, linked by MBUS) running OH5NXO/OH3NWQ's tmx1.asm v5.0 ([notes/tmx1.md](notes/tmx1.md)). Since 2026-10-05 the **Nokia R40** (H8/500 core) with the original Nokia RC40 firmware ([notes/r40.md](notes/r40.md)). |
-| Tests | 368 tests. Firmware scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK packets sent and received (call, remote display/config, relay, MPRS), remote configuration between two emulated radios over a simulated RF link, MBUS config dump/load (CFGSnd/CFGGEt); scanner, repeater access and CW ID, every menu record type (and the whole menu, asm vs C), low battery, TOT, typematic; ROM-window decode and code running from bank 1. **Differential tests** (`tests/r58/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
+| Emulator | Separate public repo **[moppe-emu](https://github.com/jeskko/moppe-emu)**, here as the `emu/` submodule. Boots the real firmware on emulated **P8E** (8.064 MHz Z80, 1 wait/M1) and **P8N** (4.032 MHz) cards with a **CU53AN** or **CU58AF** handset. Z80 core passes zexdoc and zexall. Since 2026-10-02 also the **Talkman MD50/MD59/ME59** (CDP1802/1806 core), running OH3NWQ's and OH1E's firmware ([notes/md5x.md](notes/md5x.md)), the **MC25 TVL/PTL** ([notes/mc25.md](notes/mc25.md)) and the **TMF-1/TMN-1** (uPD7810 core; radio and HSN-2/HSF-2 handset each on its own CPU, linked by MBUS) running OH5NXO/OH3NWQ's tmx1.asm v5.0 ([notes/tmx1.md](notes/tmx1.md)). Since 2026-10-05 the **Nokia R40** (H8/500 core) with the original Nokia RC40 firmware or ours ([notes/r40.md](notes/r40.md)); since 2026-10-08 the **Comarco MDR150** (CPU16 core) running HaMDR ([notes/mdr150.md](notes/mdr150.md)) and the RB58VY's **L8M** board ([notes/rb58vy.md](notes/rb58vy.md)). |
+| Tests | 382 tests (`tools/ci/runtests.py`): 332 for the R58 (8 of them the L8M build), 50 for the R40 firmware. R58 scenarios: first-time setup (SAnE), frequency entry, memories, stepping, duplex, TX keying and TX limits, setup menu, squelch, NV persistence, DTMF and **AX.25 APRS decoded from the emulated tone pin**, GPS NMEA into APRS, FFSK packets sent and received (call, remote display/config, relay, MPRS), remote configuration between two emulated radios over a simulated RF link, MBUS config dump/load (CFGSnd/CFGGEt); scanner, repeater access and CW ID, every menu record type (and the whole menu, asm vs C), low battery, TOT, typematic; ROM-window decode and code running from bank 1; on L8M: SAnE, 6 m synthesizer, TX, setup menu, the EEPROM copy and its restore. **Differential tests** (`tests/r58/test_diff.py`) run the released firmware and a candidate build side by side and compare display, synth, latches, events and NV. The DTMF/APRS tests fail if the CPU timing model is wrong. |
 | C in firmware | The firmware is C plus assembler: `make` links the C modules (squelch, packet CRCs, systick timers, battery check, key dispatch and handlers, memories and VIP list, PTT/TX flow, the mainloop, display composition, frequency/band/duplex logic, scanner; banked: FSK packets, repeater/CW, GPS, MPRS/APRS, the setup menu engine) with r58.s as normal SDCC objects. Assembler is left only for interrupt code, hardware sequencing, the frequency kernel and display primitives. The differential tests show no behaviour difference to the last assembler build (git tag `asm-final`, `make ref`), which differs from the release by bug fixes and the removed Aisin Seiki GPS path. |
 | Rewrite evaluation | [notes/rewrite-evaluation.md](notes/rewrite-evaluation.md): a full rewrite does not fit today's 32 KB ROM layout (both cards have banked ROM space that could hold more); an incremental C/asm hybrid works now and is what I recommend. |
-
-| **Next** | [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Bank 1 (EPROM0 chip 0xC000) holds the setup menu: its records and tables as asm data and the engine in C (`c/menu.c`); bank 2 (EPROM0 chip 0x8000, both cards) holds the FSK packet layer, repeater/CW, GPS and MPRS/APRS in C. CI and releases: [notes/ci.md](notes/ci.md). Next: new features in the free space. Pending: the ROM window bench test on a real board (`make -C r58 banktest`, checks both pages). |
+| **Next** | [notes/hybrid-plan.md](notes/hybrid-plan.md), **start at its "Start here" section**. Bank 1 (EPROM0 chip 0xC000) holds the setup menu: its records and tables as asm data and the engine in C (`r58/c/menu.c`); bank 2 (EPROM0 chip 0x8000, both cards) holds the FSK packet layer, repeater/CW, GPS and MPRS/APRS in C. CI and releases (public at <https://github.com/jeskko/moppe> since 2026-10-08): [notes/ci.md](notes/ci.md). Next: new features in the free space. Pending: the ROM window bench test on a real board (`make -C r58 banktest`, checks both pages). |
 
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md) (none since 2026-10-01; decided ones in [notes/open-bugs-history.md](notes/open-bugs-history.md)).
-Nokia R40 (RC40/RD40, H8/532): the emulator runs the original Nokia firmware to its self test and into service mode; hardware and open items in [notes/r40.md](notes/r40.md). A C toolchain for it is ready (lcc back end + patched GNU binutils 2.16.1, [notes/h8500-compiler.md](notes/h8500-compiler.md)); the ham firmware in `r40/` (C + start-up asm) boots in the emulator with its own display driver and keypad (`make -C r40`, tests in `tests/r40/test_r40fw.py`); **continue at [notes/r40-firmware.md](notes/r40-firmware.md) "Start here"**.
+Nokia R40 (RC40/RD40, H8/532): the ham firmware in `r40/` (C + start-up asm, built with our lcc back end + patched GNU binutils 2.16.1, [notes/h8500-compiler.md](notes/h8500-compiler.md)) is feature-complete for its MVP in the emulator: VFO with duplex, 100 memories, VFO and memory scan, settings menu, CTCSS encode (experimental), Nokia's factory calibration and an RX self-calibration, 70 cm on the RD40 and 2 m on the RC40 (`make -C r40`, tests in `tests/r40/test_r40fw.py`, user guide [r40/README.md](r40/README.md)). Next are checks on a real radio: **continue at [notes/r40-firmware.md](notes/r40-firmware.md) "Start here"**. The emulator also runs the original Nokia firmware to its self test and into service mode; hardware and open items in [notes/r40.md](notes/r40.md).
 Mobira RB58VY (L8M logic board): emulated (`card=L8M`); **our firmware builds for it** (`make -C r58 l8m`: S8M synth, EEPROM for the essentials, no FFSK/CTCSS/DTMF decoding; `tests/r58/test_l8m.py`); OH5NXO's R58bis for L8M runs too, the original Nokia ROM lacks its EPROM1: [notes/rb58vy.md](notes/rb58vy.md).
 Comarco MDR150 data radio (MC68HC16Z1; not a Nokia): the emulator runs OH5NXO's HaMDR 174 (APRS beacon out, AFSK in, digipeating, KISS; `make -C emu test-mdr150`), and HaMDR rebuilds byte-identical with the rebuilt gcc 2.8.1 hc16 toolchain: [notes/mdr150.md](notes/mdr150.md).
 Emulator design, fidelity and limits: `emu/notes/emulator.md` (overview) and one note per radio, `emu/notes/r58.md` for the R58 (in the emulator repo).
@@ -56,7 +58,8 @@ public at <https://github.com/jeskko/moppe-emu>.
 ```sh
 make -C r58              # r58/build/r58.bin (r58.s + the C modules)
 make -C r58 verify ref   # release rebuilt byte-identical; the asm reference
-make -C emu                   # emulator (r58emu, libr58.so)
+make -C r58 l8m          # r58/build-l8m/r58.bin for the RB58VY (L8M board, 64 KB)
+make -C emu              # emulator (r58emu and a lib*.so per radio)
 
 python3 -m unittest discover -s tests/r58      # the R58 test suite, ~4 min
 python3 tools/ci/runtests.py                   # every suite (tests/r58, tests/r40), one process per module (~1 min)
@@ -97,11 +100,14 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `r58/r58.s` | Firmware source (sdasz80 syntax, see [notes/toolchain.md](notes/toolchain.md)); `asm.h` helper macros |
 | `r58/r58.asm` | The original as80 source (from `reference/r58.asm.als`), reference only |
 | `r58/c/` | C modules, linked with r58.s |
-| `tools/r58/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py` | Build steps around sdasz80/sdldz80 |
+| `r58/Makefile` | `make` (P8E/P8N), `l8m` (RB58VY, `build-l8m/`), `verify`, `ref`, `banktest`, `as80` |
+| `tools/r58/asmpp.py`, `link.py`, `cglue.py`, `ihx2bin.py`, `fwlink.py` | Build steps around sdasz80/sdldz80 (`fwlink.py`: shared map/rel parsing and the bank address table) |
 | `tools/r58/jp2jr.py` | Size optimiser: `jp` → `jr` outside timing-critical code |
 | `tools/r58/bankxref.py` | Cross-references of a source block, before moving it to bank 1 |
 | `tools/r58/isrreach.py` | Routines reachable from interrupts (must stay in fixed ROM) |
-| `tools/r58/mutate.py` | Mutation check of a C module against the tests |
+| `tools/r58/mutate.py`, `mutants/` | Mutation check of a C module against the tests |
+| `tools/r58/emuoracle.py` | Bit-identity check of an emulator change (digest of everything observable, both cards) |
+| `tools/r58/asmleft.py`, `sdccprof.py` | What assembler is left in fixed ROM; where SDCC spends compile time per function |
 | `tools/r58/banktest.py` | ROM window bench-test image (`make banktest`) |
 | `tools/r58/setupmap.py` | The setup map `build/r58.setup`: every menu record with its number (digits + ENT), built by `make` |
 | `tools/r58/as80tosdas.py` | One-shot as80 → sdasz80 source converter |
@@ -109,9 +115,10 @@ r.breakpoint("tx_on"); r.ptt(True); print(r.run(1.0), r.symbolize(r.cpu()["pc"])
 | `r40/` | The Nokia R40 firmware (C + start-up asm); user guide [r40/README.md](r40/README.md), developer notes [notes/r40-firmware.md](notes/r40-firmware.md) |
 | `tools/h8500/` | H8/500 C toolchain: lcc back end (`lcc/h8500.md`), patches to lcc and GNU binutils 2.16.1 (fetched and built by `lcc/build.sh`), `h8cc.py` driver, run-time library, `h8run` simulator, tests |
 | `tools/r40/ghidra/` | Ghidra set-up for studying the Nokia R40 ROM |
+| `tools/hc16/` | MDR150: the 68HC16 gcc 2.8.1 toolchain HaMDR was built with (`build.sh`, from OH5NXO's archive), HaMDR rebuild and check (`hamdr.sh`), its symbol table for the emulator (`hamdr_syms.py`); HaMDR itself is never committed |
 | `tools/ci/` | CI pipelines (`check-r58.sh`, `check-r40.sh`), packaging, `docker.sh` |
-| `emu/` | Submodule: the emulator repo (moppe-emu). C emulator (`z80.c`, `cdp1802.c` and `upd7810.c` cores, `pio/sio/pit/daisy.c` chips, `cu53an.c`, `cu58af.c`, `cu41.c`, `tmx1hs.c` handsets, `r58.c`, `md5x.c`, `mc25.c` and `tmx1.c` boards, `*api.c` flat APIs), `python/` (harnesses and TUIs per radio, `afsk.py` AX.25 decoder, `upd7810dis.py`), its own unit, Z80 exerciser, Talkman, MC25 and TMx-1 tests |
-| `tests/r58/` | R58 firmware scenario and differential tests (`difftest.py` framework, `rflink.py` simulated RF link; SAnE NV cache in `.cache/`) |
+| `emu/` | Submodule: the emulator repo (moppe-emu). C emulator (`z80.c`, `cdp1802.c`, `upd7810.c`, `h8500.c` and `cpu16.c` cores; `h8532.c`, `hc16z1.c` on-chip modules; `pio/sio/pit/daisy.c` chips; `cu53an.c`, `cu58af.c`, `cu41.c`, `tmx1hs.c` handsets; `r58.c` (P8E, P8N, L8M), `md5x.c`, `mc25.c`, `tmx1.c`, `r40.c` and `mdr150.c` boards; `*api.c` flat APIs), `python/` (harnesses and TUIs per radio, `afsk.py` AX.25 decoder, disassemblers, `r40nv.py`), its own unit, Z80 exerciser and per-radio scenario tests |
+| `tests/r58/` | R58 firmware scenario and differential tests (`difftest.py` framework, `rflink.py` simulated RF link; SAnE NV cache in `.cache/`), the L8M build's scenarios (`test_l8m.py`) |
 | `tests/r40/` | R40 firmware scenarios in the emulator (`test_r40fw.py`) |
 | `experiments/c-density/` | C vs assembler code size measurement |
 | `notes/` | Findings; `notes/reference/` has the detailed interface specs |

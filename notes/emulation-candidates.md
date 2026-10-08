@@ -1,6 +1,6 @@
 # Emulation candidates in the reference mirrors
 
-Status: #1 done, emulated since 2026-10-08 ([rb58vy.md](rb58vy.md)).
+Status: #1 done: RB58VY L8M emulated since 2026-10-08, and our R58 firmware builds for it (`make -C r58 l8m`, [rb58vy.md](rb58vy.md)). Next on the list: #2 (L8TM). Already done and not listed: Talkman MD5x ([md5x.md](md5x.md)), MC25 ([mc25.md](mc25.md)), TMx-1 ([tmx1.md](tmx1.md)), R40 ([r40.md](r40.md)), MDR150 ([mdr150.md](mdr150.md)).
 
 Survey of `reference/` (mainly `reference/oh5nxo/mods/`) on 2026-10-08:
 which radios not yet emulated have enough material. Paths are under
@@ -11,7 +11,7 @@ this session; the rest is from file headers and comments.
 
 | # | Target | CPU (core) | Firmware | Docs | Readiness |
 |---|---|---|---|---|---|
-| 1 | **Nokia RB58VY, L8M board** | Z80 (have), PIO/SIO/8254 (have), FX419, NMC9817 EEPROM | `R58vy/rom.0` 32 KB original (checked: `JP 00EF`, IM2) + labelled disassembly; OH5NXO's C firmware `R58bis/R58/L8M.bin` 48 KB (2014, CU53 handset) | `reference/huolto-ohjeet/RB58VY_Huolto-ohje.ocr.txt` (L8M logic, parts list); `R58bis/R58/iomap_L8M.h`; `R58bis/README2` | **High**: a board variant of the R58 emulator |
+| 1 | **Nokia RB58VY, L8M board** (DONE 2026-10-08) | Z80 (have), PIO/SIO/8254 (have), FX419, NMC9817 EEPROM | `R58vy/rom.0` 32 KB original (checked: `JP 00EF`, IM2) + labelled disassembly; OH5NXO's C firmware `R58bis/R58/L8M.bin` 48 KB (2014, CU53 handset) | `reference/huolto-ohjeet/RB58VY_Huolto-ohje.ocr.txt` (L8M logic, parts list); `R58bis/R58/iomap_L8M.h`; `R58bis/README2` | **Done**: a board variant of the R58 emulator (`card=L8M`); OH5NXO's L8M.bin and our firmware run, the original ROM lacks EPROM1 |
 | 2 | **Computec RB660, L8TM board** | Z80 (have), same peripheral set | `rb660_0.bin` + `rb660_1.bin`, 64 KB each, original "rb660 7.05" (checked) + disassemblies; OH5NXO's `R58bis/R58/L8TM.bin` 48 KB (CU53) | `iomap_L8TM.h`, `rb660_ioinit`, README2 (banking, DS1210 NV RAM); no manual | **High** for OH5NXO's firmware, medium for the original (bank map inferred) |
 | 3 | **Mobira DT50** data terminal (APRS tracker) | HD6303 (new) | `DT50/dt50.asm` ham source #162 + `dt50.bin` (checked: reset 0x834A); original `zzz/dt50.orig.bin` + disassembly | README (6303 pin use, mods), `doc/` glue-chip and LCD datasheets, `keymap`; TCM3105 modem | Medium-high; not a radio |
 | 4 | **Nokia H45 / H40** (Kyodo KG109T) handhelds | HD6301Y0 / HD63A03Y (new, same core as DT50) | H45: `h45.asm` source, mask ROM dump, originals in `H45_secrets/`; H40: `h40.asm` v117 + `hd40.bin`, original `H40_old/orig/h40_11.bin` | H45 service manual (scanned, 5 chapters, no text layer); memory maps in asm comments; FX429/FX419, PCF2100 | Medium; three targets share one new core |
@@ -35,7 +35,7 @@ emulator.
 
 ## L8M / L8TM vs the emulated P8E/P8N
 
-From `iomap_L8M.h`, `iomap_L8TM.h`, README2 and the RB58VY manual:
+L8M is implemented (rb58vy.md, `emu/notes/r58.md` "L8M"); the L8TM points below are still to do. From `iomap_L8M.h`, `iomap_L8TM.h`, README2 and the RB58VY manual:
 - 4.032 MHz, no M1 wait (like P8N).
 - L8M ports: ADC 0x40-0x47 (P8x 0x50), OUT_1 = OUT_2 at 0x50,
   OUT_0 at 0x60, watchdog 0x70, DA 0x30 only; no FX429 at 0xA2/A3. The

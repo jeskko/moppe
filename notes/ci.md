@@ -14,7 +14,7 @@ get unlimited minutes on 4-vCPU runners.
 | File | What |
 |---|---|
 | `.github/workflows/ci.yml` | on push (master/main, `v*` tags), pull request, manual: jobs `r58` and `r40` run their pipelines and upload `dist/` as artifacts `firmware-r58` / `firmware-r40` (30 days); job `publish` merges them, writes SHA256SUMS, makes a GitHub release for a `v*` tag, and for a push to master replaces the `nightly` pre-release (tag moved to the commit) |
-| `tools/ci/check-r58.sh` | the R58 pipeline: emulator (the `emu/` submodule; + its unit test), `make -C r58`, `make verify ref`, `make banktest`, `runtests.py r58` (tests/r58); prints each step's seconds |
+| `tools/ci/check-r58.sh` | the R58 pipeline: emulator (the `emu/` submodule; + its unit test), `make -C r58`, `make verify ref`, `make banktest`, `make l8m` (built and tested, not packaged), `runtests.py r58` (tests/r58); prints each step's seconds |
 | `tools/ci/check-r40.sh` | the R40 pipeline: the H8/500 toolchain from source (`H8_NO_ASL=1 tools/h8500/lcc/build.sh`: lcc from GitHub, binutils 2.16.1 from ftp.gnu.org, into `reference/toolchain/`, cached by the workflow on the toolchain files' hash), its tests (`tools/h8500/test/run.sh`, `binutils/test_gas.py`), emulator, `make -C r40`, `test_r40fw`. The Nokia ROM is not distributable: its tests (`check_gas.py`, the emulator's R40 tests, one firmware test) skip |
 | `tools/ci/version.sh` | the build's name: the tag, or `nightly-YYYYMMDD-<sha>` |
 | `tools/ci/install-sdcc.sh` | the pinned SDCC: the official 4.6.0 amd64 binary tarball from SourceForge, SHA-256 checked, into `~/.cache/sdcc-4.6.0` (cached by the workflow) |

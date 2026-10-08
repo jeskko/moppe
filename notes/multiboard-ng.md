@@ -4,6 +4,8 @@ Status: high-level design only (2026-10-02). No protocol, emulator model or
 schematic yet, by choice. Session narrative and rejected options:
 `notes/multiboard-ng-history.md`. Socket and radio facts: `notes/hardware.md`
 ("Idea (2026-09-28)", "Radio around the module", "Modem socket audio lines").
+Applies to the P8x CPU cards only: the RB58VY's L8M board has no FX429
+socket (FX419 modem on SIO A, `notes/rb58vy.md`).
 
 ## Direction (user, 2026-10-02)
 

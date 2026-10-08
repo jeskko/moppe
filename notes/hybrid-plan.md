@@ -9,13 +9,27 @@ so its socket is normally free.
 Background: notes/rewrite-evaluation.md (measurements, constraints, proof of
 concept), notes/hardware.md (memory decode), notes/emulator.md.
 
-## Start here (next session, written 2026-10-01)
+## Start here (written 2026-10-01, updated 2026-10-09)
 
-**Publishing (user, 2026-10-07):** the repository is prepared for a
-public GitHub repo without waiting for the authors' reply: parts with
-unknown terms (the R58 firmware, as80) stay under their authors'
-rights, our work is MIT (README "License"); CI covers R58 and R40
-(notes/ci.md). If OH1E / OH5NXO reply, record their terms there.
+**Publishing (user, 2026-10-07):** the repository went public on
+2026-10-08 (<https://github.com/jeskko/moppe>) without waiting for the
+authors' reply: parts with unknown terms (the R58 firmware, as80) stay
+under their authors' rights, our work is MIT (README "License"); CI
+covers R58 and R40 (notes/ci.md; first runs identical to local builds).
+If OH1E / OH5NXO reply, record their terms there.
+
+**RB58VY L8M (2026-10-08):** the same firmware builds for the L8M board
+(`make -C r58 l8m`, `-DL8M`, 64 KB image = EPROM0 + EPROM1; S8M synth,
+essentials in the EEPROM, no FFSK/CTCSS/DTMF decoder there), tested in
+the emulator by `tests/r58/test_l8m.py`; notes/rb58vy.md. P8x builds
+are unchanged by it.
+
+**Paths (layout since 2026-10-08):** the R58 build is `r58/` (so `make`
+below means `make -C r58`; `c/*.c` is `r58/c/`, `build-*` is
+`r58/build-*`), tools `tools/r58/`, tests `tests/r58/`
+(`python3 -m unittest discover -s tests/r58`, or
+`python3 tools/ci/runtests.py r58`). Older narrative below and in the
+history file still says `tools/x.py`, `emu/tests/`, `firmware/`.
 
 **State (2026-09-30).** Phase 4 is done as far as the plan's rule goes
 ("assembler only for what is timing critical or awkward in C"), and the
@@ -29,7 +43,7 @@ Sizes (2026-10-01, after the simplifications and the tone tables):
 fixed ROM ends at 0x4EFB incl. the C code (12.5 KB free), bank 1 7328
 bytes free, bank 2 5794 bytes free; C statics 227 of the 256-byte
 `c_bss` (getting tight: grow C_BSS_SIZE or share statics before the next
-large C module). **322 tests** pass.
+large C module). **322 tests** passed then; 332 in `tests/r58` pass on 2026-10-09 (incl. the 8 of `test_l8m.py`).
 
 The 2026-09-29 code review is applied (details in the commits): one
 shared header `c/r58.h` (163 symbols had been declared in several modules,
@@ -37,7 +51,7 @@ shared header `c/r58.h` (163 symbols had been declared in several modules,
 (`copy3`, `mprs_degmin_pack` ×3, `nibbles`, the locator mirror/count-down
 blocks, `menu_next/prev`, repeater state tails); `FAR()` for the bank stubs
 and shims named for what they do; `tools/r58/fwlink.py` for .map/.rel parsing;
-`emu/tests/helpers.py` and `difftest.DiffCase` for the test boilerplate.
+`tests/r58/helpers.py` and `difftest.DiffCase` for the test boilerplate.
 Kept on purpose: the `#x` command switch's four roger tails (a goto for 12
 bytes), `freq.c locate_band`'s write-then-overwrite (as the asm; the
 rewrite came out larger), two casts that silence an SDCC warning.
@@ -88,16 +102,17 @@ side (as `test_aprs_diff.ref_degmin` does for S/W/.50 positions) and cover
 the fixed case with a standalone test against a model, not by loosening
 the comparison.
 
-**Done 2026-10-01: CI and releases, prepared locally** (notes/ci.md):
+**Done 2026-10-01: CI and releases** (notes/ci.md):
 `.github/workflows/ci.yml`, `tools/ci/` (pinned SDCC tarball, pipeline,
-parallel test runner, packaging, `docker.sh` for a clean Ubuntu run). Not
-on GitHub yet: publishing waits for the original authors (OH1E asked
-2026-10-01). Release images come from the CI SDCC: another SDCC build of
+parallel test runner, packaging, `docker.sh` for a clean Ubuntu run).
+Public and running on GitHub since 2026-10-08 (the 2026-10-01 plan to
+wait for the authors was dropped 2026-10-07). Release images come from the CI SDCC: another SDCC build of
 the same version allocates registers differently (notes/ci.md).
 
-Next, options: the first GitHub run (private repository, or public
-after the authors' reply; later maybe a Markdown or richer setup map);
-the real-board bench test (EPROM programmer); new features in the
+Next, options (the first GitHub run is done): maybe a Markdown or
+richer setup map; the real-board bench test (EPROM programmer; for L8M
+the open points in notes/rb58vy.md); L8M gaps (FFSK needs SIO sync mode
+in firmware and emulator, GPS on SIO B, CTCSS); new features in the
 free space (bank 1/2, EPROM1 later). Other open items: `notes/hardware.md`
 open questions (EPROM0 pin 1 = CPU A15 assumed, hook polarity
 vs R58bis, P8E I/O wait states; IC27 and the modem CLK settled on paper
@@ -140,7 +155,7 @@ by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
   stub or label. SDCC `switch` jump tables and `*p = f()` keep a value in
   an IX frame across the call: dispatch with `if` chains on a static,
   store call results in a static first. Per-function check:
-  `awk '/^_[a-zA-Z0-9_]+:/{fn=$1} /\(ix\)|enter_ix/{c[fn]++} END{for(f in c) print f, c[f]}' build-c/X.asm`.
+  `awk '/^_[a-zA-Z0-9_]+:/{fn=$1} /\(ix\)|enter_ix/{c[fn]++} END{for(f in c) print f, c[f]}' r58/build/X.asm`.
   Byte loops over NV with static pointers are about twice as slow as the
   asm (ALLrSt powered off 59 ms late): use a leaf with register pointers.
 - From the scanner port: the C build's mainline is slower per pass
@@ -187,7 +202,7 @@ by OH5NXO's chip list). Earlier handoffs: notes/hybrid-plan-history.md.
 ## Ground rules
 
 - **The emulator test suite is the safety net.** Every phase ends with
-  `python3 -m unittest discover -s emu/tests` passing on the new build. Add
+  `python3 -m unittest discover -s tests/r58` passing on the new build. Add
   tests *before* porting a module whose behaviour is not yet covered.
 - **Keep the stock build reproducible.** `make -C r58 verify` must keep
   passing (byte-identical to the release) until a change is meant to alter
@@ -239,14 +254,14 @@ Gaps today: scanner, repeater states, CW ID, menu editing of each record
 type, CCIR/DTMF *receive* decode, FSK receive/remote config, MBUS CFGSnd/
 CFGGEt, CU58AF keys and display in depth, low-battery/TOT power-down,
 typematic timings.
-- **Differential testing — done** (`emu/tests/difftest.py`, `test_diff.py`):
+- **Differential testing — done** (`tests/r58/difftest.py`, `test_diff.py`):
   stock and candidate builds run the same scripted inputs; display text and
   segments, icons, synth registers and load counts, OUT0/OUT1/DACs/CSMEM,
   power, event sequences (timestamps within 20 ms) and the NV image are
   compared at checkpoints. OUT2 and the PIO ports are not compared: they are
   bit-banged buses, so a checkpoint catches them at an arbitrary phase and
   they differ between two correct builds. Candidate: `R58_CAND_ROM`/`_LST`,
-  default `r58/build-c`. Stock vs `C=1`: no differences.
+  default `r58/build` (was `build-c`). Stock vs `C=1`: no differences.
 - **Added 2026-09-28:** `test_scan_rptr.py` (scanner: default mask, memory
   block, stop/resume on signal, mask toggle, perm reject; repeater: menu
   enable + 60 s boot lockout, access by 1750 Hz / DTMF * / carrier, greet,

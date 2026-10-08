@@ -17,3 +17,11 @@ comments for every mode-register value. It booted the v5.0 firmware with
 the HSN-2 at the first try; the only bring-up fixes were in the board
 (TxD of a unit cut off mid-character stayed low; the host transmitter did
 not wait for a free bus).
+
+## 2026-10-02: licence outcome
+
+The 2026-10-01 question (keep binaries local or ask OH3NWQ) was settled
+in the emulator repo: no binary or source is committed; its `make refs`
+(`tests/fetch_refs.py`) downloads `tmx1_v50.zip` from OH3NWQ's GitHub
+with a hash check, and the test builder unpacks it and builds with its
+as7810.

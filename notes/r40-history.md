@@ -151,3 +151,19 @@ L100 + CU43 board in moppe-emu (commit 50ead02). Steps that mattered:
   0x34ADB: channel n <= 251 and bit 3 of parameter record n's `st`
   byte. With `st` 008 on record 030, `*55*30#` selected simplex on
   433.500 MHz (RX VCO 478.5, TX 433.500 on PTT); `#55#` left it.
+
+## 2026-10-06 .. 08: emulator additions for the ham firmware
+
+The emulator changed as the firmware (r40-firmware-history.md) needed it
+(moppe-emu commits, dates from `git -C emu log`):
+
+- 10-06: the MC144111 DAC keeps its register between selects (copied to
+  the outputs as /CS rises); `Radio.tmo_rises` counts TMO edges (CTCSS
+  frequency checks); r40tui runs the ham firmware by default
+  (`--factory` for Nokia's); the pixel view leaves out the top row's gap
+  cells.
+- 10-07: idle squelch noise above Nokia's default levels (136 / 133 x 4);
+  `r40nv.py` commits the D-band tables; the RX front-end model (RSSI peaks at the
+  best RFC per MHz, used by the RX self-calibration tests).
+- 10-08: the front-end model takes a base frequency (138 MHz on 2 m).
+

@@ -94,6 +94,7 @@ uPD7810-based, MBUS handsets; see [tmx1.md](tmx1.md).
 ## Emulator
 
 - CPU core `cdp1802.c`: CDP1802 and the 1804/5/6 extensions. OH3NWQ code uses only 1802 instructions (and no interrupts: its `int` handler just disables them); OH1E runs on the modem's 100 Hz interrupt and uses STPC/LDC/STM/CIE/CID on 1806 models.
+- Tests: `make -C emu test-md5x` (`emu/tests/md5x/test_md5x.py`, 13 scenarios, six firmware builds). The sources are fetched from their authors' sites by `make -C emu refs` or read from this repo's `reference/md5x/`; nothing third-party is committed.
 - Board `md5x.c`: see `emu/notes/md5x.md` for the model table, evidence and limits (modem at byte level, no 93C06, 8253 gates high).
 - **Firmware builds** (`emu/tests/md5x/roms.py`): the shipped i386 `as06` (from the v3.18 zips) runs here and rebuilds the v3.18 release binaries byte-identically; it also builds OH1E's `md50.asm` identical to his published binaries except the `__DATE__` string. The `1806.tar.gz` assembler source builds with `gcc -m32` after one fix (`(intext ? textdot : datadot) = ...` is not valid C any more); a 64-bit build crashes (pointers kept in `unsigned` YYSTYPE and casts).
 - Using the firmware: mx5x frequency entry is 5 digits with the 100 MHz (1 GHz on ME59) digit implied ("33500" = 433.500). OH1E: digits then `#`; on a CU59 the first key after a cold start goes to handset-type detection; zeroed RAM has `tx_start = tx_end = 0`, which refuses all TX until set up.

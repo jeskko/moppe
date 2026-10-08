@@ -6,6 +6,9 @@ exercised; **inferred** = our deduction; **open** = unresolved.
 
 Detailed per-area specs are in `notes/reference/`.
 
+The RB58VY's L8M board (a different one-board design, no P8x chips) is in
+`notes/rb58vy.md`; this file is the P8x cards.
+
 ## CPU cards
 
 | | P8E ("/H" units) | P8N |

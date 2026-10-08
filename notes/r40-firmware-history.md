@@ -194,3 +194,40 @@ the small case (300 random programs found another); the fix is in
 lcc's `spillee` (h8500-compiler.md). The 2 m self-cal test found an
 edge effect in the RFC smoothing (a peak at 1 came out as 0) and needed
 the emulator's front-end model to take a base frequency.
+
+## 2026-10-09: "Start here" State paragraph of 2026-10-06 .. 08, as it stood
+
+Moved out of r40-firmware.md when the notes were brought up to date
+(it had grown by appending per feature; 38 scenarios at 10-06, 50 at 10-08):
+
+State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
+`python3 tools/ci/runtests.py r40` (or `python3 -m unittest test_r40fw` in `tests/r40/`) runs 38 scenarios; `make
+-C r40 run` or plain `python3 emu/python/r40tui.py` opens it in the
+emulator's TUI (`--factory`: the Nokia firmware). A simplex VFO: boots
+on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
+channel), frequency entry (digits, OK; CLR deletes), UP/DOWN 12.5 kHz
+steps, FNC + UP/DOWN volume, duplex (FNC # simplex/-/+, FNC * shift
+in kHz, default 7.6 MHz; FNC 0 reverse; TX frequency shown while
+transmitting), TX only in 430-440 MHz ("LOCK" otherwise), memories 00-99 (FNC RCL
++ two digits stores; RCL toggles VFO / memories; two digits or
+UP/DOWN choose), scan (FNC 9: VFO through 430-440 MHz, or the stored
+memories; stops while busy, resumes 2 s after; any key or PTT ends it;
+~15 channels/s: 30 ms PLL settle guess + 20 ms squelch), key beep (as
+Nokia's), settings menu (FNC OK: squelch 0-9, TX time-out, beep, TX
+power and RX tune as raw DAC values), CTCSS encode per channel
+(experimental: menu "Tone", 50 tones, a 'T' on row 0; 8 kHz phase
+accumulator on TMO through the Fii switch, measured within 0.1 Hz in
+the emulator; whether sub-audio reaches the carrier is unknown), noise squelch with hysteresis switching
+the RX audio and amplifier, BUSY and the RSSI reading; PTT transmits
+in the Nokia firmware's order (deviation bits, DAC, TX synthesizer,
+TX ON, mic); settings (VFO, memory mode and channel, volume, step) and memories kept in NV RAM; PWR
+off. Nokia's factory calibration (2026-10-07, `cal.c`): RFC per MHz of
+the RX frequency, TX power per 7 MHz at the menu's level (low/mid/high
+= Nokia's 1-3), deviation bits per MHz of the TX frequency, and squelch
+"cal" (the default) from Nokia's levels; read from Nokia's committed NV
+copies, else its D-band defaults; RX self-calibration of RFC by the
+RSSI peak. Both bands (2026-10-08, `band.c`): 70 cm on an RD40, 2 m on
+an RC40, from Nokia's band byte (NV 0x63) or the menu's Band item (for
+a radio whose Nokia NV is lost; a change restarts the firmware); the PLL
+prescaler, tuning / TX / scan ranges, start-up frequency and default
+shift per band; other-band memories hidden (50 scenarios).

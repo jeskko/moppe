@@ -11,48 +11,34 @@ scan, settings (squelch etc.), CTCSS encode if the hardware allows.
 
 ## Start here (next session)
 
-State (2026-10-06): `make -C r40` builds `r40/build/r40.bin`;
-`python3 tools/ci/runtests.py r40` (or `python3 -m unittest test_r40fw` in `tests/r40/`) runs 38 scenarios; `make
--C r40 run` or plain `python3 emu/python/r40tui.py` opens it in the
-emulator's TUI (`--factory`: the Nokia firmware). A simplex VFO: boots
-on 433.500 MHz (the same PLL words as the Nokia firmware's simplex
-channel), frequency entry (digits, OK; CLR deletes), UP/DOWN 12.5 kHz
-steps, FNC + UP/DOWN volume, duplex (FNC # simplex/-/+, FNC * shift
-in kHz, default 7.6 MHz; FNC 0 reverse; TX frequency shown while
-transmitting), TX only in 430-440 MHz ("LOCK" otherwise), memories 00-99 (FNC RCL
-+ two digits stores; RCL toggles VFO / memories; two digits or
-UP/DOWN choose), scan (FNC 9: VFO through 430-440 MHz, or the stored
-memories; stops while busy, resumes 2 s after; any key or PTT ends it;
-~15 channels/s: 30 ms PLL settle guess + 20 ms squelch), key beep (as
-Nokia's), settings menu (FNC OK: squelch 0-9, TX time-out, beep, TX
-power and RX tune as raw DAC values), CTCSS encode per channel
-(experimental: menu "Tone", 50 tones, a 'T' on row 0; 8 kHz phase
-accumulator on TMO through the Fii switch, measured within 0.1 Hz in
-the emulator; whether sub-audio reaches the carrier is unknown), noise squelch with hysteresis switching
-the RX audio and amplifier, BUSY and the RSSI reading; PTT transmits
-in the Nokia firmware's order (deviation bits, DAC, TX synthesizer,
-TX ON, mic); settings (VFO, memory mode and channel, volume, step) and memories kept in NV RAM; PWR
-off. Nokia's factory calibration (2026-10-07, `cal.c`): RFC per MHz of
-the RX frequency, TX power per 7 MHz at the menu's level (low/mid/high
-= Nokia's 1-3), deviation bits per MHz of the TX frequency, and squelch
-"cal" (the default) from Nokia's levels; read from Nokia's committed NV
-copies, else its D-band defaults; RX self-calibration of RFC by the
-RSSI peak. Both bands (2026-10-08, `band.c`): 70 cm on an RD40, 2 m on
-an RC40, from Nokia's band byte (NV 0x63) or the menu's Band item (for
-a radio whose Nokia NV is lost; a change restarts the firmware); the PLL
-prescaler, tuning / TX / scan ranges, start-up frequency and default
-shift per band; other-band memories hidden (50 scenarios).
+State (2026-10-09): `make -C r40` builds `r40/build/r40.bin`;
+`python3 tools/ci/runtests.py r40` (or `python3 -m unittest test_r40fw`
+in `tests/r40/`) runs 50 scenarios; `make -C r40 run` or plain
+`python3 emu/python/r40tui.py` opens it in the emulator's TUI
+(`--factory`: the Nokia firmware). The MVP is complete: VFO with duplex
+split and reverse (TX only in the band's TX range, "LOCK" otherwise),
+100 memories in NV RAM, VFO and memory scan, settings menu (squelch,
+CTCSS tone, TX time-out, beep, TX power, RX tune, RX self-cal, Band),
+CTCSS encode per channel (experimental), noise squelch, PTT in Nokia's
+order, settings kept in NV RAM. Calibration (`cal.c`) from Nokia's NV
+copies (RFC per MHz, TX power, deviation, squelch), else Nokia's D-band
+defaults; RX self-calibration of RFC by the RSSI peak. Both bands
+(`band.c`): 70 cm on an RD40, 2 m on an RC40, from Nokia's band byte
+(NV 0x63) or the menu's Band item; per band the PLL prescaler, tuning /
+TX / scan ranges, start-up frequency and default shift. Key layout and
+details per feature: the file headers (`ui.c`, `menu.c`) and the table
+below.
 User guide (keys, menu, installing): [../r40/README.md](../r40/README.md); keep
 it in step with the key layout and menu.
 Session narrative: [r40-firmware-history.md](r40-firmware-history.md).
 
-Next, each checked in the emulator before the next:
+Next:
 
 1. **Hardware**: the MVP is complete in the emulator. Before more
    features, the open questions below want a real R40: CTCSS deviation
    (does the tone get through?), RX tuning and TX power DAC values,
    squelch scale, PLL lock time (scan dwell), keys, power-off.
-2. Calibration (r40.md gap 3): **done** in the emulator (see State).
+2. Calibration (r40.md gap 3): **done** in the emulator.
    On hardware: does the radio's NV still hold valid copies (else the
    defaults are used, deviation 4), and is "cal" squelch right.
    **Self-calibration of RFC: done in the emulator** (menu "RX
@@ -142,6 +128,5 @@ runs in the emulator (blank display, as his `main` does nothing).
 To use the drivers from C: check each routine's register usage against
 lcc's ABI (r0-r3 caller-saved, r4-r5 preserved, arguments on the stack
 right to left, result in r0 / r0:r1) and add small C-callable wrappers
-where they differ. Publishing: OH5NXO's code is under the same pending
-question as the rest of the project (authors asked 2026-10-01); keep
-it private until he answers.
+where they differ. OH5NXO's code is reference only here (no licence stated;
+licences of the repo: root README).

@@ -48,7 +48,7 @@ unit and an HSN-2 or HSF-2 handset, each running its own firmware on its
 own uPD7810, linked by a bit-level MBUS. Runs tmx1.asm v5.0 (TMF-1 and
 TMN-1) with HSN-2 v1.6 / HSF-2 v0.2; the test builds come from
 `tmx1_v50.zip` with its as7810 and are byte-identical to the released
-binaries (the licence keeps them out of the repos).
+binaries (the licence keeps them out of the repos: `make -C emu refs` fetches `tmx1_v50.zip` from OH3NWQ's GitHub, or `emu/tests/tmx1/roms.py` reads it from `reference/md5x/oh3nwq-moppe/`). Tests: `make -C emu test-tmx1` (`test_tmx1.py` 16 scenarios, `test_encodings.py` 3). The HSN-2 v1.6 comes from that zip; the oh3tr mirror under `reference/tmx1/tmf1/` has the older v1.4.
 
 Open questions, all modelled from the firmware's own comments and to be
 checked on hardware or a uPD7810 user's manual:
