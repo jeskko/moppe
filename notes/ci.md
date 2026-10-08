@@ -14,13 +14,13 @@ get unlimited minutes on 4-vCPU runners.
 | File | What |
 |---|---|
 | `.github/workflows/ci.yml` | on push (master/main, `v*` tags), pull request, manual: jobs `r58` and `r40` run their pipelines and upload `dist/` as artifacts `firmware-r58` / `firmware-r40` (30 days); job `publish` merges them, writes SHA256SUMS, makes a GitHub release for a `v*` tag, and for a push to master replaces the `nightly` pre-release (tag moved to the commit) |
-| `tools/ci/check-r58.sh` | the R58 pipeline: emulator (the `emu/` submodule; + its unit test), `make -C r58`, `make verify ref`, `make banktest`, `make l8m` (built and tested, not packaged), `runtests.py r58` (tests/r58); prints each step's seconds |
+| `tools/ci/check-r58.sh` | the R58 pipeline: emulator (the `emu/` submodule; + its unit test), `make -C r58`, `make verify ref`, `make banktest`, `make l8m`, `runtests.py r58` (tests/r58); prints each step's seconds |
 | `tools/ci/check-r40.sh` | the R40 pipeline: the H8/500 toolchain from source (`H8_NO_ASL=1 tools/h8500/lcc/build.sh`: lcc from GitHub, binutils 2.16.1 from ftp.gnu.org, into `reference/toolchain/`, cached by the workflow on the toolchain files' hash), its tests (`tools/h8500/test/run.sh`, `binutils/test_gas.py`), emulator, `make -C r40`, `test_r40fw`. The Nokia ROM is not distributable: its tests (`check_gas.py`, the emulator's R40 tests, one firmware test) skip |
 | `tools/ci/version.sh` | the build's name: the tag, or `nightly-YYYYMMDD-<sha>` |
 | `tools/ci/install-sdcc.sh` | the pinned SDCC: the official 4.6.0 amd64 binary tarball from SourceForge, SHA-256 checked, into `~/.cache/sdcc-4.6.0` (cached by the workflow) |
 | `tools/ci/sdcc-cached.sh` | `SDCC=` for make (check-r58.sh sets it): C objects cached by compiler version, flags, source and headers in `~/.cache/r58-sdcc-objs` (a workflow cache; check-r58.sh prunes entries unused for 60 days). Outputs are byte-identical (sdcc writes nothing path-dependent) |
 | `tools/ci/runtests.py` | the suites (`r58`, `r40`, or module names; default all) one module per process, `-j` CPU count: 62 s on 16 cores, ~4 min serial (2026-10-01, after the emulator speed-up) |
-| `tools/ci/package.sh r58\|r40 VERSION` | into `dist/`: `r58-VERSION.bin` (64 KB EPROM0), `.map`, `.setup`, `r58-banktest-VERSION.bin`; `r40-VERSION.bin`, `.map`; `SHA256SUMS` |
+| `tools/ci/package.sh r58\|r40 VERSION` | into `dist/`: `r58-VERSION.bin` (64 KB EPROM0), `.map`, `.setup`, `r58-banktest-VERSION.bin`, `r58-l8m-VERSION.bin` (RB58VY, 64 KB: EPROM0 + EPROM1) with `-eprom0.bin` / `-eprom1.bin` (its 32 KB halves, for two 27C256) and `.map` (the setup map is shared: no menu record depends on L8M); `r40-VERSION.bin`, `.map`; `SHA256SUMS` |
 | `tools/ci/docker.sh [r58] [r40]` | the pipelines (default both) in a clean `ubuntu:24.04` container (the runner's OS) from the working tree and `.git`; `CPUS=4` limits it like a runner; volumes keep SDCC and the R40 toolchain; `dist/` comes back |
 
 actionlint (with shellcheck): clean on 2026-10-01; not rerun after the

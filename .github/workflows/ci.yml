@@ -3,8 +3,8 @@
 # (tools/ci/check-r40.sh), in parallel; tools/ci/docker.sh runs the same
 # locally.  A v* tag publishes a release (v0.*: a pre-release, the
 # firmwares are emulator-tested only), a push to master replaces the
-# "nightly" pre-release: both firmwares' images and link maps, the R58
-# setup map and SHA256SUMS (tools/ci/package.sh), with the notes of
+# "nightly" pre-release: both firmwares' images and link maps (R58 also
+# its RB58VY / L8M build), the R58 setup map and SHA256SUMS (tools/ci/package.sh), with the notes of
 # tools/ci/release-notes.md.
 name: CI
 

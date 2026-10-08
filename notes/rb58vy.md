@@ -5,7 +5,7 @@ Status (2026-10-08): **our firmware runs on L8M** in the emulator:
 0x0000-0x7FFF, EPROM1 = 0x8000-0xFFFF). Tested in `tests/r58/test_l8m.py`
 (SAnE, 6 m RX/TX synthesizer, TX keying and power, setup menu, the EEPROM
 copy and its restore after a supply cut). Not tried on a real radio. CI builds it (`make l8m`) and runs the
-tests, but does not package the image (notes/ci.md). The
+tests; releases carry it as `r58-l8m-*` (the 64 KB image and its two 32 KB EPROM halves, notes/ci.md; since 2026-10-09). The
 P8x build is unchanged by the `#ifdef L8M` code (its image changed only by
 the keypad fix below). The emulator side: `emu/notes/r58.md` "L8M".
 
