@@ -40,7 +40,7 @@ first. Reports from real radios are welcome.
 Open questions and hardware facts: [notes/hardware.md](notes/hardware.md).
 Known firmware bugs left in place: [notes/open-bugs.md](notes/open-bugs.md) (none since 2026-10-01; decided ones in [notes/open-bugs-history.md](notes/open-bugs-history.md)).
 Nokia R40 (RC40/RD40, H8/532): the emulator runs the original Nokia firmware to its self test and into service mode; hardware and open items in [notes/r40.md](notes/r40.md). A C toolchain for it is ready (lcc back end + patched GNU binutils 2.16.1, [notes/h8500-compiler.md](notes/h8500-compiler.md)); the ham firmware in `r40/` (C + start-up asm) boots in the emulator with its own display driver and keypad (`make -C r40`, tests in `tests/r40/test_r40fw.py`); **continue at [notes/r40-firmware.md](notes/r40-firmware.md) "Start here"**.
-Comarco MDR150 data radio (MC68HC16Z1; not a Nokia): feasibility survey only, no code yet. The newest ham firmware (HaMDR 174, OH5NXO) rebuilds byte-identical with the rebuilt gcc 2.8.1 hc16 toolchain, and the hardware and the resident loader are documented well enough for an emulator: [notes/mdr150.md](notes/mdr150.md).
+Comarco MDR150 data radio (MC68HC16Z1; not a Nokia): the emulator runs OH5NXO's HaMDR 174 (APRS beacon out, AFSK in, digipeating, KISS; `make -C emu test-mdr150`), and HaMDR rebuilds byte-identical with the rebuilt gcc 2.8.1 hc16 toolchain: [notes/mdr150.md](notes/mdr150.md).
 Emulator design, fidelity and limits: `emu/notes/emulator.md` (overview) and one note per radio, `emu/notes/r58.md` for the R58 (in the emulator repo).
 
 ## Quick start
